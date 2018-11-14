@@ -7,7 +7,7 @@ from flask import Flask
 from flask_pymongo import ASCENDING, PyMongo
 
 from pro_tes.config.config_parser import get_conf
-from pro_tes.ga4gh.wes.endpoints.get_service_info import get_service_info
+from pro_tes.ga4gh.tes.endpoints.get_service_info import get_service_info
 
 
 # Get logger instance
@@ -28,25 +28,18 @@ def register_mongodb(app: Flask) -> Flask:
     db = mongo.db[get_conf(config, 'database', 'name')]
 
     # Add database collection for '/service-info'
-    collection_service_info = mongo.db['service-info']
+    collection_service_info = mongo.db['service-info-proxy-tes']
     logger.debug("Added database collection 'service_info'.")
 
     # Add database collection for '/runs'
     collection_runs = mongo.db['runs']
-    collection_runs.create_index([
-            ('run_id', ASCENDING),
-            ('task_id', ASCENDING),
-        ],
-        unique=True,
-        sparse=True
-    )
     logger.debug("Added database collection 'runs'.")
 
     # Add database and collections to app config
     config['database']['database'] = db
     config['database']['collections'] = dict()
     config['database']['collections']['runs'] = collection_runs
-    config['database']['collections']['service_info'] = collection_service_info
+    config['database']['collections']['service_info_proxy_tes'] = collection_service_info
     app.config = config
 
     # Initialize service info
