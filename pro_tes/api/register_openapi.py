@@ -1,11 +1,13 @@
 """Functions for registering OpenAPI specs with a Connexion app instance."""
 
+from json import load
 import logging
 import os
 from shutil import copyfile
 from typing import (List, Dict)
 
 from connexion import App
+from yaml import safe_dump
 
 from pro_tes.config.config_parser import get_conf
 
@@ -32,6 +34,10 @@ def register_openapi(
             ),
             get_conf(spec, 'path')
         )
+
+        # Convert JSON to YAML
+        if get_conf(spec, 'type') == 'json':
+            path = __json_to_yaml(path)
 
         # Generate API endpoints from OpenAPI spec
         try:
@@ -62,3 +68,15 @@ def register_openapi(
             raise SystemExit(1)
 
     return(app)
+
+
+def __json_to_yaml(
+    path: str,
+    replace_extension: bool = True
+) -> str:
+    """Converts JSON to YAML file."""
+    out_base = os.path.splitext(path)[0] if replace_extension else path
+    out_file = '.'.join([out_base, 'yaml'])
+    with open(path, 'r') as f_in, open(out_file, 'w') as f_out:
+        safe_dump(load(f_in), f_out, default_flow_style=False)
+    return out_file

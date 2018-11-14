@@ -17,24 +17,18 @@ def create_celery_app(app: Flask) -> Celery:
     """Creates Celery application and configures it from Flask app."""
     broker = get_conf(app.config, 'celery', 'broker_url')
     backend = get_conf(app.config, 'celery', 'result_backend')
-    include = get_conf_type(app.config, 'celery', 'include', types=(list))
-    maxsize = get_conf(app.config, 'celery', 'message_maxsize')
+# TODO: TES   include = get_conf_type(app.config, 'celery', 'include', types=(list))
 
     # Instantiate Celery app
     celery = Celery(
         app=__name__,
         broker=broker,
         backend=backend,
-        include=include,
+# TODO: TES        include=include,
     )
     logger.info("Celery app created from '{calling_module}'.".format(
         calling_module=':'.join([stack()[1].filename, stack()[1].function])
     ))
-
-    # Set Celery options
-    celery.Task.resultrepr_maxsize = maxsize
-    celery.amqp.argsrepr_maxsize = maxsize
-    celery.amqp.kwargsrepr_maxsize = maxsize
 
     # Update Celery app configuration with Flask app configuration
     celery.conf.update(app.config)

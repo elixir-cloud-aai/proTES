@@ -5,7 +5,6 @@ import logging
 import os
 
 from pro_tes.factories.celery_app import create_celery_app
-from pro_tes.tasks.celery_task_monitor import TaskMonitor
 
 
 # Get logger instance
@@ -19,22 +18,5 @@ def register_task_service(app: Flask) -> None:
 
         # Instantiate Celery app instance
         celery_app = create_celery_app(app)
-
-        # Start task monitor daemon
-        TaskMonitor(
-            celery_app=celery_app,
-            collection=app.config['database']['collections']['runs'],
-            tes_config={
-                'url':
-                    app.config['tes']['url'],
-                'logs_endpoint_root':
-                    app.config['tes']['get_logs']['url_root'],
-                'logs_endpoint_query_params':
-                    app.config['tes']['get_logs']['query_params'],
-            },
-            timeout=app.config['celery']['monitor']['timeout'],
-            authorization=app.config['security']['authorization_required'],
-        )
-        logger.info('Celery task monitor registered.')
 
     return None

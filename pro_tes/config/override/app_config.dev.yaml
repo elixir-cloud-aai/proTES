@@ -9,7 +9,7 @@ security:
 # Database settings
 database:
     host: 'mongo'
-    name: wes-elixir-db-dev
+    name: pro-tes-db-dev
 
 # Storage
 storage:
@@ -22,6 +22,6 @@ celery:
 
 # OpenAPI specs
 
-# WES service info settings
+# TES service info settings
 
 # TES server
