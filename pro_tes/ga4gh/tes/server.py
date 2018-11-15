@@ -7,8 +7,8 @@ from connexion import request
 from flask import current_app
 
 #import pro_tes.ga4gh.tes.endpoints.cancel_task as cancel_task
-import pro_tes.ga4gh.tes.endpoints.create_task as create_task
-import pro_tes.ga4gh.tes.endpoints.get_service_info as get_service_info
+#import pro_tes.ga4gh.tes.endpoints.create_task as create_task
+#import pro_tes.ga4gh.tes.endpoints.get_service_info as get_service_info
 #import pro_tes.ga4gh.tes.endpoints.get_task as get_task
 #import pro_tes.ga4gh.tes.endpoints.list_tasks as list_tasks
 
@@ -35,27 +35,29 @@ def CancelTask(id, *args, **kwargs):
 # POST /runs
 def CreateTask(*args, **kwargs):
     """Creates task."""
-    response = create_task.create_task(
-        config=current_app.config,
-        body=request.body,
-        sender=request.environ['REMOTE_ADDR'],
-        *args,
-        **kwargs
-    )
-    log_request(request, response)
-    return response
+    pass
+    #response = create_task.create_task(
+    #    config=current_app.config,
+    #    body=request.body,
+    #    sender=request.environ['REMOTE_ADDR'],
+    #    *args,
+    #    **kwargs
+    #)
+    #log_request(request, response)
+    #return response
 
 
 # GET v1/tasks//service-info
 def GetServiceInfo(*args, **kwargs):
     """Returns service info."""
-    response = get_service_info.get_service_info(
-        config=current_app.config,
-        *args,
-        **kwargs
-    )
-    log_request(request, response)
-    return response
+    pass
+    #response = get_service_info.get_service_info(
+    #    config=current_app.config,
+    #    *args,
+    #    **kwargs
+    #)
+    #log_request(request, response)
+    #return response
 
 
 # GET /v1/tasks/{id}
