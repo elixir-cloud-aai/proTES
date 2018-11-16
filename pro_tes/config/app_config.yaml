@@ -1,7 +1,7 @@
 # General server/service settings
 server:
     host: '0.0.0.0'
-    port: 8989
+    port: 8081
     debug: True
     environment: development
     testing: False
@@ -35,7 +35,8 @@ database:
 
 # Celery task queue
 celery:
-    broker_url: 'pyamqp://localhost:5672//'
+    broker_host: 'localhost'
+    broker_port: 5672
     result_backend: 'rpc://'
     include:
         - pro_tes.tasks.tasks.poll_task_state
