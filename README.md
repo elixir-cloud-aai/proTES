@@ -57,13 +57,36 @@ Traverse to app directory
 cd app
 ```
 
-Optional: edit default and override app config
+##### Optional: edit default and override app config
+
+* Via configuration files:
 
 ```bash
-vi pro_tes/config/app_config.yaml
-vi pro_tes/config/override/app_config.dev.yaml  # for development service
-vi pro_tes/config/override/app_config.prod.yaml  # for production server
+vi wes_elixir/config/app_config.yaml
+vi wes_elixir/config/override/app_config.dev.yaml  # for development service
+vi wes_elixir/config/override/app_config.prod.yaml  # for production server
 ```
+
+* Via environment variables: 
+
+A few configuration settings can be overridden 
+by environment variables.
+
+```bash
+export <ENV_VAR_NAME>=<VALUE>
+```
+
+   * List of the available environment variables:
+
+| Variable       | Description             |
+|----------------|-------------------------|
+| MONGO_HOST     | MongoDB host endpoint   |
+| MONGO_PORT     | MongoDB service port    |
+| MONGO_DBNAME   | MongoDB database name   |
+| MONGO_USERNAME | MongoDB client username |
+| MONGO_PASSWORD | MongoDB client password |
+| RABBIT_HOST    | RabbitMQ host endpoint  |
+| RABBIT_PORT    | RabbitMQ service port   |
 
 Build container image
 
