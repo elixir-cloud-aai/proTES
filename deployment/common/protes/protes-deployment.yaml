@@ -1,0 +1,68 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: protes
+spec:
+  selector:
+    matchLabels:
+      app: protes
+  template:
+    metadata:
+      labels:
+        app: protes
+    spec:
+      containers:
+      - name: protes
+        image: weselixir/elixir-pro-tes:rc2
+        env:
+        - name: MONGO_HOST
+          value: mongodb
+        - name: MONGO_PORT
+          value: "27017"
+        - name: MONGO_USERNAME
+          valueFrom:
+            secretKeyRef:
+              key: database-user
+              name: mongodb
+        - name: MONGO_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: database-password
+              name: mongodb
+        - name: MONGO_DBNAME
+          value: wes-elixir-db
+        - name: RABBIT_HOST
+          value: rabbitmq-cluster
+        - name: RABBIT_PORT
+          value: "5672"
+        livenessProbe:
+          tcpSocket:
+            port: protes-port
+          initialDelaySeconds: 5
+          periodSeconds: 20
+        readinessProbe:
+          httpGet:
+            path: /v1/tasks/service-info
+            port: protes-port
+          initialDelaySeconds: 3
+          periodSeconds: 3
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "300m"
+          limits:
+            memory: "8Gi"
+            cpu: "2"
+        ports:
+        - containerPort: 8081
+          name: protes-port
+        volumeMounts:
+        - mountPath: /app/pro_tes/config/app_config.yaml
+          subPath: app_config.yaml
+          name: protes-config
+      volumes:
+      - name: protes-config
+        configMap:
+          defaultMode: 420
+          name: protes-config
