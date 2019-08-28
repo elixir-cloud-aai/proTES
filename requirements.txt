@@ -34,7 +34,7 @@ lockfile==0.12.2
 lxml==4.2.5
 MarkupSafe==1.0
 mccabe==0.6.1
-mistune==0.7.4
+mistune==0.8.1
 mypy-extensions==0.4.1
 networkx==2.2
 prov==1.5.1
