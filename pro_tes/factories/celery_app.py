@@ -18,8 +18,8 @@ logger = logging.getLogger(__name__)
 def create_celery_app(app: Flask) -> Celery:
     """Creates Celery application and configures it from Flask app."""
     broker = 'pyamqp://{host}:{port}//'.format(
-        host=get_conf(app.config, 'celery', 'broker_host'),
-        port=get_conf(app.config, 'celery', 'broker_port'),
+        host=os.environ.get('RABBIT_HOST', get_conf(app.config, 'celery', 'broker_host')),
+        port=os.environ.get('RABBIT_PORT', get_conf(app.config, 'celery', 'broker_port')),
     )
     backend = get_conf(app.config, 'celery', 'result_backend')
 # TODO: TES   include = get_conf_type(app.config, 'celery', 'include', types=(list))

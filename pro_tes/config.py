@@ -21,4 +21,11 @@ bind = '{address}:{port}'.format(
 # Source the environment variables for the Gunicorn workers
 raw_env = [
     "WES_CONFIG=%s" % os.environ.get('WES_CONFIG', ''),
+    "RABBIT_HOST=%s" % os.environ.get('RABBIT_HOST', get_conf(flask_config, 'celery', 'broker_host')),
+    "RABBIT_PORT=%s" % os.environ.get('RABBIT_PORT', get_conf(flask_config, 'celery', 'broker_port')),
+    "MONGO_HOST=%s" % os.environ.get('MONGO_HOST', get_conf(flask_config, 'database', 'host')),
+    "MONGO_PORT=%s" % os.environ.get('MONGO_PORT', get_conf(flask_config, 'database', 'port')),
+    "MONGO_DBNAME=%s" % os.environ.get('MONGO_DBNAME', get_conf(flask_config, 'database', 'name')),
+    "MONGO_USERNAME=%s" % os.environ.get('MONGO_USERNAME', ''),
+    "MONGO_PASSWORD=%s" % os.environ.get('MONGO_PASSWORD', '')
 ]
