@@ -1,0 +1,10 @@
+kind: Service
+apiVersion: v1
+metadata:
+  name: protes-service
+spec:
+  selector:
+    app: protes
+  ports:
+  - port: 8081
+    targetPort: protes-port

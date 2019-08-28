@@ -1,0 +1,12 @@
+---
+apiVersion: v1
+kind: Route
+metadata:
+  name: protes-route
+spec:
+  to:
+    kind: Service
+    name: protes-service
+  tls:
+    insecureEdgeTerminationPolicy: Redirect
+    termination: edge

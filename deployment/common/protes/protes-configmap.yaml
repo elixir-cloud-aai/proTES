@@ -1,0 +1,82 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: protes-config
+data:
+  app_config.yaml: |
+    # General server/service settings
+    server:
+      host: '0.0.0.0'
+      port: 8081
+      debug: False
+      environment: production
+      testing: False
+      use_reloader: False
+
+    # Security settings
+    security:
+      authorization_required: False
+      jwt:
+        name: "ELIXIR AAI"
+        algorithm: RS256
+        public_key: |-
+          -----BEGIN PUBLIC KEY-----
+          MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAyUt09EkKGW30jpggX1PY
+          qrxuUw4Fo7a/uMiNvmy8CwBLfo+BgaI35Qi+ke/Dz9784CmNXjlIzNPFq+DUi+8p
+          BDGAJ5hznfEoQI2TDzdiG7uIART4AEpLo9xCKrL1al37jrDmvgk98gbumnHsWKQb
+          7KFRKHpIBvNVQ6v+z3nOQZ+fl1552S750ZSIfTXWXqlZohLVE9K8JwsM9i9z7h5E
+          BU2cJkxPbFoZEs6zGMFEOohiAA99Nm7cW/3m3dCn+Nm5TJadEt/xR08b2GXhcg+t
+          AC7qoBthpDFnUOrLbwvNWQIyE+Mch+z4+5LVTfElOGRem2tZaqYcMG/mY6EBra8p
+          UwIDAQAB
+          -----END PUBLIC KEY-----
+        header_name: Authorization
+        token_prefix: Bearer
+        identity_claim: sub
+
+    # Database settings
+    database:
+      host: 'mongodb'
+      port: 27017
+      name: wes-elixir-db
+
+    # Celery task queue
+    celery:
+      broker_host: 'rabbitmq-cluster'
+      broker_port: 5672
+      result_backend: 'rpc://'
+      include:
+        - pro_tes.tasks.tasks.poll_task_state
+
+    # OpenAPI specs
+    api:
+      specs:
+        - path: '20181113.0ad42aa.task_execution_service.swagger.yaml'
+          type: 'yaml'
+          strict_validation: True
+          validate_responses: True
+          swagger_ui: True
+          swagger_json: True
+      endpoint_params:
+        token_endpoint: 'https://path/to/token/endpoint.html'
+        timeout_token_request: 2
+        tes_distribution_method: 'random_lb'
+        timeout_tes_submission: 5
+        interval_polling: 2
+        timeout_polling: 2
+        max_time_polling: Null
+        id_separator: '@'
+        id_encoding: 'utf-8'
+
+    # TES service info settings
+    service_info:
+      doc: Proxy TES for distributing tasks across a list of service TES instances
+      name: proTES
+      storage:
+        - file:///path/to/local/storage
+
+    # TES services
+    tes:
+      service_list:
+        - 'https://csc-tesk.c03.k8s-popup.csc.fi/'
+        - 'https://tes.tsi.ebi.ac.uk/'
+        - 'https://tes-dev.tsi.ebi.ac.uk/swagger-ui.html'
