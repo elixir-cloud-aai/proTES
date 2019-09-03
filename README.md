@@ -67,16 +67,15 @@ vi wes_elixir/config/override/app_config.dev.yaml  # for development service
 vi wes_elixir/config/override/app_config.prod.yaml  # for production server
 ```
 
-* Via environment variables: 
+* Via environment variables:
 
-A few configuration settings can be overridden 
-by environment variables.
+A few configuration settings can be overridden by environment variables.
 
 ```bash
 export <ENV_VAR_NAME>=<VALUE>
 ```
 
-   * List of the available environment variables:
+* List of the available environment variables:
 
 | Variable       | Description             |
 |----------------|-------------------------|
@@ -104,7 +103,7 @@ docker-compose -f docker-compose.yaml -f docker-compose.prod.yaml up -d  # for p
 Visit Swagger UI
 
 ```bash
-firefox http://localhost:7878/ui
+firefox http://localhost:7878/ga4gh/tes/v1/ui
 ```
 
 ### Non-dockerized
@@ -122,7 +121,7 @@ Ensure you have the following software installed:
 
 Note: These are the versions used for development/testing. Other versions may or may not work.
 
-#### Instructions (non-dockerized)
+#### Instructions (non-dockerized); may not be up-to-date
 
 Ensure RabbitMQ is running (actual command is [OS-dependent](https://www.digitalocean.com/community/tutorials/how-to-install-and-manage-rabbitmq))
 
@@ -201,7 +200,7 @@ celery worker -A celery_worker -E --loglevel=info
 Visit Swagger UI
 
 ```bash
-firefox http://localhost:8989/ui
+firefox http://localhost:8080/ga4gh/tes/v1/ui
 ```
 
 Note: If you have edited `TES_CONFIG`, ensure that host and port match the values specified in the config file.

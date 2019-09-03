@@ -9,7 +9,7 @@ services:
     restart: unless-stopped
     links:
       - rabbit-protes
-    command: bash -c "cd /app/wes_elixir; celery worker -A celery_worker -E --loglevel=info"
+    command: bash -c "cd /app/pro_tes; celery worker -A celery_worker -E --loglevel=info"
     volumes:
       - ../data:/data
 
@@ -21,7 +21,7 @@ services:
     restart: unless-stopped
     links:
       - mongo-protes
-    command: bash -c "cd /app/wes_elixir; gunicorn -c config.py wsgi:app"
+    command: bash -c "cd /app/pro_tes; gunicorn -c config.py wsgi:app"
     volumes:
       - ../data:/data
 
