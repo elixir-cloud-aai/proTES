@@ -8,8 +8,8 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     links:
-      - rabbit
-    command: bash -c "cd /app/wes_elixir; celery worker -A celery_worker -E --loglevel=info"
+      - rabbit-protes
+    command: bash -c "cd /app/pro_tes; celery worker -A celery_worker -E --loglevel=info"
     volumes:
       - ../data:/data
 
@@ -20,8 +20,8 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     links:
-      - mongo
-    command: bash -c "cd /app/wes_elixir; gunicorn -c config.py wsgi:app"
+      - mongo-protes
+    command: bash -c "cd /app/pro_tes; gunicorn -c config.py wsgi:app"
     volumes:
       - ../data:/data
 
@@ -29,7 +29,7 @@ services:
     image: "rabbitmq:3-management"
     hostname: "rabbit"
     links:
-      - mongo
+      - mongo-protes
 
   mongo-protes:
     image: mongo:3.2

@@ -16,6 +16,7 @@ paths:
         List tasks.
         TaskView is requested as such: "v1/tasks?view=BASIC"
       operationId: ListTasks
+      x-swagger-router-controller: ga4gh.tes.server
       responses:
         '200':
           description: ''
@@ -72,6 +73,7 @@ paths:
     post:
       summary: Create a new task.
       operationId: CreateTask
+      x-swagger-router-controller: ga4gh.tes.server
       responses:
         '200':
           description: ''
@@ -92,6 +94,7 @@ paths:
         such as storage details, resource availability, and 
         other documentation.
       operationId: GetServiceInfo
+      x-swagger-router-controller: ga4gh.tes.server
       responses:
         '200':
           description: ''
@@ -105,6 +108,7 @@ paths:
         Get a task.
         TaskView is requested as such: "v1/tasks/{id}?view=FULL"
       operationId: GetTask
+      x-swagger-router-controller: ga4gh.tes.server
       responses:
         '200':
           description: ''
@@ -143,6 +147,7 @@ paths:
     post:
       summary: Cancel a task.
       operationId: CancelTask
+      x-swagger-router-controller: ga4gh.tes.server
       responses:
         '200':
           description: ''
