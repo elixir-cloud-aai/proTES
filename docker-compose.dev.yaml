@@ -1,0 +1,20 @@
+version: '3.6'
+services:
+
+  celery-worker-protes:
+    environment:
+      - TES_CONFIG=/app/pro_tes/config/override/app_config.dev.yaml
+
+  protes:
+    environment:
+      - TES_CONFIG=/app/pro_tes/config/override/app_config.dev.yaml
+    ports:
+      - "7878:8080"
+
+  rabbit-protes:
+    ports:
+      - "5672:5672"
+
+  mongo-protes:
+    ports:
+      - "27017:27017"
