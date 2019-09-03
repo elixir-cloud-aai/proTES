@@ -26,7 +26,7 @@ def register_error_handlers(app: App) -> App:
     app.add_error_handler(Forbidden, __handle_forbidden)
     app.add_error_handler(InternalServerError, __handle_internal_server_error)
     app.add_error_handler(Unauthorized, __handle_unauthorized)
-    app.add_error_handler(WorkflowNotFound, __handle_workflow_not_found)
+    app.add_error_handler(TaskNotFound, __handle_task_not_found)
     logger.info('Registered custom error handlers with Connexion app.')
 
     # Return Connexion app instance
@@ -34,11 +34,11 @@ def register_error_handlers(app: App) -> App:
 
 
 # CUSTOM ERRORS
-class WorkflowNotFound(ProblemException, NotFound):
-    """WorkflowNotFound(404) error compatible with Connexion."""
+class TaskNotFound(ProblemException, NotFound):
+    """TaskNotFound(404) error compatible with Connexion."""
 
     def __init__(self, title=None, **kwargs):
-        super(WorkflowNotFound, self).__init__(title=title, **kwargs)
+        super(TaskNotFound, self).__init__(title=title, **kwargs)
 
 
 # CUSTOM ERROR HANDLERS
@@ -75,10 +75,10 @@ def __handle_forbidden(exception: Exception) -> Response:
     )
 
 
-def __handle_workflow_not_found(exception: Exception) -> Response:
+def __handle_task_not_found(exception: Exception) -> Response:
     return Response(
         response=dumps({
-            'msg': 'The requested workflow run wasn\'t found.',
+            'msg': 'The requested task was not found.',
             'status_code': '404'
             }),
         status=404,

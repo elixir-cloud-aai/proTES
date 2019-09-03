@@ -9,7 +9,7 @@ from flask import current_app
 #import pro_tes.ga4gh.tes.endpoints.cancel_task as cancel_task
 import pro_tes.ga4gh.tes.endpoints.create_task as create_task
 import pro_tes.ga4gh.tes.endpoints.get_service_info as get_service_info
-#import pro_tes.ga4gh.tes.endpoints.get_task as get_task
+import pro_tes.ga4gh.tes.endpoints.get_task as get_task
 import pro_tes.ga4gh.tes.endpoints.list_tasks as list_tasks
 from pro_tes.security.decorators import auth_token_optional
 
@@ -65,15 +65,14 @@ def GetServiceInfo(*args, **kwargs):
 @auth_token_optional
 def GetTask(id, *args, **kwargs):
     """Returns info for individual task."""
-    pass
-    #response = get_task.get_task(
-    #    config=current_app.config,
-    #    id=id,
-    #    *args,
-    #    **kwargs
-    #)
-    #log_request(request, response)
-    #return response
+    response = get_task.get_task(
+        config=current_app.config,
+        id=id,
+        *args,
+        **kwargs
+    )
+    log_request(request, response)
+    return response
 
 
 # GET /tasks
