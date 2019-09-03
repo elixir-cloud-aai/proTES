@@ -8,7 +8,7 @@ from flask import current_app
 
 #import pro_tes.ga4gh.tes.endpoints.cancel_task as cancel_task
 #import pro_tes.ga4gh.tes.endpoints.create_task as create_task
-#import pro_tes.ga4gh.tes.endpoints.get_service_info as get_service_info
+import pro_tes.ga4gh.tes.endpoints.get_service_info as get_service_info
 #import pro_tes.ga4gh.tes.endpoints.get_task as get_task
 #import pro_tes.ga4gh.tes.endpoints.list_tasks as list_tasks
 
@@ -17,7 +17,7 @@ from flask import current_app
 logger = logging.getLogger(__name__)
 
 
-# POST /runs/<run_id>/cancel
+# POST /tasks/{id}:cancel
 def CancelTask(id, *args, **kwargs):
     """Cancels unfinished task."""
     pass
@@ -32,7 +32,7 @@ def CancelTask(id, *args, **kwargs):
     #return response
 
 
-# POST /runs
+# POST /tasks
 def CreateTask(*args, **kwargs):
     """Creates task."""
     pass
@@ -47,20 +47,20 @@ def CreateTask(*args, **kwargs):
     #return response
 
 
-# GET v1/tasks//service-info
+# GET /tasks/service-info
 def GetServiceInfo(*args, **kwargs):
     """Returns service info."""
     pass
-    #response = get_service_info.get_service_info(
-    #    config=current_app.config,
-    #    *args,
-    #    **kwargs
-    #)
-    #log_request(request, response)
-    #return response
+    response = get_service_info.get_service_info(
+        config=current_app.config,
+        *args,
+        **kwargs
+    )
+    log_request(request, response)
+    return response
 
 
-# GET /v1/tasks/{id}
+# GET /tasks/{id}
 def GetTask(id, *args, **kwargs):
     """Returns info for individual task."""
     pass
@@ -74,7 +74,7 @@ def GetTask(id, *args, **kwargs):
     #return response
 
 
-# GET /v1/tasks
+# GET /tasks
 def ListTasks(*args, **kwargs):
     """Returns IDs and other info for all available tasks."""
     pass

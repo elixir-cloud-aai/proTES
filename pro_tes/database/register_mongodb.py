@@ -30,18 +30,25 @@ def register_mongodb(app: Flask) -> Flask:
     db = mongo.db[os.environ.get('MONGO_DBNAME', get_conf(config, 'database', 'name'))]
 
     # Add database collection for '/service-info'
-    collection_service_info = mongo.db['service-info-proxy-tes']
+    collection_service_info = mongo.db['service-info']
     logger.debug("Added database collection 'service_info'.")
 
     # Add database collection for '/runs'
-    collection_runs = mongo.db['runs']
-    logger.debug("Added database collection 'runs'.")
+    collection_runs = mongo.db['tasks']
+    collection_runs.create_index([
+            ('task_id', ASCENDING),
+            ('celery_id', ASCENDING),
+        ],
+        unique=True,
+        sparse=True
+    )
+    logger.debug("Added database collection 'tasks'.")
 
     # Add database and collections to app config
     config['database']['database'] = db
     config['database']['collections'] = dict()
-    config['database']['collections']['runs'] = collection_runs
-    config['database']['collections']['service_info_proxy_tes'] = collection_service_info
+    config['database']['collections']['tasks'] = collection_runs
+    config['database']['collections']['service_info'] = collection_service_info
     app.config = config
 
     # Initialize service info
@@ -70,7 +77,8 @@ def create_mongo_client(
         dbname=os.environ.get('MONGO_DBNAME', get_conf(config, 'database', 'name')),
         auth=auth
     )
-    """Instantiate MongoDB client."""
+
+    # Instantiate MongoDB client
     mongo = PyMongo(app)
     logger.info(
         (
