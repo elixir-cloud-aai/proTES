@@ -1,0 +1,20 @@
+version: '3.6'
+services:
+
+  celery-worker:
+    environment:
+      - TES_CONFIG=/app/pro_tes/config/override/app_config.prod.yaml
+
+  wes-elixir:
+    environment:
+      - TES_CONFIG=/app/pro_tes/config/override/app_config.prod.yaml
+    ports:
+      - "80:8080"
+
+  rabbit:
+    ports:
+      - "5672:5672"
+
+  mongo:
+    ports:
+      - "27017:27017"
