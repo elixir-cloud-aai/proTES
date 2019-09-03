@@ -1,7 +1,7 @@
 # General server/service settings
 server:
     host: '0.0.0.0'
-    port: 8081
+    port: 8080
     debug: False
     environment: production
     testing: False
@@ -31,7 +31,7 @@ security:
 database:
     host: 'localhost'
     port: 27017
-    name: wes-elixir-db
+    name: protes-db
 
 # Celery task queue
 celery:
@@ -44,7 +44,7 @@ celery:
 # OpenAPI specs
 api:
     specs:
-        - path: '20190903.d55bf88.task_execution_service.swagger.yaml'
+        - path: '20190903.d55bf88.task_execution_service.modified.swagger.yaml'
           type: 'yaml'
           strict_validation: True
           validate_responses: True
