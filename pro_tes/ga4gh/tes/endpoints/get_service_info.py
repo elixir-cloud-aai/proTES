@@ -11,6 +11,7 @@ import pro_tes.database.db_utils as db_utils
 logger = logging.getLogger(__name__)
 
 
+# Helper function GET /service-info
 def get_service_info(
     config: Mapping,
     silent: bool = False,
@@ -19,7 +20,7 @@ def get_service_info(
 ):
     """Returns readily formatted service info or `None` (in silent mode);
     creates service info database document if it does not exist."""
-    collection_service_info = config['database']['collections']['service_info_proxy_tes']
+    collection_service_info = config['database']['collections']['service_info']
     service_info = deepcopy(config['service_info'])
 
     # Write current service info to database if absent or different from latest
@@ -31,6 +32,7 @@ def get_service_info(
     else:
         logger.debug('No change in service info. Not updated.')
 
+    # Return None when called in silent mode:
     if silent:
         return None
 
