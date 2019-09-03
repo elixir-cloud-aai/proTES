@@ -10,7 +10,7 @@ from flask import current_app
 #import pro_tes.ga4gh.tes.endpoints.create_task as create_task
 import pro_tes.ga4gh.tes.endpoints.get_service_info as get_service_info
 #import pro_tes.ga4gh.tes.endpoints.get_task as get_task
-#import pro_tes.ga4gh.tes.endpoints.list_tasks as list_tasks
+import pro_tes.ga4gh.tes.endpoints.list_tasks as list_tasks
 
 
 # Get logger instance
@@ -78,13 +78,13 @@ def GetTask(id, *args, **kwargs):
 def ListTasks(*args, **kwargs):
     """Returns IDs and other info for all available tasks."""
     pass
-    #response = list_tasks.list_tasks(
-    #    config=current_app.config,
-    #    *args,
-    #    **kwargs
-    #)
-    #log_request(request, response)
-    #return response
+    response = list_tasks.list_tasks(
+        config=current_app.config,
+        *args,
+        **kwargs
+    )
+    log_request(request, response)
+    return response
 
 
 def log_request(request, response):
