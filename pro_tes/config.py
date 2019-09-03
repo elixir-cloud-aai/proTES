@@ -4,7 +4,7 @@ from pro_tes.config.config_parser import get_conf
 from pro_tes.config.app_config import parse_app_config
 
 # Source the WES config for defaults
-flask_config = parse_app_config(config_var='WES_CONFIG')
+flask_config = parse_app_config(config_var='TES_CONFIG')
 
 # Gunicorn number of workers and threads
 workers = int(os.environ.get('GUNICORN_PROCESSES', '3'))
@@ -20,7 +20,7 @@ bind = '{address}:{port}'.format(
 
 # Source the environment variables for the Gunicorn workers
 raw_env = [
-    "WES_CONFIG=%s" % os.environ.get('WES_CONFIG', ''),
+    "TES_CONFIG=%s" % os.environ.get('TES_CONFIG', ''),
     "RABBIT_HOST=%s" % os.environ.get('RABBIT_HOST', get_conf(flask_config, 'celery', 'broker_host')),
     "RABBIT_PORT=%s" % os.environ.get('RABBIT_PORT', get_conf(flask_config, 'celery', 'broker_port')),
     "MONGO_HOST=%s" % os.environ.get('MONGO_HOST', get_conf(flask_config, 'database', 'host')),
