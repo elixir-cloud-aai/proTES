@@ -32,6 +32,9 @@ database:
     host: 'localhost'
     port: 27017
     name: protes-db
+    task_id:
+        length: 6
+        charset: string.ascii_uppercase + string.digits
 
 # Celery task queue
 celery:
