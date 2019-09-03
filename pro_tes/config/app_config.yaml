@@ -44,7 +44,7 @@ celery:
 # OpenAPI specs
 api:
     specs:
-        - path: '20181113.0ad42aa.task_execution_service.swagger.yaml'
+        - path: '20190903.d55bf88.task_execution_service.swagger.yaml'
           type: 'yaml'
           strict_validation: True
           validate_responses: True
