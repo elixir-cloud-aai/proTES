@@ -19,6 +19,7 @@ def list_tasks(
     **kwargs,
 ) -> Dict:
     """Lists IDs and status for all workflow runs."""
+    # Get collection
     collection_tasks = get_conf(config, 'database', 'collections', 'tasks')
 
     # TODO: stable ordering (newest last?)
@@ -35,6 +36,12 @@ def list_tasks(
     #         ['endpoint_params']
     #         ['default_page_size']
     # )
+
+    # Set filters
+    if 'user_id' in kwargs:
+        filter_dict = {'user_id': kwargs['user_id']}
+    else:
+        filter_dict = {}
 
     # Set projections
     projection_MINIMAL = {
@@ -69,12 +76,6 @@ def list_tasks(
     else:
         raise BadRequest 
     
-    # Query database for workflow runs
-    if 'user_id' in kwargs:
-        filter_dict = {'user_id': kwargs['user_id']}
-    else:
-        filter_dict = {}
-
     # Get tasks    
     cursor = collection_tasks.find(
         filter=filter_dict,
