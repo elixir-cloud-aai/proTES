@@ -39,42 +39,20 @@ def list_tasks(
     # Set projections
     projection_MINIMAL = {
         '_id': False,
-        'id': True,
-        'state': True,
+        'task.id': True,
+        'task.state': True,
     }
+    
     projection_BASIC = {
         '_id': False,
-#        'id': True,
-#        'state': True,
-#        'name': True,
-#        'description': True,
-#        'inputs': True,
-#        'outputs': True,
-#        'resources': True,
-#        'executors': True,
-#        'volumes': True,
-#        'tags': True,
-#        'logs': True,
-#        'creation_time': True,
-        'inputs.content': False,
-        'logs.system_logs': False,
-        'logs.logs.stdout': False,
-        'logs.logs.stderr': False,
+        'task.inputs.content': False,
+        'task.logs.system_logs': False,
+        'task.logs.logs.stdout': False,
+        'task.logs.logs.stderr': False,
     }
     projection_FULL = {
         '_id': False,
-#        'id': True,
-#        'state': True,
-#        'name': True,
-#        'description': True,
-#        'inputs': True,
-#        'outputs': True,
-#        'resources': True,
-#        'executors': True,
-#        'volumes': True,
-#        'tags': True,
-#        'logs': True,
-#        'creation_time': True,
+        'task': True,
     }
 
     # Check view mode
@@ -104,7 +82,7 @@ def list_tasks(
     )
     tasks_list = list()
     for record in cursor:
-        tasks_list.append(record)
+        tasks_list.append(record['task'])
 
     # Return response
     return {
