@@ -1,0 +1,38 @@
+version: '3.6'
+services:
+
+  celery-worker-protes:
+    image: protes:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    links:
+      - rabbit
+    command: bash -c "cd /app/wes_elixir; celery worker -A celery_worker -E --loglevel=info"
+    volumes:
+      - ../data:/data
+
+  protes:
+    image: protes:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    links:
+      - mongo
+    command: bash -c "cd /app/wes_elixir; gunicorn -c config.py wsgi:app"
+    volumes:
+      - ../data:/data
+
+  rabbit-protes:
+    image: "rabbitmq:3-management"
+    hostname: "rabbit"
+    links:
+      - mongo
+
+  mongo-protes:
+    image: mongo:3.2
+    restart: unless-stopped
+    volumes:
+      - ../data/db:/data/db
