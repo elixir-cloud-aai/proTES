@@ -19,6 +19,7 @@ def list_tasks(
     **kwargs,
 ) -> Dict:
     """Lists IDs and status for all workflow runs."""
+    # Get collection
     collection_tasks = get_conf(config, 'database', 'collections', 'tasks')
 
     # TODO: stable ordering (newest last?)
@@ -36,45 +37,29 @@ def list_tasks(
     #         ['default_page_size']
     # )
 
+    # Set filters
+    if 'user_id' in kwargs:
+        filter_dict = {'user_id': kwargs['user_id']}
+    else:
+        filter_dict = {}
+
     # Set projections
     projection_MINIMAL = {
         '_id': False,
-        'id': True,
-        'state': True,
+        'task.id': True,
+        'task.state': True,
     }
+    
     projection_BASIC = {
         '_id': False,
-#        'id': True,
-#        'state': True,
-#        'name': True,
-#        'description': True,
-#        'inputs': True,
-#        'outputs': True,
-#        'resources': True,
-#        'executors': True,
-#        'volumes': True,
-#        'tags': True,
-#        'logs': True,
-#        'creation_time': True,
-        'inputs.content': False,
-        'logs.system_logs': False,
-        'logs.logs.stdout': False,
-        'logs.logs.stderr': False,
+        'task.inputs.content': False,
+        'task.logs.system_logs': False,
+        'task.logs.logs.stdout': False,
+        'task.logs.logs.stderr': False,
     }
     projection_FULL = {
         '_id': False,
-#        'id': True,
-#        'state': True,
-#        'name': True,
-#        'description': True,
-#        'inputs': True,
-#        'outputs': True,
-#        'resources': True,
-#        'executors': True,
-#        'volumes': True,
-#        'tags': True,
-#        'logs': True,
-#        'creation_time': True,
+        'task': True,
     }
 
     # Check view mode
@@ -91,12 +76,6 @@ def list_tasks(
     else:
         raise BadRequest 
     
-    # Query database for workflow runs
-    if 'user_id' in kwargs:
-        filter_dict = {'user_id': kwargs['user_id']}
-    else:
-        filter_dict = {}
-
     # Get tasks    
     cursor = collection_tasks.find(
         filter=filter_dict,
@@ -104,7 +83,7 @@ def list_tasks(
     )
     tasks_list = list()
     for record in cursor:
-        tasks_list.append(record)
+        tasks_list.append(record['task'])
 
     # Return response
     return {

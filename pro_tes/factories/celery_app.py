@@ -22,14 +22,14 @@ def create_celery_app(app: Flask) -> Celery:
         port=os.environ.get('RABBIT_PORT', get_conf(app.config, 'celery', 'broker_port')),
     )
     backend = get_conf(app.config, 'celery', 'result_backend')
-# TODO: TES   include = get_conf_type(app.config, 'celery', 'include', types=(list))
+    include = get_conf_type(app.config, 'celery', 'include', types=(list))
 
     # Instantiate Celery app
     celery = Celery(
         app=__name__,
         broker=broker,
         backend=backend,
-# TODO: TES        include=include,
+        include=include,
     )
     logger.info("Celery app created from '{calling_module}'.".format(
         calling_module=':'.join([stack()[1].filename, stack()[1].function])

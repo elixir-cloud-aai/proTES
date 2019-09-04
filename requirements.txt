@@ -40,7 +40,7 @@ mypy-extensions==0.4.1
 networkx==2.2
 prov==1.5.1
 psutil==5.4.7
--e git+https://github.com/ohsu-comp-bio/py-tes.git@199604418f06d72fd5fd200ed67f3cc223d4544a#egg=py-tes
+py-tes==0.3.0
 pycparser==2.19
 PyJWT==1.6.4
 pylint==2.1.1
@@ -59,7 +59,7 @@ shellescape==3.4.1
 six==1.11.0
 subprocess32==3.5.2
 swagger-spec-validator==2.3.1
--e git+https://github.com/elixir-europe/TEStribute.git#egg=testribute
+#-e git+https://github.com/elixir-europe/TEStribute.git#egg=testribute
 typed-ast==1.1.0
 typing==3.6.6
 typing-extensions==3.6.5

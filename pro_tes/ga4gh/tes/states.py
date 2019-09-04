@@ -11,9 +11,7 @@ class States():
         'RUNNING',
     ]
 
-    UNFINISHED = CANCELABLE + [
-        'CANCELING',
-    ]
+    UNFINISHED = CANCELABLE
 
     FINISHED = [
         'COMPLETE',
