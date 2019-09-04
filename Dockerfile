@@ -33,10 +33,8 @@ COPY ./requirements.txt /app/requirements.txt
 ## Install Python dependencies
 RUN cd /app \
   && pip install -r requirements.txt \
-  && cd /app/src/py-tes \
-  && python setup.py develop \
-  && cd /app/src/testribute \
-  && python setup.py develop \
+#  && cd /app/src/testribute \
+#  && python setup.py develop \
   && cd /
 
 ## Copy remaining app files
