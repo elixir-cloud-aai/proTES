@@ -42,7 +42,7 @@ celery:
     broker_port: 5672
     result_backend: 'rpc://'
     include:
-        - pro_tes.tasks.tasks.poll_task_state
+        - pro_tes.tasks.tasks.submit_task
 
 # OpenAPI specs
 api:
@@ -54,15 +54,10 @@ api:
           swagger_ui: True
           swagger_json: True
     endpoint_params:
-        token_endpoint: 'https://path/to/token/endpoint.html'
-        timeout_token_request: 2
-        tes_distribution_method: 'random_lb'
-        timeout_tes_submission: 5
+        timeout_service_calls: 3 
+        timeout_task_execution: Null  # minimum: 5
         interval_polling: 2
-        timeout_polling: 2
-        max_time_polling: Null
-        id_separator: '@'
-        id_encoding: 'utf-8'
+        max_missed_heartbeats: 100
 
 # TES service info settings
 service_info:
