@@ -12,39 +12,38 @@ import pro_tes.database.db_utils as db_utils
 logger = logging.getLogger(__name__)
 
 
-def set_run_state(
+def set_task_state(
     collection: Collection,
-    run_id: str,
-    task_id: Optional[str] = None,
+    task_id: str,
+    worker_id: Optional[str] = None,
     state: str = 'UNKNOWN',
 ):
-    """Set/update state of run associated with Celery task."""
-    if not task_id:
+    """Set/update state of task associated with worker task."""
+    if not worker_id:
         document = collection.find_one(
-            filter={'run_id': run_id},
+            filter={'run_id': task_id},
             projection={
-                'task_id': True,
+                'worker_id': True,
                 '_id': False,
             }
         )
-        _task_id = document['task_id']
-    else:
-        _task_id = task_id
+        worker_id = document['worker_id']
     try:
-        document = db_utils.update_run_state(
+        document = db_utils.update_task_state(
             collection=collection,
-            task_id=_task_id,
+            worker_id=worker_id,
             state=state,
         )
     except Exception as e:
-        logger.exception(
+        document = False
+        logger.error(
             (
-                "Database error. Could not update state of run '{run_id}' "
-                "(task id: '{task_id}') to state '{state}'. Original error "
+                "Database error. Could not update state of task '{task_id}' "
+                "(worker id: '{worker_id}') to state '{state}'. Original error "
                 "message: {type}: {msg}"
             ).format(
-                run_id=run_id,
-                task_id=_task_id,
+                task_id=task_id,
+                worker_id=worker_id,
                 state=state,
                 type=type(e).__name__,
                 msg=e,
@@ -54,11 +53,12 @@ def set_run_state(
         if document:
             logger.info(
                 (
-                    "State of run '{run_id}' (task id: '{task_id}') "
+                    "State of task '{task_id}' (worker id: '{worker_id}') "
                     "changed to '{state}'."
                 ).format(
-                    run_id=run_id,
-                    task_id=_task_id,
+                    task_id=task_id,
+                    worker_id=worker_id,
                     state=state,
                 )
             )
+
