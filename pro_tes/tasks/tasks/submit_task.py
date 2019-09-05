@@ -3,7 +3,6 @@
 from datetime import datetime
 from dateutil.parser import parse as parse_time
 import logging
-import tes
 from time import sleep
 from typing import (Dict, List, Tuple)
 
@@ -12,6 +11,7 @@ from flask import current_app
 from flask import Flask
 from flask_pymongo import PyMongo
 from pymongo import collection as Collection
+import tes
 from werkzeug.exceptions import (BadRequest, InternalServerError)
 
 from pro_tes.celery_worker import celery
