@@ -10,7 +10,7 @@ services:
     links:
       - mongo-protes
       - rabbit-protes
-    command: bash -c "cd /app/pro_tes; celery worker -A celery_worker -E --loglevel=info"
+    command: bash -c "cd /app/pro_tes; celery worker -A celery_worker -E --loglevel=info --statedb=/data/celery/worker.state"
     volumes:
       - ../data:/data
 
