@@ -1,7 +1,7 @@
 # General server/service settings
 server:
     host: '0.0.0.0'
-    port: 8080
+    port: 8090
     debug: False
     environment: production
     testing: False
@@ -30,7 +30,7 @@ security:
 # Database settings
 database:
     host: 'localhost'
-    port: 27017
+    port: 27027
     name: protes-db
     task_id:
         length: 6
@@ -39,7 +39,7 @@ database:
 # Celery task queue
 celery:
     broker_host: 'localhost'
-    broker_port: 5672
+    broker_port: 5682
     result_backend: 'rpc://'
     include:
         - pro_tes.tasks.tasks.submit_task
