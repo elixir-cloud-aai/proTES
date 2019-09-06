@@ -6,7 +6,7 @@ from celery import current_app as celery_app
 from connexion import request
 from flask import current_app
 
-#import pro_tes.ga4gh.tes.endpoints.cancel_task as cancel_task
+import pro_tes.ga4gh.tes.endpoints.cancel_task as cancel_task
 import pro_tes.ga4gh.tes.endpoints.create_task as create_task
 import pro_tes.ga4gh.tes.endpoints.get_service_info as get_service_info
 import pro_tes.ga4gh.tes.endpoints.get_task as get_task
@@ -22,16 +22,14 @@ logger = logging.getLogger(__name__)
 @auth_token_optional
 def CancelTask(id, *args, **kwargs):
     """Cancels unfinished task."""
-    pass
-    #response = cancel_task.cancel_task(
-    #    config=current_app.config,
-    #    celery_app=celery_app,
-    #    id=id,
-    #    *args,
-    #    **kwargs
-    #)
-    #log_request(request, response)
-    #return response
+    response = cancel_task.cancel_task(
+        config=current_app.config,
+        id=id,
+        *args,
+        **kwargs
+    )
+    log_request(request, response)
+    return response
 
 
 # POST /tasks
