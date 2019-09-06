@@ -29,6 +29,7 @@ services:
   rabbit-protes:
     image: "rabbitmq:3-management"
     hostname: "rabbit"
+    restart: unless-stopped
     links:
       - mongo-protes
 
