@@ -13,8 +13,8 @@ services:
 
   rabbit-protes:
     ports:
-      - "5672:5672"
+      - "5682:5682"
 
   mongo-protes:
     ports:
-      - "27017:27017"
+      - "27027:27027"

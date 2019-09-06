@@ -1,6 +1,6 @@
 # General server/service settings
 server:
-    port: 8080
+    port: 8090
 
 # Security settings
 security:
@@ -9,6 +9,7 @@ security:
 # Database settings
 database:
     host: 'mongo-protes'
+    port: 27027
     name: pro-tes-db-dev
 
 # Storage
@@ -19,7 +20,7 @@ storage:
 # Celery task queue
 celery:
     broker_host: 'rabbit-protes'
-    broker_port: 5672
+    broker_port: 5682
 
 # OpenAPI specs
 

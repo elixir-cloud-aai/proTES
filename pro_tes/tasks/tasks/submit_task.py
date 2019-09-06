@@ -68,10 +68,10 @@ def task__submit_task(
         #   - token
         #   - run_id
         #   - run_id_secondary (worker ID on WES)
-        user_id = 'some_user'
-        token = 'ey234235flkajfaksd23ff'
-        run_id = 'RUN123'
-        run_id_secondary = '7b45241a-1685-42bc-97lf-9b3bfr4ed606'
+        user_id = None
+        token = "ey23f423n4fln2flk3nf23lfn"
+        run_id = "RUN123"
+        run_id_secondary = "1234-23141-12341-12341"
 
         # Update database document
         upsert_fields_in_root_object(
@@ -126,7 +126,7 @@ def task__submit_task(
                 ).format(
                     task_id=task_id,
                     type=type(e).__name__,
-                    msg=e,
+                    msg='.'.join(e.args),
                 )
             )
         
@@ -138,7 +138,6 @@ def task__submit_task(
             task_id_tes=task_id_tes,
             tes_uri=tes_uri,
         )
-        logger.info(document)
 
         # TODO: Initiate polling
         interval = get_conf(
@@ -232,10 +231,9 @@ def _send_task(
 
     # Create Task object
     try:
-        logger.info("Task object: {}".format(request))
         task = tes.Task(**request)
     except Exception as e:
-        logger.exception(
+        logger.error(
             (
                 "Task object could not be created. Original error message: "
                 "{type}: {msg}"
