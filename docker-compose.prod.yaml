@@ -5,7 +5,7 @@ services:
     environment:
       - TES_CONFIG=/app/pro_tes/config/override/app_config.prod.yaml
 
-  wes-elixir:
+  pro-tes:
     environment:
       - TES_CONFIG=/app/pro_tes/config/override/app_config.prod.yaml
     ports:
