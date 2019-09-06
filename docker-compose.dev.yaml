@@ -9,12 +9,12 @@ services:
     environment:
       - TES_CONFIG=/app/pro_tes/config/override/app_config.dev.yaml
     ports:
-      - "7878:8090"
+      - "7878:8080"
 
   rabbit-protes:
     ports:
-      - "5682:5682"
+      - "5682:5672"
 
   mongo-protes:
     ports:
-      - "27027:27027"
+      - "27027:27017"
