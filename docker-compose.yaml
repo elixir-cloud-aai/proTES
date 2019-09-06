@@ -10,9 +10,9 @@ services:
     links:
       - mongo-protes
       - rabbit-protes
-    command: bash -c "cd /app/pro_tes; celery worker -A celery_worker -E --loglevel=info" #--statedb=/data/celery/worker.state"
+    command: bash -c "cd /app/pro_tes; celery worker -A celery_worker -E --loglevel=info"
     volumes:
-      - ../data:/data
+      - ../data/pro_tes:/data
 
   protes:
     image: protes:latest
@@ -24,7 +24,7 @@ services:
       - mongo-protes
     command: bash -c "cd /app/pro_tes; gunicorn -c config.py wsgi:app"
     volumes:
-      - ../data:/data
+      - ../data/pro_tes:/data
 
   rabbit-protes:
     image: "rabbitmq:3-management"
@@ -36,4 +36,4 @@ services:
     image: mongo:3.2
     restart: unless-stopped
     volumes:
-      - ../data/db:/data/db
+      - ../data/pro_tes/db:/data/db

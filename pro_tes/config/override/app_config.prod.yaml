@@ -1,8 +1,8 @@
 # General server/service settings
 server:
-    port: 80
     debug: False
     environment: production
+    testing: False
     use_reloader: False
 
 # Security settings
@@ -11,17 +11,11 @@ security:
 
 # Database settings
 database:
-    host: 'mongo'
-
-# Storage
-storage:
-    permanent_dir: '/data/output'
-    tmp_dir: '/data/tmp'
+    host: 'mongo-protes'
 
 # Celery task queue
 celery:
-    broker_host: 'localhost'
-    broker_port: 5672
+    broker_host: 'rabbit-protes'
 
 # OpenAPI specs
 

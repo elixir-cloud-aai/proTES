@@ -1,7 +1,7 @@
 # General server/service settings
 server:
     host: '0.0.0.0'
-    port: 8090
+    port: 8080
     debug: False
     environment: production
     testing: False
@@ -26,7 +26,7 @@ security:
 # Database settings
 database:
     host: 'localhost'
-    port: 27027
+    port: 27017
     name: protes-db
     task_id:
         length: 6
@@ -35,7 +35,7 @@ database:
 # Celery task queue
 celery:
     broker_host: 'localhost'
-    broker_port: 5682
+    broker_port: 5672
     result_backend: 'rpc://'
     include:
         - pro_tes.tasks.tasks.submit_task
@@ -50,7 +50,7 @@ api:
           swagger_ui: True
           swagger_json: True
     endpoint_params:
-        timeout_service_calls: 3 
+        timeout_service_calls: 3
         timeout_task_execution: Null  # minimum: 5
         interval_polling: 2
         max_missed_heartbeats: 100
