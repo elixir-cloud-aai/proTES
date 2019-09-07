@@ -38,3 +38,10 @@ services:
     restart: unless-stopped
     volumes:
       - ../data/pro_tes/db:/data/db
+
+  flower-protes:
+    image: mher/flower:0.9
+    restart: unless-stopped
+    links:
+      - celery-worker-protes
+    command: flower --broker=amqp://guest:guest@rabbit-protes:5672// --port=5555
