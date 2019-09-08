@@ -12,6 +12,8 @@ import requests
 import json
 
 from pro_tes.config.config_parser import get_conf, get_conf_type
+from pro_tes.security.utils import parse_jwt_from_request
+from pro_tes.utils.utils import missing_from_dict
 
 
 # Get logger instance
@@ -106,9 +108,10 @@ def auth_token_optional(fn: Callable) -> Callable:
                 raise Unauthorized
 
             # Parse JWT token from HTTP header
-            jwt = parse_jwt_from_header(
+            jwt = parse_jwt_from_request(
+                request=request,
                 header_name=header_name,
-                expected_prefix=expected_prefix,
+                prefix=expected_prefix,
             )
 
             # Initialize validation counter
@@ -158,11 +161,18 @@ def auth_token_optional(fn: Callable) -> Callable:
                 raise Unauthorized
 
             # Ensure that specified identity claim is available
-            if not validate_jwt_claims(
+            if missing_from_dict(
                 claim_identity,
-                claims=claims,
+                dictionary=claims,
             ):
-                raise Unauthorized
+                raise KeyError(
+                    (
+                        "Required claim '{claim_identity}' missing from JWT "
+                        "claims."
+                    ).format(
+                        claim_identity=claim_identity,
+                    )
+                )
 
             # Return wrapped function with token data
             return fn(
@@ -178,50 +188,6 @@ def auth_token_optional(fn: Callable) -> Callable:
             return fn(*args, **kwargs)
 
     return wrapper
-
-
-def parse_jwt_from_header(
-    header_name: str ='Authorization',
-    expected_prefix: str ='Bearer'
-) -> Mapping:
-    """Parses authorization token from HTTP header."""
-    # TODO: Add custom errors
-    # Ensure that authorization header is present
-    auth_header = request.headers.get(header_name, None)
-    if not auth_header:
-        logger.error("No HTTP header with name '{header_name}' found.".format(
-            header_name=header_name,
-        ))
-        raise Unauthorized
-
-    # Ensure that authorization header is formatted correctly
-    try:
-        (prefix, token) = auth_header.split()
-    except ValueError as e:
-        logger.error(
-            (
-                "Authentication header is malformed. Original error message: "
-                "{type}: {msg}"
-            ).format(
-                type=type(e).__name__,
-                msg=e,
-            )
-        )
-        raise Unauthorized
-
-    if prefix != expected_prefix:
-        logger.error(
-            (
-                "Expected token prefix in authentication header is "
-                "'{expected_prefix}', but '{prefix}' was found."
-            ).format(
-                expected_prefix=expected_prefix,
-                prefix=prefix,
-            )
-        )
-        raise Unauthorized
-
-    return token
 
 
 def validate_jwt_via_userinfo_endpoint(
@@ -251,10 +217,15 @@ def validate_jwt_via_userinfo_endpoint(
         return {}
 
     # Verify existence of issuer claim
-    if not validate_jwt_claims(
+    if missing_from_dict(
         claim_issuer,
-        claims=claims,
+        dictionary=claims,
     ):
+        logger.warning(
+            "Required claim '{claim_issuer}' missing from JWT claims.".format(
+                claim_issuer=claim_issuer,
+            )
+        )
         return {}
 
     # Get /userinfo endpoint URL
@@ -318,10 +289,15 @@ def validate_jwt_via_public_key(
         return {}
 
     # Verify existence of key ID claim
-    if not validate_jwt_claims(
+    if not missing_from_dict(
         claim_key_id,
-        claims=header_claims,
+        dictionary=header_claims,
     ):
+        logger.warning(
+            "Required claim '{claim_key_id}' missing from JWT claims.".format(
+                claim_key_id=claim_key_id,
+            )
+        )
         return {}
 
     # Get JWK set endpoint URL
@@ -368,29 +344,6 @@ def validate_jwt_via_public_key(
         return {}
 
     return claims
-
-
-def validate_jwt_claims(
-    *args: str,
-    claims: Mapping,
-) -> bool:
-    """
-    Validates the existence of JWT claims. Returns False if any are missing,
-    otherwise returns True.
-    """
-    # Check for existence of required claims
-    for claim in args:
-        if claim not in claims:
-            logger.warning(
-                (
-                    "Required claim '{claim}' not found in JWT."
-                ).format(
-                    claim=claim,
-                )
-            )
-            return False
-    else:
-        return True
 
 
 def get_entry_from_idp_service_discovery_endpoint(
