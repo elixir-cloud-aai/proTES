@@ -5,14 +5,18 @@ from connexion import request
 from flask import current_app
 from functools import wraps
 import logging
-from typing import (Callable, List, Mapping, Union)
+from typing import (Callable, Dict, List, Mapping, Union)
 
 from jwt import (decode, get_unverified_header, algorithms)
 import requests
 import json
 
 from pro_tes.config.config_parser import get_conf, get_conf_type
-from pro_tes.security.utils import parse_jwt_from_request
+from pro_tes.security.utils import (
+    check_get_request_with_jwt_header,
+    get_idp_service_info_from_jwt_issuer_claim,
+    parse_jwt_from_request
+)
 from pro_tes.utils.utils import missing_from_dict
 
 
@@ -166,12 +170,8 @@ def auth_token_optional(fn: Callable) -> Callable:
                 dictionary=claims,
             ):
                 raise KeyError(
-                    (
-                        "Required claim '{claim_identity}' missing from JWT "
-                        "claims."
-                    ).format(
-                        claim_identity=claim_identity,
-                    )
+                    f"Required claim '{claim_identity}' missing from JWT "\
+                    f"claims."
                 )
 
             # Return wrapped function with token data
@@ -195,7 +195,7 @@ def validate_jwt_via_userinfo_endpoint(
     algorithms: List[str] = ['RS256'],
     claim_issuer: str = 'iss',
     service_document_field: str = 'userinfo_endpoint',
-) -> Mapping:
+) -> Dict:
 
     # Decode JWT
     try:
@@ -206,13 +206,8 @@ def validate_jwt_via_userinfo_endpoint(
         )
     except Exception as e:
         logger.warning(
-            (
-                "JWT could not be decoded. Original error message: "
-                "{type}: {msg}"
-            ).format(
-                type=type(e).__name__,
-                msg=e,
-            )
+            f"JWT could not be decoded. Original error message: "
+            f"{type(e).__name__}: {e}"
         )
         return {}
 
@@ -222,21 +217,18 @@ def validate_jwt_via_userinfo_endpoint(
         dictionary=claims,
     ):
         logger.warning(
-            "Required claim '{claim_issuer}' missing from JWT claims.".format(
-                claim_issuer=claim_issuer,
-            )
+            f"Required claim '{claim_issuer}' missing from JWT claims."
         )
         return {}
 
     # Get /userinfo endpoint URL
-    url = get_entry_from_idp_service_discovery_endpoint(
+    url = get_idp_service_info_from_jwt_issuer_claim(
         issuer=claims[claim_issuer],
-        entry=service_document_field,
     )
 
     # Validate JWT via /userinfo endpoint
     try:
-        validate_jwt_via_endpoint(
+        check_get_request_with_jwt_header(
             url=url,
             jwt=jwt,
         )
@@ -252,7 +244,7 @@ def validate_jwt_via_public_key(
     claim_key_id: str = 'kid',
     claim_issuer: str = 'iss',
     service_document_field: str = 'jwks_uri',
-) -> Mapping:
+) -> Dict:
 
     # Extract JWT claims
     try:
@@ -263,13 +255,8 @@ def validate_jwt_via_public_key(
         )
     except Exception as e:
         logger.warning(
-            (
-                "JWT could not be decoded. Original error message: {type}: "
-                "{msg}"
-            ).format(
-                type=type(e).__name__,
-                msg=e,
-            )
+            f"JWT could not be decoded. Original error message: " \
+            f"{type(e).__name__}: {e}"
         )
         return {}
 
@@ -278,13 +265,8 @@ def validate_jwt_via_public_key(
         header_claims = get_unverified_header(jwt)
     except Exception as e:
         logger.warning(
-            (
-                "Could not extract JWT header claims. Original error message: "
-                "{type}: {msg}"
-            ).format(
-                type=type(e).__name__,
-                msg=e,
-            )
+            f"Could not extract JWT header claims. Original error message: " \
+            f"{type(e).__name__}: {e}"
         )
         return {}
 
@@ -294,16 +276,13 @@ def validate_jwt_via_public_key(
         dictionary=header_claims,
     ):
         logger.warning(
-            "Required claim '{claim_key_id}' missing from JWT claims.".format(
-                claim_key_id=claim_key_id,
-            )
+            f"Required claim '{claim_key_id}' missing from JWT claims."
         )
         return {}
 
     # Get JWK set endpoint URL
-    url = get_entry_from_idp_service_discovery_endpoint(
+    url = get_idp_service_info_from_jwt_issuer_claim(
         issuer=claims[claim_issuer],
-        entry=service_document_field,
     )
 
     # Obtain identity provider's public keys
@@ -333,105 +312,12 @@ def validate_jwt_via_public_key(
         )
     except Exception as e:
         logger.warning(
-            (
-                "JWT could not be decoded. Original error message: "
-                "{type}: {msg}"
-            ).format(
-                type=type(e).__name__,
-                msg=e,
-            )
+            f"JWT could not be decoded. Original error message: " \
+            f"{type(e).__name__}: {e}"
         )
         return {}
 
     return claims
-
-
-def get_entry_from_idp_service_discovery_endpoint(
-        issuer: str,
-        entry: str,
-    ) -> Union[None, str]:
-    """
-    Access the identity provider's service discovery endpoint to retrieve the
-    value of the specified entry.
-    """
-    # Build endpoint URL
-    base_url = issuer.rstrip("/")
-    url = "{base_url}/.well-known/openid-configuration".format(
-        base_url=base_url
-    )
-
-    # Send GET request to service discovery endpoint
-    try:
-        response = requests.get(url)
-        response.raise_for_status()
-    except Exception as e:
-        logger.warning(
-            (
-                "Could not connect to endpoint '{url}'. Original error "
-                "message: {type}: {msg}"
-            ).format(
-                url=url,
-                type=type(e).__name__,
-                msg=e,
-            )
-        )
-        return None
-
-    # Return entry or None
-    if entry not in response.json():
-        logger.warning(
-            (
-                "Required entry '{entry}' not found in identity provider's "
-                "documentation accessed at endpoint '{endpoint}'."
-            ).format(
-                entry=entry,
-                url=url,
-            )
-        )
-        return None
-    else:
-        return response.json()[entry]
-
-
-def validate_jwt_via_endpoint(
-    url: str,
-    jwt: str,
-    header_name: str = 'Authorization',
-    prefix: str = 'Bearer'
-) -> None:
-    """
-    Returns True if a JWT-headed request to a specified URL yields the specified
-    status code.
-    """
-    headers = {
-        "{header_name}".format(
-            header_name=header_name
-        ): "{prefix} {jwt}".format(
-            header_name=header_name,
-            prefix=prefix,
-            jwt=jwt,
-        )
-    }
-    try:
-        response = requests.get(
-            url,
-            headers=headers,
-        )
-        response.raise_for_status()
-    except Exception as e:
-        logger.warning(
-            (
-                "Could not connect to endpoint '{url}'. Original error "
-                "message: {type}: {msg}"
-            ).format(
-                url=url,
-                type=type(e).__name__,
-                msg=e,
-            )
-        )
-        raise
-
-    return None
 
 
 def get_public_keys(
@@ -447,14 +333,8 @@ def get_public_keys(
         response.raise_for_status()
     except Exception as e:
         logger.warning(
-            (
-                "Could not connect to endpoint '{url}'. Original error "
-                "message: {type}: {msg}"
-            ).format(
-                url=url,
-                type=type(e).__name__,
-                msg=e,
-            )
+            f"Could not connect to endpoint '{url}'. Original error " \
+            f"message: {type(e).__name__}: {e}"
         )
         return {}
 
