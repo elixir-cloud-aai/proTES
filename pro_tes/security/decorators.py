@@ -111,15 +111,23 @@ def auth_token_optional(fn: Callable) -> Callable:
                 )
                 raise Unauthorized
 
-            # Parse JWT token from HTTP header
+            # Parse JWT from HTTP header
             jwt = parse_jwt_from_request(
                 request=request,
                 header_name=header_name,
                 prefix=expected_prefix,
             )
 
-            # Initialize validation counter
+            # Extract claims from JWT
+
+            # Get OIDC IdP config
+            config = get_idp_service_info_from_jwt_issuer_claim(
+                issuer=claims[claim_issuer]
+            )
+
+            # Initialize validation counter and claims dictionary
             validated = 0
+            claims = {}
 
             # Validate JWT via /userinfo endpoint
             if 'userinfo' in validation_methods \
