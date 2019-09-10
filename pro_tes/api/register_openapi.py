@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 def register_openapi(
     app: App,
     specs: List[Dict] = [],
-    add_security_definitions: bool = True
+    add_security_definitions: bool = True,
 ) -> App:
     """Registers OpenAPI specs with Connexion app."""
     # Iterate over list of API specs
@@ -38,6 +38,10 @@ def register_openapi(
         # Convert JSON to YAML
         if get_conf(spec, 'type') == 'json':
             path = __json_to_yaml(path)
+
+        # Add security definitions to copy of specs
+        if add_security_definitions:
+            path = __add_security_definitions(in_file=path)
 
         # Generate API endpoints from OpenAPI spec
         try:
@@ -79,4 +83,31 @@ def __json_to_yaml(
     out_file = '.'.join([out_base, 'yaml'])
     with open(path, 'r') as f_in, open(out_file, 'w') as f_out:
         safe_dump(load(f_in), f_out, default_flow_style=False)
+    return out_file
+
+
+def __add_security_definitions(
+    in_file: str,
+    ext: str = 'security_definitions_added.yaml'
+) -> str:
+    """Adds 'securityDefinitions' section to OpenAPI YAML specs."""
+    # Set security definitions
+    amend = '''
+
+# Amended by WES-ELIXIR
+securityDefinitions:
+  jwt:
+    type: apiKey
+    name: Authorization
+    in: header
+'''
+
+    # Create copy for modification
+    out_file: str = '.'.join([os.path.splitext(in_file)[0], ext])
+    copyfile(in_file, out_file)
+
+    # Append security definitions
+    with open(out_file, 'a') as mod:
+        mod.write(amend)
+
     return out_file

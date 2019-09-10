@@ -11,6 +11,7 @@ from connexion.exceptions import (
 )
 from flask import Response
 from json import dumps
+from typing import Union
 from werkzeug.exceptions import (BadRequest, InternalServerError, NotFound)
 
 
@@ -34,7 +35,7 @@ def register_error_handlers(app: App) -> App:
 
 
 # CUSTOM ERRORS
-class TaskNotFound(ProblemException, NotFound):
+class TaskNotFound(ProblemException, NotFound, BaseException):
     """TaskNotFound(404) error compatible with Connexion."""
 
     def __init__(self, title=None, **kwargs):
@@ -42,7 +43,7 @@ class TaskNotFound(ProblemException, NotFound):
 
 
 # CUSTOM ERROR HANDLERS
-def handle_bad_request(exception: Exception) -> Response:
+def handle_bad_request(exception: Union[Exception, int]) -> Response:
     return Response(
         response=dumps({
             'msg': 'The request is malformed.',

@@ -35,7 +35,7 @@ def run_server():
     connexion_app = register_openapi(
         app=connexion_app,
         specs=get_conf_type(config, 'api', 'specs', types=(list)),
-        add_security_definitions=False,
+        add_security_definitions=True,
     )
 
     # Enable cross-origin resource sharing
