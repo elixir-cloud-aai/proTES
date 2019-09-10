@@ -1,6 +1,6 @@
 """Utility functions for MongoDB document insertion, updates and retrieval."""
 
-from typing import (Any, List, Mapping, Optional)
+from typing import (Any, Mapping, Optional, Union)
 
 from bson.objectid import ObjectId
 from pymongo.collection import ReturnDocument
@@ -31,7 +31,7 @@ def find_id_latest(collection: Collection) -> Optional[ObjectId]:
 
 def update_task_state(
     collection: Collection,
-    worker_id: str,
+    worker_id: Union[None, str],
     state: str = 'UNKNOWN'
 ) -> Optional[Mapping[Any, Any]]:
     """Updates state of task and returns document."""
