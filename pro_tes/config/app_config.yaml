@@ -11,17 +11,20 @@ server:
 security:
     authorization_required: False
     jwt:
-        algorithms:
-          - RS256
+        auth_header_key: Authorization
         claim_identity: sub
         claim_issuer: iss
         claim_key_id: kid
-        header_name: Authorization
-        token_prefix: Bearer
+        decode_algorithms:
+          - RS256
+        idp_config_jwks: jwks_uri
+        idp_config_url_suffix: /.well-known/openid-configuration
+        idp_config_userinfo: userinfo_endpoint
+        jwt_prefix: Bearer
         validation_methods:
           - userinfo
           - public_key
-        validation_checks: any  # 'any' or 'all'
+        validate_with: any  # 'any' or 'all'
 
 # Database settings
 database:
