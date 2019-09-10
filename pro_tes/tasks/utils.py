@@ -1,7 +1,7 @@
 """Utility functions for Celery background tasks."""
 
 import logging
-from typing import Optional
+from typing import Union
 
 from pymongo import collection as Collection
 
@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 def set_task_state(
     collection: Collection,
     task_id: str,
-    worker_id: Optional[str] = None,
+    worker_id: Union[None, str] = None,
     state: str = 'UNKNOWN',
 ):
     """Set/update state of task associated with worker task."""

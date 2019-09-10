@@ -11,7 +11,7 @@ import pro_tes.ga4gh.tes.endpoints.create_task as create_task
 import pro_tes.ga4gh.tes.endpoints.get_service_info as get_service_info
 import pro_tes.ga4gh.tes.endpoints.get_task as get_task
 import pro_tes.ga4gh.tes.endpoints.list_tasks as list_tasks
-from pro_tes.security.decorators import auth_token_optional
+from pro_tes.utils.decorators import auth_token_optional
 
 
 # Get logger instance

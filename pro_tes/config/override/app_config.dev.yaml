@@ -2,7 +2,7 @@
 
 # Security settings
 security:
-    authorization_required: False
+    authorization_required: True
 
 # Database settings
 database:
