@@ -197,37 +197,46 @@ def _send_task(
     """Send task to TES instance."""
     # Process/sanitize request for use with py-tes
     time_now = datetime.now().strftime("%m-%d-%Y %H:%M:%S")
-    request['creation_time'] = parse_time(time_now)
-    request['inputs'] = [
-        tes.models.Input(**input) for input in request['inputs']
-    ]
-    request['outputs'] = [
-        tes.models.Output(**output) for output in request['outputs']
-    ]
-    request['resources'] = tes.models.Resources(**request['resources'])
-    request['executors'] = [
-        tes.models.Executor(**executor) for executor in request['executors']
-    ]
-    for log in request['logs']:
-        log['start_time'] = time_now
-        log['end_time'] = time_now
-        for inner_log in log['logs']:
-            inner_log['start_time'] = time_now
-            inner_log['end_time'] = time_now
-        log['logs'] = [
-            tes.models.ExecutorLog(**log) for log in log['logs']
+    if not 'creation_time' in request:
+        request['creation_time'] = parse_time(time_now)
+    if 'inputs' in request:
+        request['inputs'] = [
+            tes.models.Input(**input) for input in request['inputs']
         ]
-        for output in log['outputs']:
-            output['size_bytes'] = 0
-        log['outputs'] = [
-            tes.models.OutputFileLog(**output) for output in log['outputs']
+    if 'outputs' in request:
+        request['outputs'] = [
+            tes.models.Output(**output) for output in request['outputs']
         ]
-        #log['system_logs'] = [
-        #    tes.models.SystemLog(**log) for log in log['system_logs']
-        #]
-    request['logs'] = [
-        tes.models.TaskLog(**log) for log in request['logs']
-    ]
+    if 'resources' in request:
+        request['resources'] = tes.models.Resources(**request['resources'])
+    if 'executors' in request:
+        request['executors'] = [
+            tes.models.Executor(**executor) for executor in request['executors']
+        ]
+    if 'logs' in request:
+        for log in request['logs']:
+            log['start_time'] = time_now
+            log['end_time'] = time_now
+            if 'logs' in log:
+                for inner_log in log['logs']:
+                    inner_log['start_time'] = time_now
+                    inner_log['end_time'] = time_now
+                log['logs'] = [
+                    tes.models.ExecutorLog(**log) for log in log['logs']
+                ]
+            if 'outputs' in log:
+                for output in log['outputs']:
+                    output['size_bytes'] = 0
+                log['outputs'] = [
+                    tes.models.OutputFileLog(**output) for output in log['outputs']
+                ]
+            if 'system_logs' in log:
+                log['system_logs'] = [
+                    tes.models.SystemLog(**log) for log in log['system_logs']
+                ]
+        request['logs'] = [
+            tes.models.TaskLog(**log) for log in request['logs']
+        ]
 
     # Create Task object
     try:
@@ -334,12 +343,13 @@ def _poll_task(
         heartbeats_left = max_missed_heartbeats
 
         # Update state in database if changed
-        if response.state != previous_state:
+        state = response.state
+        if state != previous_state:
             set_task_state(
                 collection=collection,
                 task_id=task_id,
                 worker_id=worker_id,
-                state='SYSTEM_ERROR',
+                state=state,
             )
 
         # Sleep for specified interval
