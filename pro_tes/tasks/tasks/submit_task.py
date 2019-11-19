@@ -90,45 +90,12 @@ def task__submit_task(
         # - Replace DRS IDs
 
         # TODO (PROPERLY): Send task to TES instance
-        try:
-            task_id_tes, tes_uri = _send_task(
-                tes_uris=tes_uris,
-                request=request,
-                token=token,
-                timeout=timeout_service_calls,
-            )
-            logger.info(
-                (
-                    "Task '{task_id}' was sent to TES '{tes_uri}' under remote "
-                    "task ID '{task_id_tes}'."
-                ).format(
-                    task_id=task_id,
-                    tes_uri=tes_uri,
-                    task_id_tes=task_id_tes,
-                )
-            )
-
-        # Handle submission failure
-        except Exception as e:
-            task_id_tes = None
-            tes_uri = None
-            set_task_state(
-                collection=collection,
-                task_id=task_id,
-                worker_id=worker_id,
-                state='SYSTEM_ERROR',
-            )
-            logger.error(
-                (
-                    "Task '{task_id}' could not be sent to any TES instance. "
-                    "Task state was set to 'SYSTEM_ERROR'. Original error "
-                    "message: '{type}: {msg}'"
-                ).format(
-                    task_id=task_id,
-                    type=type(e).__name__,
-                    msg='.'.join(e.args),
-                )
-            )
+        document_from_middleware = None
+        
+        task_id_tes, tes_uri = process_middleware_response(
+            document=document_from_middleware,
+            request=request
+        )
         
         # TODO: Update database document
         document = upsert_fields_in_root_object(
@@ -355,3 +322,69 @@ def _poll_task(
         # Sleep for specified interval
         sleep(interval)
     
+
+def process_middleware_response(document: Dict, request: Dict):
+    
+    """
+    This process takes the middleware (TEStribute) response
+    and iterates through each of the service combinations. If any 
+    combination works, it returns (task_id, tes_uri). If it fails, 
+    it tries next combination
+    
+    """
+    service_combinations = document['service_combinations']
+    tes_uris = []
+    variable_references = {}
+    for service_combination in service_combinations:
+        # collect URLs
+        this_access_uris = service_combination["access_uris"]
+        this_tes_uri = service_combination["tes_uri"]
+        tes_uris.append(this_tes_uri)
+        
+        # replace URLs in request Dict before making TES call
+        for this_input in request["inputs"]:
+            this_input_name = this_input["name"]
+            if this_input_name in this_access_uris.keys():
+                this_input["url"] = this_access_uris[this_input_name]
+        
+        # try with first combination and move on to next combination if failing
+        try:
+            return _send_task(
+                tes_uris=tes_uris,
+                request=request,
+                token=token,
+                timeout=timeout_service_calls,
+            )
+            logger.info(
+                (
+                    "Task '{task_id}' was sent to TES '{tes_uri}' under remote "
+                    "task ID '{task_id_tes}'."
+                ).format(
+                    task_id=task_id,
+                    tes_uri=tes_uri,
+                    task_id_tes=task_id_tes,
+                )
+            )
+            break
+        # Handle submission failure
+        except Exception as e:
+            task_id_tes = None
+            tes_uri = None
+            set_task_state(
+                collection=collection,
+                task_id=task_id,
+                worker_id=worker_id,
+                state='SYSTEM_ERROR',
+            )
+            logger.error(
+                (
+                    "Task '{task_id}' could not be sent to any TES instance. "
+                    "Task state was set to 'SYSTEM_ERROR'. Original error "
+                    "message: '{type}: {msg}'"
+                ).format(
+                    task_id=task_id,
+                    type=type(e).__name__,
+                    msg='.'.join(e.args),
+                )
+            )
+            continue
