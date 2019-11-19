@@ -1,0 +1,15 @@
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  labels:
+    app: {{ .Values.protes.appName }}
+  name: {{ .Values.protes.appName }}
+spec:
+  rules:
+  - host: {{ .Values.protes.appName }}.{{ .Values.applicationDomain }}
+    http:
+      paths:
+      - path: "/ga4gh/tes/v1"
+        backend:
+          serviceName: {{ .Values.protes.appName }}
+          servicePort: 8081

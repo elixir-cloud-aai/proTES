@@ -1,0 +1,10 @@
+kind: Service
+apiVersion: v1
+metadata:
+  name: {{ .Values.protes.appName }}
+spec:
+  selector:
+    app: {{ .Values.protes.appName }}
+  ports:
+  - port: 8081
+    targetPort: 8081
