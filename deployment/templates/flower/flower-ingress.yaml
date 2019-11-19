@@ -1,0 +1,15 @@
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  labels:
+    app: {{ .Values.flower.appName }}
+  name: {{ .Values.flower.appName }}
+spec:
+  rules:
+  - host: {{ .Values.flower.appName }}.{{ .Values.applicationDomain }}
+    http:
+      paths:
+      - path: "/"
+        backend:
+          serviceName: {{ .Values.flower.appName }}
+          servicePort: 5555
