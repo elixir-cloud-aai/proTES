@@ -73,3 +73,14 @@ tes:
         - 'https://tes1.tsi.ebi.ac.uk/tes/v1/'
         - 'https://tes.tsi.ebi.ac.uk/v1/'
         - 'https://tes-dev.tsi.ebi.ac.uk/v1/'
+
+# DRS services
+drs:
+    service_list:
+        - 'http://131.152.229.71/ga4gh/drs/v1/'
+        - 'http://193.166.24.114/ga4gh/drs/v1'
+        
+# Mode for running TEStribute (optionally)
+testribute:
+    run: 'True'
+    mode: 0.2
