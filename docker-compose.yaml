@@ -24,7 +24,7 @@ services:
       - mongo-protes
     command: bash -c "cd /app/pro_tes; gunicorn -c config.py wsgi:app"
     volumes:
-      - ../data/pro_tes:/data
+      - ../../data/pro_tes:/data
 
   rabbit-protes:
     image: "rabbitmq:3-management"
