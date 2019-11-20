@@ -9,6 +9,10 @@ database:
     host: 'mongo-protes'
     name: pro-tes-db-dev
 
+# Storage
+storage:
+    spec_dir: '/data/specs'
+
 # Celery task queue
 celery:
     broker_host: 'rabbit-protes'
