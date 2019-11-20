@@ -4,6 +4,10 @@
 
 applicationDomain: c03.k8s-popup.csc.fi
 
+# which cluster type proTES is going to be deployed on
+# it can be either 'kubernetes' or 'openshift'
+clusterType: openshift
+
 flower:
   appName: flower
   basicAuth: admin:admin

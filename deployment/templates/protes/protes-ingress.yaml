@@ -1,10 +1,33 @@
+{{- if eq .Values.clusterType "openshift" }}
+apiVersion: route.openshift.io/v1
+kind: Route
+{{- else }}
 apiVersion: extensions/v1beta1
 kind: Ingress
+{{ end }}
 metadata:
   labels:
     app: {{ .Values.protes.appName }}
   name: {{ .Values.protes.appName }}
 spec:
+{{- if eq .Values.clusterType "openshift" }}
+  host: {{ .Values.protes.appName }}.{{ .Values.applicationDomain }}
+  path: "/ga4gh/tes/v1"
+  port:
+    targetPort: 8081
+  tls:
+    termination: edge
+  to:
+    kind: Service
+    name: {{ .Values.protes.appName }}
+    weight: 100
+  wildcardPolicy: None
+status:
+  ingress: []
+{{- else }}
+  tls:
+  - hosts:
+    - {{ .Values.protes.appName }}.{{ .Values.applicationDomain }}
   rules:
   - host: {{ .Values.protes.appName }}.{{ .Values.applicationDomain }}
     http:
@@ -13,3 +36,4 @@ spec:
         backend:
           serviceName: {{ .Values.protes.appName }}
           servicePort: 8081
+{{ end }}
