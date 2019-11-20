@@ -4,7 +4,7 @@ from json import load
 import logging
 import os
 from shutil import copyfile
-from typing import (List, Dict)
+from typing import (List, Dict, Optional)
 
 from connexion import App
 from yaml import safe_dump
@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 def register_openapi(
     app: App,
     specs: List[Dict] = [],
+    spec_dir: Optional[str] = None,
     add_security_definitions: bool = True,
 ) -> App:
     """Registers OpenAPI specs with Connexion app."""
@@ -41,7 +42,10 @@ def register_openapi(
 
         # Add security definitions to copy of specs
         if add_security_definitions:
-            path = __add_security_definitions(in_file=path)
+            path = __add_security_definitions(
+                in_file=path,
+                out_dir=spec_dir,
+            )
 
         # Generate API endpoints from OpenAPI spec
         try:
@@ -88,13 +92,14 @@ def __json_to_yaml(
 
 def __add_security_definitions(
     in_file: str,
+    out_dir: Optional[str],
     ext: str = 'security_definitions_added.yaml'
-) -> str:
+) -> Optional[str]:
     """Adds 'securityDefinitions' section to OpenAPI YAML specs."""
     # Set security definitions
     amend = '''
 
-# Amended by WES-ELIXIR
+# Amended by proTES
 securityDefinitions:
   jwt:
     type: apiKey
@@ -103,7 +108,14 @@ securityDefinitions:
 '''
 
     # Create copy for modification
-    out_file: str = '.'.join([os.path.splitext(in_file)[0], ext])
+    if out_dir:
+        base_name = '.'.join(
+            [os.path.splitext(os.path.basename(in_file))[0], ext]
+        )
+        out_file: str = os.path.abspath(os.path.join(out_dir, base_name))
+    else:
+        return None
+
     copyfile(in_file, out_file)
 
     # Append security definitions

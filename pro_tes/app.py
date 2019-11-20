@@ -35,6 +35,7 @@ def run_server():
     connexion_app = register_openapi(
         app=connexion_app,
         specs=get_conf_type(config, 'api', 'specs', types=(list)),
+        spec_dir=get_conf(config, 'storage', 'spec_dir'),
         add_security_definitions=True,
     )
 
