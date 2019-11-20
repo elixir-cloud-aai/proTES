@@ -35,6 +35,10 @@ database:
         length: 6
         charset: string.ascii_uppercase + string.digits
 
+# Storage
+storage:
+    spec_dir: 'tests/specs'
+
 # Celery task queue
 celery:
     broker_host: 'localhost'
