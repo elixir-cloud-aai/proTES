@@ -22,8 +22,11 @@ class injectTEStribute:
         self.drs_output_ids = [i['name'] for i in task['inputs']]        
         
         #TODO: replace when needed
-        task['resources']['execution_time_sec']=00
-        self.resource_requirements=task['resources']
+        try:
+            self.resource_requirements=task['resources']['execution_time_sec']
+        except KeyError:
+            task['resources']['execution_time_sec']=3600
+            self.resource_requirements=task['resources']
         
         self.drs_uris=drs_uris
         self.tes_uris=tes_uris
