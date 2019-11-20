@@ -2,22 +2,34 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: protes
+  name: {{ .Values.protes.appName }}
 spec:
   selector:
     matchLabels:
-      app: protes
+      app: {{ .Values.protes.appName }}
   template:
     metadata:
       labels:
-        app: protes
+        app: {{ .Values.protes.appName }}
     spec:
+      initContainers:
+        - name: vol-init
+          image: busybox
+          command: [ 'mkdir' ]
+          args: [ '-p', '/data/db', '/data/specs' ]
+          volumeMounts:
+            - mountPath: /data
+              name: protes-volume
       containers:
       - name: protes
-        image: weselixir/elixir-pro-tes:rc2
+        image: {{ .Values.protes.image }}
+        imagePullPolicy: Always
+        workingDir: '/app/pro_tes'
+        command: [ 'gunicorn' ]
+        args: [ '--log-level', 'debug', '-c', 'config.py', 'wsgi:app' ]
         env:
         - name: MONGO_HOST
-          value: mongodb
+          value: {{ .Values.mongodb.appName}}
         - name: MONGO_PORT
           value: "27017"
         - name: MONGO_USERNAME
@@ -31,9 +43,12 @@ spec:
               key: database-password
               name: mongodb
         - name: MONGO_DBNAME
-          value: wes-elixir-db
+          valueFrom:
+            secretKeyRef:
+              key: database-name
+              name: mongodb
         - name: RABBIT_HOST
-          value: rabbitmq-cluster
+          value: {{ .Values.rabbitmq.appName}}
         - name: RABBIT_PORT
           value: "5672"
         livenessProbe:
@@ -43,26 +58,23 @@ spec:
           periodSeconds: 20
         readinessProbe:
           httpGet:
-            path: /v1/tasks/service-info
+            path: /ga4gh/tes/v1/tasks/service-info
             port: protes-port
           initialDelaySeconds: 3
           periodSeconds: 3
-        resources:
-          requests:
-            memory: "512Mi"
-            cpu: "300m"
-          limits:
-            memory: "8Gi"
-            cpu: "2"
         ports:
         - containerPort: 8081
           name: protes-port
         volumeMounts:
+        - mountPath: /data
+          name: protes-volume
         - mountPath: /app/pro_tes/config/app_config.yaml
           subPath: app_config.yaml
           name: protes-config
       volumes:
+      - name: protes-volume
+        persistentVolumeClaim:
+          claimName: {{ .Values.protes.appName}}-volume
       - name: protes-config
         configMap:
-          defaultMode: 420
-          name: protes-config
+          name: {{ .Values.protes.appName}}-config
