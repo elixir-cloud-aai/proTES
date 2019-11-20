@@ -43,13 +43,21 @@ jobs:
     - docker push "$DOCKER_REPO_NAME":"$DOCKER_REPO_TAG"
   - stage: deploy
     name: Deploy production app
-    # TODO: we will need here all variables for logging in to k8s cluster AND
-    # deploying production app
+    # TODO: we will need here token for logging in to K8S cluster and deployment
+    # secrets
     # env:
     script:
     # install kubectl
     - curl -LO https://storage.googleapis.com/kubernetes-release/release/v1.16.3/bin/linux/amd64/kubectl
     - chmod +x kubectl
     - sudo mv kubectl /usr/local/bin/
+    # install helm
+    - curl https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3 > get_helm.sh
+    - chmod 700 get_helm.sh
+    - ./get_helm.sh
     # log in
+    - kubectl login --token="$K8S_TOKEN"
     # deploy
+    # TODO: override env variables with, e.g., --set protes.appName=proxyT
+    # get keys from deployment/values.yaml which contains the defaults
+    - helm install deployment --generate-name 
