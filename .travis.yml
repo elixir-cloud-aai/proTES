@@ -2,26 +2,29 @@ os:
 - linux
 dist: bionic
 language: python
+
 services:
 - docker
+
 install:
 # omit automatic installation of dependencies in virtualenv
 - pip --version
+
 stages:
-- name: test
-- name: publish
-  # do not execute if PR branch
-  if: type != pull_request
-- name: deploy
-  if: type != pull_request
-branches:
-  only:
-  - dev
-  - continuous_deployment
+- name: docker-test
+- name: ci-publish
+  if: branch != dev
+- name: prod-publish
+  if: branch = dev
+- name: ci-deploy
+  if: branch != dev
+- name: prod-deploy
+  if: branch = dev
+
 jobs:
   include:
-  - stage: test
-    name: Build, deploy and test application
+  - stage: docker-test
+    name: Build, deploy and test application with docker
     script:
     # create ../data
     - "mkdir -p ../data/pro_tes/{specs,db}"
@@ -31,8 +34,20 @@ jobs:
     - sleep 30
     # test if endpoint 'GET /tasks' is accessible
     - "test $(curl -sL -w '%{http_code}' -X GET --header 'Accept: application/json' 'http://localhost:7878/ga4gh/tes/v1/tasks?view=MINIMAL' -o /dev/null)=='200'"
-  - stage: publish
-    name: Push image to registry
+  - stage: prod-publish
+    name: Push production image to the docker registry
+    script:
+      # build and tag app image
+      - SUFFIX=latest
+      - docker build -t "$DOCKER_REPO_NAME":"$SUFFIX" .
+      # log in
+      - echo "$DOCKER_TOKEN" | docker login -u "$DOCKER_USERNAME" --password-stdin
+      # push image
+      - docker push "$DOCKER_REPO_NAME":"$SUFFIX"
+      # delete token
+      - rm ${HOME}/.docker/config.json
+  - stage: ci-publish
+    name: Push CI image to the docker registry
     script:
     # build and tag app image
     - SUFFIX=${TRAVIS_BRANCH//_/-}
@@ -43,8 +58,8 @@ jobs:
     - docker push "$DOCKER_REPO_NAME":"$SUFFIX"
     # delete token
     - rm ${HOME}/.docker/config.json
-  - stage: deploy
-    name: Deploy production app
+  - stage: ci-deploy
+    name: Deploy CI app on Kubernetes
     script:
     # install kubectl
     - curl -LO https://storage.googleapis.com/kubernetes-release/release/v1.16.3/bin/linux/amd64/kubectl
@@ -74,4 +89,34 @@ jobs:
     # test
     - endpoint=$(kubectl get route -l app=protes-$SUFFIX -o=jsonpath='{.items[0].spec.host}')
     - "test $(curl -sL -w '%{http_code}' -X GET --header 'Accept: application/json' 'http://$endpoint/ga4gh/tes/v1/tasks?view=MINIMAL' -o /dev/null)=='200'"
+  - stage: prod-deploy
+    name: Deploy prod app on Kubernetes
+    script:
+      # install kubectl
+      - curl -LO https://storage.googleapis.com/kubernetes-release/release/v1.16.3/bin/linux/amd64/kubectl
+      - chmod +x kubectl
+      - sudo mv kubectl /usr/local/bin/
+      # install helm
+      - curl https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3 > get_helm.sh
+      - chmod 700 get_helm.sh
+      - ./get_helm.sh
+      # log in
+      - kubectl config set-credentials protes-ci-user --token=$K8S_TOKEN
+      - kubectl config set-cluster ci-server --server=$K8S_CLUSTER
+      - kubectl config set-context ci-context --user=protes-ci-user --namespace=$K8S_NAMESPACE --cluster=ci-server
+      - kubectl config use-context ci-context
+      # deploy
+      # get keys from deployment/values.yaml which contains the defaults
+      - |
+        helm install protes-$SUFFIX deployment --wait --timeout 120s \
+          --set flower.appName=flower \
+          --set protes.appName=protes \
+          --set protes.image="$DOCKER_REPO_NAME":latest \
+          --set celeryWorker.appName=celery-worker \
+          --set celeryWorker.image="$DOCKER_REPO_NAME":latest \
+          --set rabbitmq.appName=rabbitmq \
+          --set mongodb.appName=mongodb
+      # test
+      - endpoint=$(kubectl get route -l app=protes-$SUFFIX -o=jsonpath='{.items[0].spec.host}')
+      - "test $(curl -sL -w '%{http_code}' -X GET --header 'Accept: application/json' 'http://$endpoint/ga4gh/tes/v1/tasks?view=MINIMAL' -o /dev/null)=='200'"
 
