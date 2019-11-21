@@ -20,6 +20,8 @@ stages:
   if: branch != dev
 - name: prod-deploy
   if: branch = dev
+- name: ci-clean
+  if: branch != dev
 
 jobs:
   include:
@@ -74,7 +76,6 @@ jobs:
     - kubectl config set-context ci-context --user=protes-ci-user --namespace=$K8S_NAMESPACE --cluster=ci-server
     - kubectl config use-context ci-context
     # deploy
-    # get keys from deployment/values.yaml which contains the defaults
     - SUFFIX=${TRAVIS_BRANCH//_/-}
     - |
       helm install protes-$SUFFIX deployment --wait --timeout 120s \
@@ -88,6 +89,7 @@ jobs:
     # test
     - endpoint=$(kubectl get route -l app=protes-$SUFFIX -o=jsonpath='{.items[0].spec.host}')
     - "test $(curl -sL -w '%{http_code}' -X GET --header 'Accept: application/json' 'http://$endpoint/ga4gh/tes/v1/tasks?view=MINIMAL' -o /dev/null)=='200'"
+    # cleanup the ci deployment
   - stage: prod-deploy
     name: Deploy prod app on Kubernetes
     script:
@@ -105,7 +107,6 @@ jobs:
       - kubectl config set-context context --user=protes-user --namespace=$K8S_PROD_NAMESPACE --cluster=server
       - kubectl config use-context context
       # deploy
-      # get keys from deployment/values.yaml which contains the defaults
       - |
         helm upgrade protes deployment --wait --timeout 120s \
           --set flower.appName=flower \
@@ -118,4 +119,23 @@ jobs:
       # test
       - endpoint=$(kubectl get route -l app=protes -o=jsonpath='{.items[0].spec.host}')
       - "test $(curl -sL -w '%{http_code}' -X GET --header 'Accept: application/json' 'http://$endpoint/ga4gh/tes/v1/tasks?view=MINIMAL' -o /dev/null)=='200'"
+  - stage: ci-clean
+    name: Delete the deployed CI environment from Kubernetes
+    script:
+      # install kubectl
+      - curl -LO https://storage.googleapis.com/kubernetes-release/release/v1.16.3/bin/linux/amd64/kubectl
+      - chmod +x kubectl
+      - sudo mv kubectl /usr/local/bin/
+      # install helm
+      - curl https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3 > get_helm.sh
+      - chmod 700 get_helm.sh
+      - ./get_helm.sh
+      # log in
+      - kubectl config set-credentials protes-ci-user --token=$K8S_TOKEN
+      - kubectl config set-cluster ci-server --server=$K8S_CLUSTER
+      - kubectl config set-context ci-context --user=protes-ci-user --namespace=$K8S_NAMESPACE --cluster=ci-server
+      - kubectl config use-context ci-context
+      # deploy
+      - SUFFIX=${TRAVIS_BRANCH//_/-}
+      - helm delete protes-$SUFFIX
 
