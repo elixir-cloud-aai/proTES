@@ -24,7 +24,7 @@ jobs:
     name: Build, deploy and test application
     script:
     # create ../data
-    - "mkdir -p ../data/{specs,db}"
+    - "mkdir -p ../data/pro_tes/{specs,db}"
     # build and deploy application
     - "docker-compose -f docker-compose.yaml -f docker-compose.dev.yaml up --build -d"
     # wait for protes to be up
