@@ -38,12 +38,11 @@ jobs:
     name: Push production image to the docker registry
     script:
       # build and tag app image
-      - SUFFIX=latest
-      - docker build -t "$DOCKER_REPO_NAME":"$SUFFIX" .
+      - docker build -t "$DOCKER_REPO_NAME":latest .
       # log in
       - echo "$DOCKER_TOKEN" | docker login -u "$DOCKER_USERNAME" --password-stdin
       # push image
-      - docker push "$DOCKER_REPO_NAME":"$SUFFIX"
+      - docker push "$DOCKER_REPO_NAME":latest
       # delete token
       - rm ${HOME}/.docker/config.json
   - stage: ci-publish
@@ -101,14 +100,14 @@ jobs:
       - chmod 700 get_helm.sh
       - ./get_helm.sh
       # log in
-      - kubectl config set-credentials protes-ci-user --token=$K8S_TOKEN
-      - kubectl config set-cluster ci-server --server=$K8S_CLUSTER
-      - kubectl config set-context ci-context --user=protes-ci-user --namespace=$K8S_NAMESPACE --cluster=ci-server
-      - kubectl config use-context ci-context
+      - kubectl config set-credentials protes-user --token=$K8S_PROD_TOKEN
+      - kubectl config set-cluster server --server=$K8S_CLUSTER
+      - kubectl config set-context context --user=protes-user --namespace=$K8S_PROD_NAMESPACE --cluster=server
+      - kubectl config use-context context
       # deploy
       # get keys from deployment/values.yaml which contains the defaults
       - |
-        helm install protes-$SUFFIX deployment --wait --timeout 120s \
+        helm upgrade protes deployment --wait --timeout 120s \
           --set flower.appName=flower \
           --set protes.appName=protes \
           --set protes.image="$DOCKER_REPO_NAME":latest \
@@ -117,6 +116,6 @@ jobs:
           --set rabbitmq.appName=rabbitmq \
           --set mongodb.appName=mongodb
       # test
-      - endpoint=$(kubectl get route -l app=protes-$SUFFIX -o=jsonpath='{.items[0].spec.host}')
+      - endpoint=$(kubectl get route -l app=protes -o=jsonpath='{.items[0].spec.host}')
       - "test $(curl -sL -w '%{http_code}' -X GET --header 'Accept: application/json' 'http://$endpoint/ga4gh/tes/v1/tasks?view=MINIMAL' -o /dev/null)=='200'"
 
