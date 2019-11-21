@@ -8,15 +8,16 @@ install:
 # omit automatic installation of dependencies in virtualenv
 - pip --version
 stages:
-- name: test
-- name: publish
+#- name: test
+#- name: publish
   # do not execute if PR branch
-  if: type != pull_request
+#  if: type != pull_request
 - name: deploy
   if: type != pull_request
 branches:
   only:
   - dev
+  - continuous_deployment
 jobs:
   include:
   - stage: test
@@ -25,7 +26,7 @@ jobs:
     # build and deploy application
     - "docker-compose -f docker-compose.yaml -f docker-compose.dev.yaml up --build -d"
     # test if endpoint 'GET /runs' is accessible
-    - "test $(curl -sL -w '%{http_code}' -X GET --header 'Accept: application/json' 'http://localhost:7777/ga4gh/tes/v1/runs' -o /dev/null) == '200'"
+    - "test $(curl -sL -w '%{http_code}' -X GET --header 'Accept: application/json' 'http://localhost:7878/ga4gh/tes/v1/runs' -o /dev/null) == '200'"
   - stage: publish
     name: Push image to registry
     env:
@@ -43,9 +44,6 @@ jobs:
     - docker push "$DOCKER_REPO_NAME":"$DOCKER_REPO_TAG"
   - stage: deploy
     name: Deploy production app
-    # TODO: we will need here token for logging in to K8S cluster and deployment
-    # secrets
-    # env:
     script:
     # install kubectl
     - curl -LO https://storage.googleapis.com/kubernetes-release/release/v1.16.3/bin/linux/amd64/kubectl
@@ -56,7 +54,11 @@ jobs:
     - chmod 700 get_helm.sh
     - ./get_helm.sh
     # log in
-    - kubectl login --token="$K8S_TOKEN"
+    - kubectl config set-credentials protes-ci-user --token=$K8S_TOKEN
+    - kubectl config set-cluster ci-server --server=$K8S_CLUSTER
+    - kubectl config set-context ci-context --user=protes-ci-user --namespace=$K8S_NAMESPACE --cluster=ci-server
+    - kubectl config use-context ci-context
+    - kubectl get pods
     # deploy
     # TODO: override env variables with, e.g., --set protes.appName=proxyT
     # get keys from deployment/values.yaml which contains the defaults
