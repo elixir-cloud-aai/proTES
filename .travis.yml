@@ -63,12 +63,13 @@ jobs:
     # deploy
     # TODO: override env variables with, e.g., --set protes.appName=proxyT
     # get keys from deployment/values.yaml which contains the defaults
-    - helm install protes-$TRAVIS_BRANCH deployment --wait --timeout 120s \
-      --set flower.appName=flower-$TRAVIS_BRANCH \
-      --set protes.appName=protes-$TRAVIS_BRANCH \
-      --set celeryWorker.appName=celery-worker-$TRAVIS_BRANCH \
-      --set rabbitmq.appName=rabbitmq-$TRAVIS_BRANCH \
-      --set mongodb.appName=mongodb-$TRAVIS_BRANCH
+    - |
+      helm install protes-$TRAVIS_BRANCH deployment --wait --timeout 120s \
+        --set flower.appName=flower-$TRAVIS_BRANCH \
+        --set protes.appName=protes-$TRAVIS_BRANCH \
+        --set celeryWorker.appName=celery-worker-$TRAVIS_BRANCH \
+        --set rabbitmq.appName=rabbitmq-$TRAVIS_BRANCH \
+        --set mongodb.appName=mongodb-$TRAVIS_BRANCH
     # test
     - endpoint=$(kubectl get route -l app=protes-$TRAVIS_BRANCH -o=jsonpath='{.items[0].spec.host}')
     - "test $(curl -sL -w '%{http_code}' -X GET --header 'Accept: application/json' 'http://$endpoint/ga4gh/tes/v1/tasks?view=MINIMAL' -o /dev/null)=='200'"
