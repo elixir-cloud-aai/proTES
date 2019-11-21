@@ -40,7 +40,7 @@ jobs:
     # log in
     - echo "$DOCKER_TOKEN" | docker login -u "$DOCKER_USERNAME" --password-stdin
     # push image
-    - docker push "$DOCKER_REPO_NAME":"$DOCKER_REPO_TAG"
+    - docker push "$DOCKER_REPO_NAME":"$SUFFIX"
     # delete token
     - rm ${HOME}/.docker/config.json
   - stage: deploy
