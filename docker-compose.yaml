@@ -1,15 +1,15 @@
 version: '3.6'
 services:
 
-  celery-worker-protes:
+  protes-worker:
     image: protes:latest
     build:
       context: .
       dockerfile: Dockerfile
     restart: unless-stopped
     links:
-      - mongo-protes
-      - rabbit-protes
+      - mongodb
+      - rabbitmq
     command: bash -c "cd /app/pro_tes; celery worker -A celery_worker -E --loglevel=info"
     volumes:
       - ${PROTES_DATA_DIR:-../data/pro_tes}:/data
@@ -21,27 +21,35 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     links:
-      - mongo-protes
+      - mongodb
     command: bash -c "cd /app/pro_tes; gunicorn -c config.py wsgi:app"
     volumes:
       - ${PROTES_DATA_DIR:-../data/pro_tes}:/data
+    ports:
+      - "7878:8080"
 
-  rabbit-protes:
+  rabbitmq:
     image: "rabbitmq:3-management"
-    hostname: "rabbit"
+    hostname: "rabbitmq"
     restart: unless-stopped
     links:
-      - mongo-protes
+      - mongodb
+    ports:
+      - "5682:5672"
 
-  mongo-protes:
+  mongodb:
     image: mongo:3.2
     restart: unless-stopped
     volumes:
-      - ${PROTES_DATA_DIR:-../data/pro_tes/db}:/data/db
+      - ${PROTES_DATA_DIR:-../data/pro_tes}/db:/data/db
+    ports:
+      - "27027:27017"
 
-  flower-protes:
+  flower:
     image: mher/flower:0.9
     restart: unless-stopped
     links:
-      - celery-worker-protes
-    command: flower --broker=amqp://guest:guest@rabbit-protes:5672// --port=5555
+      - protes-worker
+    command: flower --broker=amqp://guest:guest@rabbitmq:5672// --port=5555
+    ports:
+      - "5565:5555"

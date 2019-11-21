@@ -28,11 +28,13 @@ jobs:
   include:
   - stage: docker-test
     name: Build, deploy and test application with docker
+    env:
+    - PROTES_DATA_DIR="../data/pro_tes"
     script:
-    # create ../data
-    - "mkdir -p ../data/pro_tes/{specs,db}"
+    # create data directories
+    - "mkdir -p $PROTES_DATA_DIR/{db,specs}"
     # build and deploy application
-    - "docker-compose -f docker-compose.yaml -f docker-compose.dev.yaml up --build -d"
+    - "docker-compose up -d --build"
     # wait for protes to be up
     - sleep 30
     # test if endpoint 'GET /tasks' is accessible
