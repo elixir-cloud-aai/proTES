@@ -35,8 +35,8 @@ jobs:
     name: Push image to registry
     script:
     # build and tag app image
-    - suffix=${TRAVIS_BRANCH//_/ }
-    - docker build -t "$DOCKER_REPO_NAME":"$suffix" .
+    - SUFFIX=${TRAVIS_BRANCH//_/-}
+    - docker build -t "$DOCKER_REPO_NAME":"$SUFFIX" .
     # log in
     - echo "$DOCKER_TOKEN" | docker login -u "$DOCKER_USERNAME" --password-stdin
     # push image
@@ -61,17 +61,17 @@ jobs:
     - kubectl config use-context ci-context
     # deploy
     # get keys from deployment/values.yaml which contains the defaults
-    - suffix=${TRAVIS_BRANCH//_/ }
+    - SUFFIX=${TRAVIS_BRANCH//_/-}
     - |
-      helm install protes-$suffix deployment --wait --timeout 120s \
-        --set flower.appName=flower-$suffix \
-        --set protes.appName=protes-$suffix \
-        --set protes.image="$DOCKER_REPO_NAME":"$suffix" \
-        --set celeryWorker.appName=celery-worker-$suffix \
-        --set celeryWorker.image="$DOCKER_REPO_NAME":"$suffix" \
-        --set rabbitmq.appName=rabbitmq-$suffix \
-        --set mongodb.appName=mongodb-$suffix
+      helm install protes-$SUFFIX deployment --wait --timeout 120s \
+        --set flower.appName=flower-$SUFFIX \
+        --set protes.appName=protes-$SUFFIX \
+        --set protes.image="$DOCKER_REPO_NAME":"$SUFFIX" \
+        --set celeryWorker.appName=celery-worker-$SUFFIX \
+        --set celeryWorker.image="$DOCKER_REPO_NAME":"$SUFFIX" \
+        --set rabbitmq.appName=rabbitmq-$SUFFIX \
+        --set mongodb.appName=mongodb-$SUFFIX
     # test
-    - endpoint=$(kubectl get route -l app=protes-$suffix -o=jsonpath='{.items[0].spec.host}')
+    - endpoint=$(kubectl get route -l app=protes-$SUFFIX -o=jsonpath='{.items[0].spec.host}')
     - "test $(curl -sL -w '%{http_code}' -X GET --header 'Accept: application/json' 'http://$endpoint/ga4gh/tes/v1/tasks?view=MINIMAL' -o /dev/null)=='200'"
 
