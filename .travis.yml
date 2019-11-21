@@ -44,8 +44,6 @@ jobs:
     - docker push "$DOCKER_REPO_NAME":"$DOCKER_REPO_TAG"
     # delete token
     - rm ${HOME}/.docker/config.json
-    # push image
-    - docker push "$DOCKER_REPO_NAME":"$DOCKER_REPO_TAG"
   - stage: deploy
     name: Deploy production app
     script:
