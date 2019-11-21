@@ -28,7 +28,7 @@ security:
 
 # Database settings
 database:
-    host: 'localhost'
+    host: mongodb
     port: 27017
     name: protes-db
     task_id:
@@ -37,11 +37,11 @@ database:
 
 # Storage
 storage:
-    spec_dir: 'tests/specs'
+    spec_dir: '/data/specs'
 
 # Celery task queue
 celery:
-    broker_host: 'localhost'
+    broker_host: rabbitmq
     broker_port: 5672
     result_backend: 'rpc://'
     include:

@@ -63,18 +63,12 @@ spec:
           initialDelaySeconds: 3
           periodSeconds: 3
         ports:
-        - containerPort: 8081
+        - containerPort: 8080
           name: protes-port
         volumeMounts:
         - mountPath: /data
           name: protes-volume
-        - mountPath: /app/pro_tes/config/app_config.yaml
-          subPath: app_config.yaml
-          name: protes-config
       volumes:
       - name: protes-volume
         persistentVolumeClaim:
           claimName: {{ .Values.protes.appName}}-volume
-      - name: protes-config
-        configMap:
-          name: {{ .Values.protes.appName}}-config
