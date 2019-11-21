@@ -27,7 +27,9 @@ jobs:
     - "docker-compose -f docker-compose.yaml -f docker-compose.dev.yaml up --build -d"
     # wait for protes to be up
     - sleep 30
-    # test if endpoint 'GET /runs' is accessible
+    # check the docker compose logs
+    - "docker-compose logs"
+    # test if endpoint 'GET /tasks' is accessible
     - "test $(curl -sL -w '%{http_code}' -X GET --header 'Accept: application/json' 'http://localhost:7878/ga4gh/tes/v1/tasks?view=MINIMAL' -o /dev/null) == '200'"
   - stage: publish
     name: Push image to registry
