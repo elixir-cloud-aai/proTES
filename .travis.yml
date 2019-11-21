@@ -26,7 +26,7 @@ jobs:
     # build and deploy application
     - "docker-compose -f docker-compose.yaml -f docker-compose.dev.yaml up --build -d"
     # test if endpoint 'GET /runs' is accessible
-    - "test $(curl -sL -w '%{http_code}' -X GET --header 'Accept: application/json' 'http://localhost:7878/ga4gh/tes/v1/tasks?view=MINIMAL' -o /dev/null) == '200'"
+    - "curl -sL -w '%{http_code}' -X GET --header 'Accept: application/json' 'http://localhost:7878/ga4gh/tes/v1/tasks?view=MINIMAL' -o /dev/null"
   - stage: publish
     name: Push image to registry
     env:
