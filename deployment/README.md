@@ -39,7 +39,7 @@ git clone https://github.com/elixir-europe/proTES/
 Update the configuration by modifying the `values.yaml` file:
 
 ```bash
-cd proTES
+cd proTES/deployment
 vim values.yaml
 ```
 

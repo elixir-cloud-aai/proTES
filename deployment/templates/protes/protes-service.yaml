@@ -6,5 +6,5 @@ spec:
   selector:
     app: {{ .Values.protes.appName }}
   ports:
-  - port: 8081
-    targetPort: 8081
+  - port: 8080
+    targetPort: 8080
