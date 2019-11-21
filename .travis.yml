@@ -44,7 +44,6 @@ jobs:
     - docker push "$DOCKER_REPO_NAME":"$DOCKER_REPO_TAG"
     # delete token
     - rm ${HOME}/.docker/config.json
-    - echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
     # push image
     - docker push "$DOCKER_REPO_NAME":"$DOCKER_REPO_TAG"
   - stage: deploy
