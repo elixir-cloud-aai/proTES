@@ -32,7 +32,7 @@ jobs:
     # check the docker compose logs
     - "docker-compose logs"
     # test if endpoint 'GET /tasks' is accessible
-    - "test $(curl -sL -w '%{http_code}' -X GET --header 'Accept: application/json' 'http://localhost:7878/ga4gh/tes/v1/tasks?view=MINIMAL' -o /dev/null) == '200'"
+    - "test $(curl -sL -w '%{http_code}' -X GET --header 'Accept: application/json' 'http://localhost:7878/ga4gh/tes/v1/tasks?view=MINIMAL' -o /dev/null)=='200'"
   - stage: publish
     name: Push image to registry
     script:
