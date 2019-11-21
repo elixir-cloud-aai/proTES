@@ -1,30 +1,142 @@
-sudo: required
+os:
+- linux
+dist: bionic
+language: python
 
-dist: xenial
+services:
+- docker
 
-service:
-   - docker
+install:
+# omit automatic installation of dependencies in virtualenv
+- pip --version
 
 stages:
-  - if: branch = master
-    name: master build
-  - if: branch = dev
-    name: dev build
-  - name: branch build
+- name: docker-test
+  if: type != pull_request
+- name: ci-publish
+  if: branch != dev AND type != pull_request
+- name: prod-publish
+  if: branch = dev AND type != pull_request
+- name: ci-deploy
+  if: branch != dev AND type != pull_request
+- name: prod-deploy
+  if: branch = dev AND type != pull_request
+- name: ci-clean
+  if: branch != dev AND type != pull_request
 
 jobs:
   include:
-  - stage: master build
+  - stage: docker-test
+    name: Build, deploy and test application with docker
     script:
-      - version=0.1
-      - docker build -t weselixir/proTES:"$version" -t weselixir/proTES:master .
-      - echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
-      - if [ "$TRAVIS_PULL_REQUEST" = false ]; then docker push "$DOCKER_REPO_NAME":"$version"; fi
-  - stage: dev build
+    # create ../data
+    - "mkdir -p ../data/pro_tes/{specs,db}"
+    # build and deploy application
+    - "docker-compose -f docker-compose.yaml -f docker-compose.dev.yaml up --build -d"
+    # wait for protes to be up
+    - sleep 30
+    # test if endpoint 'GET /tasks' is accessible
+    - "test $(curl -sL -w '%{http_code}' -X GET --header 'Accept: application/json' 'http://localhost:7878/ga4gh/tes/v1/tasks?view=MINIMAL' -o /dev/null)=='200'"
+  - stage: prod-publish
+    name: Push production image to the docker registry
     script:
-      - docker build -t weselixir/proTES:dev -t weselixir/proTES:build-"$TRAVIS_BUILD_NUMBER" .
-      - echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
-      - if [ "$TRAVIS_PULL_REQUEST" = false ]; then docker push "$DOCKER_REPO_NAME":build-"$TRAVIS_BUILD_NUMBER"; fi
-  - stage: branch build
+      # build and tag app image
+      - docker build -t "$DOCKER_REPO_NAME":latest .
+      # log in
+      - echo "$DOCKER_TOKEN" | docker login -u "$DOCKER_USERNAME" --password-stdin
+      # push image
+      - docker push "$DOCKER_REPO_NAME":latest
+      # delete token
+      - rm ${HOME}/.docker/config.json
+  - stage: ci-publish
+    name: Push CI image to the docker registry
     script:
-      - docker build -t weselixir/proTES-branched:build-"$TRAVIS_BUILD_NUMBER" .
+    # build and tag app image
+    - SUFFIX=${TRAVIS_BRANCH//_/-}
+    - docker build -t "$DOCKER_REPO_NAME":"$SUFFIX" .
+    # log in
+    - echo "$DOCKER_TOKEN" | docker login -u "$DOCKER_USERNAME" --password-stdin
+    # push image
+    - docker push "$DOCKER_REPO_NAME":"$SUFFIX"
+    # delete token
+    - rm ${HOME}/.docker/config.json
+  - stage: ci-deploy
+    name: Deploy CI app on Kubernetes
+    script:
+    # install kubectl
+    - curl -LO https://storage.googleapis.com/kubernetes-release/release/v1.16.3/bin/linux/amd64/kubectl
+    - chmod +x kubectl
+    - sudo mv kubectl /usr/local/bin/
+    # install helm
+    - curl https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3 > get_helm.sh
+    - chmod 700 get_helm.sh
+    - ./get_helm.sh
+    # log in
+    - kubectl config set-credentials protes-ci-user --token=$K8S_TOKEN
+    - kubectl config set-cluster ci-server --server=$K8S_CLUSTER
+    - kubectl config set-context ci-context --user=protes-ci-user --namespace=$K8S_NAMESPACE --cluster=ci-server
+    - kubectl config use-context ci-context
+    # deploy
+    - SUFFIX=${TRAVIS_BRANCH//_/-}
+    - |
+      helm install protes-$SUFFIX deployment --wait --timeout 120s \
+        --set flower.appName=flower-$SUFFIX \
+        --set protes.appName=protes-$SUFFIX \
+        --set protes.image="$DOCKER_REPO_NAME":"$SUFFIX" \
+        --set celeryWorker.appName=celery-worker-$SUFFIX \
+        --set celeryWorker.image="$DOCKER_REPO_NAME":"$SUFFIX" \
+        --set rabbitmq.appName=rabbitmq-$SUFFIX \
+        --set mongodb.appName=mongodb-$SUFFIX
+    # test
+    - endpoint=$(kubectl get route -l app=protes-$SUFFIX -o=jsonpath='{.items[0].spec.host}')
+    - "test $(curl -sL -w '%{http_code}' -X GET --header 'Accept: application/json' 'http://$endpoint/ga4gh/tes/v1/tasks?view=MINIMAL' -o /dev/null)=='200'"
+    # cleanup the ci deployment
+  - stage: prod-deploy
+    name: Deploy prod app on Kubernetes
+    script:
+      # install kubectl
+      - curl -LO https://storage.googleapis.com/kubernetes-release/release/v1.16.3/bin/linux/amd64/kubectl
+      - chmod +x kubectl
+      - sudo mv kubectl /usr/local/bin/
+      # install helm
+      - curl https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3 > get_helm.sh
+      - chmod 700 get_helm.sh
+      - ./get_helm.sh
+      # log in
+      - kubectl config set-credentials protes-user --token=$K8S_PROD_TOKEN
+      - kubectl config set-cluster server --server=$K8S_CLUSTER
+      - kubectl config set-context context --user=protes-user --namespace=$K8S_PROD_NAMESPACE --cluster=server
+      - kubectl config use-context context
+      # deploy
+      - |
+        helm upgrade protes deployment --wait --timeout 120s \
+          --set flower.appName=flower \
+          --set protes.appName=protes \
+          --set protes.image="$DOCKER_REPO_NAME":latest \
+          --set celeryWorker.appName=celery-worker \
+          --set celeryWorker.image="$DOCKER_REPO_NAME":latest \
+          --set rabbitmq.appName=rabbitmq \
+          --set mongodb.appName=mongodb
+      # test
+      - endpoint=$(kubectl get route -l app=protes -o=jsonpath='{.items[0].spec.host}')
+      - "test $(curl -sL -w '%{http_code}' -X GET --header 'Accept: application/json' 'http://$endpoint/ga4gh/tes/v1/tasks?view=MINIMAL' -o /dev/null)=='200'"
+  - stage: ci-clean
+    name: Delete the deployed CI environment from Kubernetes
+    script:
+      # install kubectl
+      - curl -LO https://storage.googleapis.com/kubernetes-release/release/v1.16.3/bin/linux/amd64/kubectl
+      - chmod +x kubectl
+      - sudo mv kubectl /usr/local/bin/
+      # install helm
+      - curl https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3 > get_helm.sh
+      - chmod 700 get_helm.sh
+      - ./get_helm.sh
+      # log in
+      - kubectl config set-credentials protes-ci-user --token=$K8S_TOKEN
+      - kubectl config set-cluster ci-server --server=$K8S_CLUSTER
+      - kubectl config set-context ci-context --user=protes-ci-user --namespace=$K8S_NAMESPACE --cluster=ci-server
+      - kubectl config use-context ci-context
+      # deploy
+      - SUFFIX=${TRAVIS_BRANCH//_/-}
+      - helm delete protes-$SUFFIX
+

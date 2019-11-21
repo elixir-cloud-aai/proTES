@@ -12,7 +12,7 @@ services:
       - rabbit-protes
     command: bash -c "cd /app/pro_tes; celery worker -A celery_worker -E --loglevel=info"
     volumes:
-      - ../data/pro_tes:/data
+      - ${PROTES_DATA_DIR:-../data/pro_tes}:/data
 
   protes:
     image: protes:latest
@@ -24,7 +24,7 @@ services:
       - mongo-protes
     command: bash -c "cd /app/pro_tes; gunicorn -c config.py wsgi:app"
     volumes:
-      - ../data/pro_tes:/data
+      - ${PROTES_DATA_DIR:-../data/pro_tes}:/data
 
   rabbit-protes:
     image: "rabbitmq:3-management"
@@ -37,7 +37,7 @@ services:
     image: mongo:3.2
     restart: unless-stopped
     volumes:
-      - ../data/pro_tes/db:/data/db
+      - ${PROTES_DATA_DIR:-../data/pro_tes/db}:/data/db
 
   flower-protes:
     image: mher/flower:0.9
