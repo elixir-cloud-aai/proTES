@@ -29,15 +29,14 @@ jobs:
     - "docker-compose -f docker-compose.yaml -f docker-compose.dev.yaml up --build -d"
     # wait for protes to be up
     - sleep 30
-    # check the docker compose logs
-    - "docker-compose logs"
     # test if endpoint 'GET /tasks' is accessible
     - "test $(curl -sL -w '%{http_code}' -X GET --header 'Accept: application/json' 'http://localhost:7878/ga4gh/tes/v1/tasks?view=MINIMAL' -o /dev/null)=='200'"
   - stage: publish
     name: Push image to registry
     script:
     # build and tag app image
-    - docker build -t "$DOCKER_REPO_NAME":"$DOCKER_REPO_TAG" .
+    - suffix=${TRAVIS_BRANCH//_/ }
+    - docker build -t "$DOCKER_REPO_NAME":"$suffix" .
     # log in
     - echo "$DOCKER_TOKEN" | docker login -u "$DOCKER_USERNAME" --password-stdin
     # push image
@@ -61,16 +60,18 @@ jobs:
     - kubectl config set-context ci-context --user=protes-ci-user --namespace=$K8S_NAMESPACE --cluster=ci-server
     - kubectl config use-context ci-context
     # deploy
-    # TODO: override env variables with, e.g., --set protes.appName=proxyT
     # get keys from deployment/values.yaml which contains the defaults
+    - suffix=${TRAVIS_BRANCH//_/ }
     - |
-      helm install protes-$TRAVIS_BRANCH deployment --wait --timeout 120s \
-        --set flower.appName=flower-$TRAVIS_BRANCH \
-        --set protes.appName=protes-$TRAVIS_BRANCH \
-        --set celeryWorker.appName=celery-worker-$TRAVIS_BRANCH \
-        --set rabbitmq.appName=rabbitmq-$TRAVIS_BRANCH \
-        --set mongodb.appName=mongodb-$TRAVIS_BRANCH
+      helm install protes-$suffix deployment --wait --timeout 120s \
+        --set flower.appName=flower-$suffix \
+        --set protes.appName=protes-$suffix \
+        --set protes.image="$DOCKER_REPO_NAME":"$suffix" \
+        --set celeryWorker.appName=celery-worker-$suffix \
+        --set celeryWorker.image="$DOCKER_REPO_NAME":"$suffix" \
+        --set rabbitmq.appName=rabbitmq-$suffix \
+        --set mongodb.appName=mongodb-$suffix
     # test
-    - endpoint=$(kubectl get route -l app=protes-$TRAVIS_BRANCH -o=jsonpath='{.items[0].spec.host}')
+    - endpoint=$(kubectl get route -l app=protes-$suffix -o=jsonpath='{.items[0].spec.host}')
     - "test $(curl -sL -w '%{http_code}' -X GET --header 'Accept: application/json' 'http://$endpoint/ga4gh/tes/v1/tasks?view=MINIMAL' -o /dev/null)=='200'"
 
