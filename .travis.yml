@@ -91,7 +91,7 @@ jobs:
         --set mongodb.appName=mongodb-$SUFFIX
     # test
     - endpoint=$(kubectl get route -l app=protes-$SUFFIX -o=jsonpath='{.items[0].spec.host}')
-    - echo "Application is running on: ${endpoint}"
+    - echo "Application is running on: $endpoint"
     - "test $(curl -sL -w '%{http_code}' -X GET --header 'Accept: application/json' 'http://$endpoint/ga4gh/tes/v1/tasks?view=MINIMAL' -o /dev/null)=='200'"
     # cleanup the ci deployment
   - stage: prod-deploy
@@ -122,7 +122,7 @@ jobs:
           --set mongodb.appName=mongodb
       # test
       - endpoint=$(kubectl get route -l app=protes -o=jsonpath='{.items[0].spec.host}')
-      - echo "Application is running on: ${endpoint}"
+      - echo "Application is running on: $endpoint"
       - "test $(curl -sL -w '%{http_code}' -X GET --header 'Accept: application/json' 'http://$endpoint/ga4gh/tes/v1/tasks?view=MINIMAL' -o /dev/null)=='200'"
   - stage: ci-clean
     name: Delete the deployed CI environment from Kubernetes
