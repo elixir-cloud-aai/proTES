@@ -15,12 +15,12 @@ import tes
 from werkzeug.exceptions import (BadRequest, InternalServerError)
 
 from pro_tes.celery_worker import celery
-from pro_tes.config.config_parser import get_conf
+from pro_tes.config.config_parser import (get_conf, get_conf_type)
 from pro_tes.database.db_utils import upsert_fields_in_root_object
 from pro_tes.database.register_mongodb import create_mongo_client
 from pro_tes.ga4gh.tes.states import States
 from pro_tes.tasks.utils import set_task_state
-
+from pro_tes.utils.middleware import TEStribute
 
 # Get logger instance
 logger = logging.getLogger(__name__)
@@ -60,7 +60,6 @@ def task__submit_task(
 
     # Process task
     try:
-
         # TODO (LATER): Get associated workflow run & related info
         # NOTE: 
         # - Get the following from callback via sender:
@@ -84,9 +83,28 @@ def task__submit_task(
             run_id_secondary=run_id_secondary
         )
 
-        # TODO (LATER): Apply middleware
+        ## INJECT MIDDLEWARE
+
+        # Task distribution with TEStribute
+        if get_conf(config, 'middleware', 'testribute', 'active'):
+            testribute_conf = get_conf_type(
+                config,
+                'middleware',
+                'testribute',
+                types=(Dict)
+            )
+            testribute = TEStribute(
+                task=request,
+                config=testribute_conf,
+                tes_uris=tes_uris,
+            )
+            service_combinations = testribute.rank_services()
+
+            # Service combinations to TES URI list... Soumyadip
+            # Fall back to default if errors occured
+
+        # TODO:
         # - Token validation / renewal
-        # - TEStribute
         # - Replace DRS IDs
 
         # TODO (PROPERLY): Send task to TES instance
@@ -129,7 +147,7 @@ def task__submit_task(
                     msg='.'.join(e.args),
                 )
             )
-        
+
         # TODO: Update database document
         document = upsert_fields_in_root_object(
             collection=collection,
@@ -230,10 +248,10 @@ def _send_task(
                 log['outputs'] = [
                     tes.models.OutputFileLog(**output) for output in log['outputs']
                 ]
-            if 'system_logs' in log:
-                log['system_logs'] = [
-                    tes.models.SystemLog(**log) for log in log['system_logs']
-                ]
+            #if 'system_logs' in log:
+            #    log['system_logs'] = [
+            #        tes.models.SystemLog(**log) for log in log['system_logs']
+            #    ]
         request['logs'] = [
             tes.models.TaskLog(**log) for log in request['logs']
         ]

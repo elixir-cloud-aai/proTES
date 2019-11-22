@@ -11,8 +11,6 @@ from flask import current_app
 from pymongo.errors import DuplicateKeyError
 from werkzeug.exceptions import BadRequest
 
-from pro_tes.utils.middleware import injectTEStribute
-
 from pro_tes.config.config_parser import (get_conf, get_conf_type)
 from pro_tes.tasks.tasks.submit_task import task__submit_task
 
@@ -49,31 +47,6 @@ def create_task(
         types=(list),
     )
 
-
-    document['testribute_status'] = get_conf_type(
-        config,
-        'testribute',
-        types=(Dict)
-    )
-
-    if document['testribute_status']['run']:
-
-        # Get knows DRS instances
-        document['drs_uris'] = get_conf_type(
-            config,
-            'drs',
-            'service_list',
-            types=(list),
-        )
-
-        ranked_tasks = injectTEStribute(
-            drs_uris=document['drs_uris'],
-            task_id_tes=document['task_id_tes'],
-            task=document['task'],
-            tes_uris=document['tes_uris'],
-        )
-        ranked_tasks.run_ranking()
-
     # Create task document and insert into database
     document = _create_task_document(
         config=config,
@@ -81,7 +54,7 @@ def create_task(
         sender=sender,
         init_state='UNKNOWN',
     )
-    
+
     # Get timeout duration
     timeout = get_conf(
         config,

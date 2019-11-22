@@ -1,42 +1,49 @@
-"""Utility functions to inject and process results from the middleware TEStribute"""
+"""Middleware to be injected into TES requests."""
 import logging
-from typing import Dict, List
-import addict
+from json import dumps
+import requests
+from typing import (Dict, Iterable, List, Mapping)
+from urllib.parse import urljoin
 
-from TEStribute import rank_services
+# Get logger instance
+logger = logging.getLogger(__name__)
 
 
-class injectTEStribute:
+class TEStribute:
+    """Calls external TEStribute task distribution logic service."""
     def __init__ (
         self,
-        drs_uris,
-        task_id_tes,
-        task,
-        tes_uris,
+        task: Mapping,
+        config: Mapping,
+        tes_uris: Iterable,
     )-> None:
+        self.api_root = config['api_root']
 
-        self.task_id=task_id_tes
+        # Fall back to default execution time if not provided
+        if not 'exeuction_time_sec' in task['resources']:
+            task['resources']['execution_time_sec'] = \
+                config['default_execution_time_sec']
         
-        #TODO: raise errors if no inputs or outputs
-        self.drs_input_ids = [i['name'] for i in task['inputs']]
-        self.drs_output_ids = [i['name'] for i in task['inputs']]        
-        
-        #TODO: replace when needed
+        # Create JSON payload for POST request
+        self.json_payload = dumps({
+            'drs_uris': config['drs_uris'],
+            'mode': config['mode'],
+            'object_ids': [i['name'] for i in task['inputs']],
+            'resource_requirements': task['resources'],
+            'tes_uris': tes_uris,
+        })
+
+
+    def rank_services(
+        self,
+        endpoint: str = '/rank_services'
+    ) -> Dict:
+        """Send POST request to TEStribute '/rank_services' endpoints."""
+        # TODO: Improve error handling
         try:
-            self.resource_requirements=task['resources']['execution_time_sec']
-        except KeyError:
-            task['resources']['execution_time_sec']=3600
-            self.resource_requirements=task['resources']
-        
-        self.drs_uris=drs_uris
-        self.tes_uris=tes_uris
-
-        
-    def run_ranking(self)->Dict:
-        rank = rank_services(
-            drs_uris=self.drs_uris,
-            tes_uris=self.tes_uris,
-            resource_requirements=self.resource_requirements,
-        )
-        
-        return rank
+            return requests.post(
+                urljoin(self.api_root, endpoint),
+                json=self.json_payload
+            )
+        except Exception:
+            raise
