@@ -13,6 +13,7 @@
 * [Yacine Khettab](https://github.com/djixyacine)
 * [Risto Laurikainen](https://github.com/rlaurika)
 * [Jacek Lebioda](https://github.com/jLebioda)
+* [Roberto Preste](https://github.com/robertopreste)
 * [Kevin Sayers](https://github.com/KevinSayers)
 * [Jaroslaw Surkont](https://github.com/jsurkont)
 * [Marco Tangaro](https://github.com/mtangaro)
