@@ -36,7 +36,11 @@ def run_server():
         app=connexion_app,
         specs=get_conf_type(config, 'api', 'specs', types=(list)),
         spec_dir=get_conf(config, 'storage', 'spec_dir'),
-        add_security_definitions=True,
+        add_security_definitions=get_conf(
+            config,
+            'security',
+            'authorization_required'
+        ),
     )
 
     # Enable cross-origin resource sharing
