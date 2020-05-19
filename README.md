@@ -42,14 +42,13 @@ Create data directory and required subdiretories
 
 ```bash
 export PROTES_DATA_DIR=/path/to/data/directory
-mkdir -p $PROTES_DATA_DIR/{db,specs}
+mkdir -p $PROTES_DATA_DIR/db
 ```
 
 > **Note:** If the `PROTES_DATA_DIR` environment variable is not set, proTES
-> will require the following default directories to be available:
+> will require the following directory to be available:
 >
 > * `../data/pro_tes/db`
-> * `../data/pro_tes/specs`
 
 Clone repository
 

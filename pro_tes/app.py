@@ -2,8 +2,8 @@
 
 from pro_tes.api.register_openapi import register_openapi
 from pro_tes.config.app_config import parse_app_config
-from pro_tes.config.config_parser import (get_conf, get_conf_type)
-from pro_tes.config.log_config import configure_logging
+from foca.config.config_parser import (get_conf, get_conf_type)
+from foca.config.log_config import configure_logging
 from pro_tes.database.register_mongodb import register_mongodb
 from pro_tes.errors.errors import register_error_handlers
 from pro_tes.factories.connexion_app import create_connexion_app
@@ -35,7 +35,6 @@ def run_server():
     connexion_app = register_openapi(
         app=connexion_app,
         specs=get_conf_type(config, 'api', 'specs', types=(list)),
-        spec_dir=get_conf(config, 'storage', 'spec_dir'),
         add_security_definitions=get_conf(
             config,
             'security',

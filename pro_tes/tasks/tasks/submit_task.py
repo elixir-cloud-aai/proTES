@@ -15,7 +15,7 @@ import tes
 from werkzeug.exceptions import (BadRequest, InternalServerError)
 
 from pro_tes.celery_worker import celery
-from pro_tes.config.config_parser import get_conf
+from foca.config.config_parser import get_conf
 from pro_tes.database.db_utils import upsert_fields_in_root_object
 from pro_tes.database.register_mongodb import create_mongo_client
 from pro_tes.ga4gh.tes.states import States

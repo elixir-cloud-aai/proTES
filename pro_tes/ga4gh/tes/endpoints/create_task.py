@@ -11,7 +11,7 @@ from flask import current_app
 from pymongo.errors import DuplicateKeyError
 from werkzeug.exceptions import BadRequest
 
-from pro_tes.config.config_parser import (get_conf, get_conf_type)
+from foca.config.config_parser import (get_conf, get_conf_type)
 from pro_tes.tasks.tasks.submit_task import task__submit_task
 
 

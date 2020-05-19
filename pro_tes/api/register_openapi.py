@@ -1,15 +1,14 @@
-"""Functions for registering OpenAPI specs with a Connexion app instance."""
+"""Functions for amending OpenAPI specs and registering them with a Connexion
+app instance."""
 
-from json import load
 import logging
 import os
 from shutil import copyfile
-from typing import (List, Dict, Optional)
+from typing import (List, Dict)
 
 from connexion import App
-from yaml import safe_dump
 
-from pro_tes.config.config_parser import get_conf
+from foca.config.config_parser import get_conf
 
 
 # Get logger instance
@@ -19,7 +18,6 @@ logger = logging.getLogger(__name__)
 def register_openapi(
     app: App,
     specs: List[Dict] = [],
-    spec_dir: Optional[str] = None,
     add_security_definitions: bool = True,
 ) -> App:
     """Registers OpenAPI specs with Connexion app."""
@@ -36,16 +34,9 @@ def register_openapi(
             get_conf(spec, 'path')
         )
 
-        # Convert JSON to YAML
-        if get_conf(spec, 'type') == 'json':
-            path = __json_to_yaml(path)
-
         # Add security definitions to copy of specs
         if add_security_definitions:
-            path = __add_security_definitions(
-                in_file=path,
-                out_dir=spec_dir,
-            )
+            path = __add_security_definitions(in_file=path)
 
         # Generate API endpoints from OpenAPI spec
         try:
@@ -78,23 +69,10 @@ def register_openapi(
     return(app)
 
 
-def __json_to_yaml(
-    path: str,
-    replace_extension: bool = True
-) -> str:
-    """Converts JSON to YAML file."""
-    out_base = os.path.splitext(path)[0] if replace_extension else path
-    out_file = '.'.join([out_base, 'yaml'])
-    with open(path, 'r') as f_in, open(out_file, 'w') as f_out:
-        safe_dump(load(f_in), f_out, default_flow_style=False)
-    return out_file
-
-
 def __add_security_definitions(
     in_file: str,
-    out_dir: Optional[str],
     ext: str = 'security_definitions_added.yaml'
-) -> Optional[str]:
+) -> str:
     """Adds 'securityDefinitions' section to OpenAPI YAML specs."""
     # Set security definitions
     amend = '''
@@ -108,14 +86,7 @@ securityDefinitions:
 '''
 
     # Create copy for modification
-    if out_dir:
-        base_name = '.'.join(
-            [os.path.splitext(os.path.basename(in_file))[0], ext]
-        )
-        out_file: str = os.path.abspath(os.path.join(out_dir, base_name))
-    else:
-        return None
-
+    out_file: str = '.'.join([os.path.splitext(in_file)[0], ext])
     copyfile(in_file, out_file)
 
     # Append security definitions

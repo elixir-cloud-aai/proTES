@@ -5,7 +5,7 @@ from typing import Dict
 
 from werkzeug.exceptions import BadRequest
 
-from pro_tes.config.config_parser import get_conf
+from foca.config.config_parser import get_conf
 
 
 # Get logger instance

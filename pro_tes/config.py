@@ -1,6 +1,6 @@
 import os
 
-from pro_tes.config.config_parser import get_conf
+from foca.config.config_parser import get_conf
 from pro_tes.config.app_config import parse_app_config
 
 # Source the WES config for defaults

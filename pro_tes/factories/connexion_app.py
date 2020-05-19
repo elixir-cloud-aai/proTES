@@ -7,7 +7,7 @@ from typing import (Mapping, Optional)
 from connexion import App
 
 from pro_tes.errors.errors import handle_bad_request
-from pro_tes.config.config_parser import get_conf
+from foca.config.config_parser import get_conf
 
 
 # Get logger instance
