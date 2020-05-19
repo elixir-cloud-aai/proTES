@@ -1,15 +1,14 @@
-swagger: '3.0'
+swagger: '2.0'
 info:
   title: Task Execution Service
   version: '0.4.1'
-components:
-  securitySchemes:
-    bearerAuth:            # arbitrary name for the security scheme
-      type: http
-      scheme: bearer
-      bearerFormat: JWT    # optional, arbitrary value for documentation purposes
-security:                  # apply security globally to all endpoints
-  - bearerAuth: []         # use the same name as above
+securityDefinitions:
+  jwt:
+    type: apiKey
+    name: Authorization
+    in: header
+security:
+- jwt: []             # apply security globally to all endpoints
 schemes:
   - http
 consumes:
@@ -29,6 +28,22 @@ paths:
           description: ''
           schema:
             $ref: '#/definitions/tesListTasksResponse'
+        '400':
+          description: The request is malformed.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        '401':
+          description: The request is unauthorized.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        '403':
+          description: The requester is not authorized to perform this action.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        '500':
+          description: An unexpected error occurred.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
       parameters:
         - name: name_prefix
           description: |-
@@ -85,6 +100,22 @@ paths:
           description: ''
           schema:
             $ref: '#/definitions/tesCreateTaskResponse'
+        '400':
+          description: The request is malformed.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        '401':
+          description: The request is unauthorized.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        '403':
+          description: The requester is not authorized to perform this action.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        '500':
+          description: An unexpected error occurred.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
       parameters:
         - name: body
           in: body
@@ -105,6 +136,22 @@ paths:
           description: ''
           schema:
             $ref: '#/definitions/tesServiceInfo'
+        '400':
+          description: The request is malformed.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        '401':
+          description: The request is unauthorized.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        '403':
+          description: The requester is not authorized to perform this action.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        '500':
+          description: An unexpected error occurred.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
       tags:
         - TaskService
   '/tasks/{id}':
@@ -118,6 +165,22 @@ paths:
           description: ''
           schema:
             $ref: '#/definitions/tesTask'
+        '400':
+          description: The request is malformed.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        '401':
+          description: The request is unauthorized.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        '403':
+          description: The requester is not authorized to perform this action.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        '500':
+          description: An unexpected error occurred.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
       parameters:
         - name: id
           in: path
@@ -156,6 +219,22 @@ paths:
           description: ''
           schema:
             $ref: '#/definitions/tesCancelTaskResponse'
+        '400':
+          description: The request is malformed.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        '401':
+          description: The request is unauthorized.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        '403':
+          description: The requester is not authorized to perform this action.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        '500':
+          description: An unexpected error occurred.
+          schema:
+            $ref: '#/definitions/ErrorResponse'
       parameters:
         - name: id
           in: path
