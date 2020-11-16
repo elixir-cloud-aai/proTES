@@ -26,7 +26,7 @@ services:
     volumes:
       - ${PROTES_DATA_DIR:-../data/pro_tes}:/data
     ports:
-      - "7878:8080"
+      - "8080:8080"
 
   rabbitmq:
     image: "rabbitmq:3-management"
@@ -35,7 +35,7 @@ services:
     links:
       - mongodb
     ports:
-      - "5682:5672"
+      - "5672:5672"
 
   mongodb:
     image: mongo:3.2
@@ -43,7 +43,7 @@ services:
     volumes:
       - ${PROTES_DATA_DIR:-../data/pro_tes}/db:/data/db
     ports:
-      - "27027:27017"
+      - "27017:27017"
 
   flower:
     image: mher/flower:0.9
@@ -52,4 +52,4 @@ services:
       - protes-worker
     command: flower --broker=amqp://guest:guest@rabbitmq:5672// --port=5555
     ports:
-      - "5565:5555"
+      - "5555:5555"
