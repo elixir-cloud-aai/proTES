@@ -1,6 +1,6 @@
 # proTES
 
-[![Apache License](https://img.shields.io/badge/license-Apache%202.0-orange.svg?style=flat&color=important)][license-apache]
+[![Apache License](https://img.shields.io/badge/license-Apache%202.0-orange.svg?style=flat&color=important)](http://www.apache.org/licenses/LICENSE-2.0)
 [![Build Status](https://travis-ci.org/elixir-europe/proTES.svg?branch=dev)](https://travis-ci.org/elixir-europe/proTES)
 
 ## Synopsis
@@ -105,8 +105,8 @@ spec versioning for major and minor versions, and release patched versions
 intermittently.
 
 ## License
-
-This project is covered by the [Apache License 2.0][license-apache] also
+This project is covered by the [Apache License 2.0] also [shipped with this
+repository](LICENSE).
 [shipped with this repository](LICENSE).
 
 ## Contact
@@ -122,7 +122,7 @@ inquiries, proposals, questions etc. that are not covered by these docs.
 [![GA4GH logo](images/logo-ga4gh.png)](https://www.ga4gh.org/)
 [![ELIXIR logo](images/logo-elixir.png)](https://www.elixir-europe.org/)
 [![ELIXIR Cloud & AAI log](images/logo-elixir-cloud.png)](https://elixir-europe.github.io/cloud/)
-
+[Apache License 2.0]: <https://www.apache.org/licenses/LICENSE-2.0>
 [license-apache]: <https://www.apache.org/licenses/LICENSE-2.0>
 [Connexion]: <https://github.com/zalando/connexion>
 [Docker]: <https://www.docker.com/>
