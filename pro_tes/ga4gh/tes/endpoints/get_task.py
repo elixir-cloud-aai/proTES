@@ -7,8 +7,7 @@ from typing import Dict
 from werkzeug.exceptions import BadRequest
 
 from pro_tes.config.config_parser import get_conf
-from pro_tes.errors.errors import TaskNotFound
-
+from pro_tes.errors.exceptions import TaskNotFound
 
 # Get logger instance
 logger = logging.getLogger(__name__)

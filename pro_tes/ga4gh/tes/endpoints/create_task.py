@@ -1,19 +1,16 @@
 """Utility functions for POST /v1/tasks endpoint."""
 
 import logging
-from random import choice
-from requests import post
 import string  # noqa: F401
-from typing import (Dict, Union)
+from random import choice
+from typing import (Dict)
 
 from celery import uuid
-from flask import current_app
 from pymongo.errors import DuplicateKeyError
 from werkzeug.exceptions import BadRequest
 
 from pro_tes.config.config_parser import (get_conf, get_conf_type)
 from pro_tes.tasks.tasks.submit_task import task__submit_task
-
 
 # Get logger instance
 logger = logging.getLogger(__name__)

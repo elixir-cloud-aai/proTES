@@ -4,7 +4,7 @@ import logging
 import os
 from typing import Optional
 
-from pro_tes.config.config_parser import YAMLConfigParser
+from foca.config.config_parser import ConfigParser
 
 
 # Get logger instance
@@ -21,14 +21,14 @@ def parse_app_config(
             'app_config.yaml'
         )
     )
-) -> YAMLConfigParser:
+) -> ConfigParser:
     """Parses configuration files and adds configuration to Connexion app."""
     # Create parser instance
-    config = YAMLConfigParser()
+    config = ConfigParser()
 
     # Parse config
     try:
-        paths = config.update_from_yaml(
+        paths = config.merge_yaml(
             config_paths=[default_path],
             config_vars=[config_var],
         )

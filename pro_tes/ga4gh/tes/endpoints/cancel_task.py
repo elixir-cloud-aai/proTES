@@ -9,7 +9,7 @@ from connexion.exceptions import Forbidden
 import tes
 
 from pro_tes.config.config_parser import get_conf
-from pro_tes.errors.errors import TaskNotFound
+from pro_tes.errors.exceptions import TaskNotFound
 from pro_tes.ga4gh.tes.states import States
 from pro_tes.tasks.utils import set_task_state
 

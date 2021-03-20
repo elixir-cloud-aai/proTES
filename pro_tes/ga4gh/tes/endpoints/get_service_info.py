@@ -4,7 +4,7 @@ from copy import deepcopy
 import logging
 from typing import (Any, Mapping)
 
-import pro_tes.database.db_utils as db_utils
+import foca.database.db_utils as db_utils
 
 
 # Get logger instance

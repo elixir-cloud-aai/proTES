@@ -1,26 +1,23 @@
 """Celery background task to process task asynchronously."""
 
-from datetime import datetime
-from dateutil.parser import parse as parse_time
 import logging
+from datetime import datetime
 from time import sleep
 from typing import (Dict, List, Tuple)
 
-from celery.exceptions import SoftTimeLimitExceeded
-from flask import current_app
-from flask import Flask
-from flask_pymongo import PyMongo
-from pymongo import collection as Collection
 import tes
-from werkzeug.exceptions import (BadRequest, InternalServerError)
+from celery.exceptions import SoftTimeLimitExceeded
+from dateutil.parser import parse as parse_time
+from flask import current_app
+from pymongo import collection as Collection
+from werkzeug.exceptions import (BadRequest)
 
 from pro_tes.celery_worker import celery
 from pro_tes.config.config_parser import get_conf
 from pro_tes.database.db_utils import upsert_fields_in_root_object
-from pro_tes.database.register_mongodb import create_mongo_client
+from foca.database.register_mongodb import create_mongo_client
 from pro_tes.ga4gh.tes.states import States
 from pro_tes.tasks.utils import set_task_state
-
 
 # Get logger instance
 logger = logging.getLogger(__name__)

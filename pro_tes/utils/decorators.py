@@ -1,19 +1,14 @@
 """Custom decorators."""
 
-from connexion.exceptions import Unauthorized
+import logging
+from functools import wraps
+from typing import (Callable)
+
 from connexion import request
 from flask import current_app
-from functools import wraps
-import logging
-from typing import (Callable, Dict, List, Mapping, Union)
 
-from jwt import (decode, get_unverified_header, algorithms)
-import requests
-import json
-
-from pro_tes.config.config_parser import get_conf, get_conf_type
+from pro_tes.config.config_parser import get_conf
 from pro_tes.security.process_jwt import JWT
-
 
 # Get logger instance
 logger = logging.getLogger(__name__)

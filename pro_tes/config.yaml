@@ -50,7 +50,7 @@ celery:
 # OpenAPI specs
 api:
     specs:
-        - path: '20190903.d55bf88.task_execution_service.modified.swagger.yaml'
+        - path: 'api/20190903.d55bf88.task_execution_service.modified.swagger.yaml'
           type: 'yaml'
           strict_validation: True
           validate_responses: False # has to be False because MINIMAL view is not spec-compliant
