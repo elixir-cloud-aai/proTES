@@ -10,7 +10,7 @@ services:
     links:
       - mongodb
       - rabbitmq
-    command: bash -c "cd /app/pro_tes; celery worker -A celery_worker -E --loglevel=info"
+    command: bash -c "cd /app/pro_tes; celery -A celery_worker worker -E --loglevel=info"
     volumes:
       - ${PROTES_DATA_DIR:-../data/pro_tes}:/data
 
