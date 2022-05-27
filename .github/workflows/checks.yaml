@@ -24,13 +24,13 @@ jobs:
       run: docker-compose up -d
     - name: Test
       run: |
-          test $( \
-                curl \
-                    -sL \
-                    -o /dev/null \
-                    -w '%{http_code}' \
-                    -X GET \
-                    --header 'Accept: application/json' \
-                    "${PROBE_ENDPOINT}" \
-            ) == '200' || exit 1
+        test $( \
+          curl \
+           -sL \
+           -o /dev/null \
+           -w '%{http_code}' \
+           -X GET \
+           --header 'Accept: application/json' \
+           "${PROBE_ENDPOINT}" \
+          ) == '200' || exit 1
 
