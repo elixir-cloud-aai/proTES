@@ -29,6 +29,7 @@ jobs:
         test $( \
           curl \
            -sL \
+           -v \
            -o /dev/null \
            -w '%{http_code}' \
            -X GET \
