@@ -22,6 +22,8 @@ jobs:
       run: mkdir -p ${HOME}/data/{db,output,tmp}
     - name: Docker compose up
       run: docker-compose up -d
+    - name: Sleep 30
+      run: sleep 30
     - name: Test
       run: |
         test $( \
