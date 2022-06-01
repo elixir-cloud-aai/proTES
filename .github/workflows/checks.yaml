@@ -24,11 +24,13 @@ jobs:
       run: docker-compose up -d
     - name: Sleep 30
       run: sleep 30
+    - name: PROBE
+      run: echo "${PROBE_ENDPOINT}"
     - name: Test
       run: |
         test $( \
           curl \
-           -sL \
+           -L \
            -v \
            -o /dev/null \
            -w '%{http_code}' \
