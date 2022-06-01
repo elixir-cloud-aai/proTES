@@ -9,6 +9,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      PROBE_ENDPOINT: localhost:8080/ga4gh/tes/v1/ui/
     strategy:
       fail-fast: true
       matrix:
@@ -30,7 +32,7 @@ jobs:
       run: |
         test $( \
           curl \
-           -L \
+           -sL \
            -v \
            -o /dev/null \
            -w '%{http_code}' \
