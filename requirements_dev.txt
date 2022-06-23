@@ -1,0 +1,7 @@
+coverage==6.4
+coveralls==3.3.1
+flake8==4.0.1
+mongomock==4.0.0
+pylint==2.13.9
+pytest==7.1.2
+python-semantic-release==7.29.0
