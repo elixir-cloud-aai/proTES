@@ -35,11 +35,11 @@ db:
     dbs:
         runStore:
             collections:
-                runs:
+                tasks:
                     indexes:
                         - keys:
-                              run_id: 1
                               task_id: 1
+                              celery_id: 1
                           options:
                             'unique': True
                             'sparse': True
@@ -55,7 +55,7 @@ api:
         - path:
             - api/openapi.yaml
           add_operation_fields:
-              x-openapi-router-controller: pro_tes.ga4gh.tes
+              x-openapi-router-controller: pro_tes.ga4gh.tes.server
           add_security_fields:
               x-bearerInfoFunc: app.validate_token
           disable_auth: True
@@ -69,27 +69,34 @@ api:
 
 # Logging configuration
 # Cf. https://foca.readthedocs.io/en/latest/modules/foca.models.html#foca.models.config.LogConfig
-# log:
-#     version: 1
-#     disable_existing_loggers: False
-#     formatters:
-#         standard:
-#             class: logging.Formatter
-#             style: "{"
-#             format: "[{asctime}: {levelname:<8}] {message} [{name}]"
-#     handlers:
-#         console:
-#             class: logging.StreamHandler
-#             level: 20
-#             formatter: standard
-#             stream: ext://sys.stderr
-#     root:
-#         level: 10
-#         handlers: [console]
+log:
+    version: 1
+    disable_existing_loggers: False
+    formatters:
+        standard:
+            class: logging.Formatter
+            style: "{"
+            format: "[{asctime}: {levelname:<8}] {message} [{name}]"
+    handlers:
+        console:
+            class: logging.StreamHandler
+            level: 20
+            formatter: standard
+            stream: ext://sys.stderr
+    root:
+        level: 10
+        handlers: [console]
 
 jobs:
     host: rabbitmq
     port: 5672
     backend: 'rpc://'
     include:
-        - pro_wes.tasks.track_run_progress
+        - pro_tes.tasks.tasks.submit_task
+
+# Exception configuration
+# Cf. https://foca.readthedocs.io/en/latest/modules/foca.models.html#foca.models.config.ExceptionConfig
+exceptions:
+    required_members: [['message'], ['code']]
+    status_member: ['code']
+    exceptions: pro_tes.exceptions.exceptions
