@@ -13,13 +13,11 @@ from flask import current_app
 # import pro_tes.ga4gh.tes.endpoints.list_tasks as list_tasks
 # from pro_tes.utils.decorators import auth_token_optional
 
-from pro_tes.ga4gh.tes.endpoints import (
-    cancel_task,
-    create_task,
-    get_service_info,
-    get_task,
-    list_tasks,  
+from typing import (
+    Dict
 )
+from pro_tes.ga4gh.tes.service_info import ServiceInfo
+from pro_tes.ga4gh.tes.task_runs import TaskRuns
 
 
 # Get logger instance
@@ -27,90 +25,59 @@ logger = logging.getLogger(__name__)
 
 
 # POST /tasks/{id}:cancel
-# @auth_token_optional
 @log_traffic
 def CancelTask(id, *args, **kwargs):
     """Cancels unfinished task."""
-    response = cancel_task.cancel_task(
-        config=current_app.config,
+    task_runs = TaskRuns()
+    response = task_runs.cancel_task(
         id=id,
-        *args,
         **kwargs
     )
-    # log_request(request, response)
     return response
 
 
 # POST /tasks
-# @auth_token_optional
 @log_traffic
-def CreateTask(*args, **kwargs):
+def CreateTask(*args, **kwargs)-> Dict[str, str]:
     """Creates task."""
-    response = create_task.create_task(
-        config=current_app.config,
-        sender=request.environ['REMOTE_ADDR'],
-        *args,
+    task_runs = TaskRuns()
+    response = task_runs.create_task(
+        request = request,
         **kwargs
     )
-    # log_request(request, response)
     return response
 
-
 # GET /tasks/service-info
-# @auth_token_optional
+
 @log_traffic
 def GetServiceInfo(*args, **kwargs):
     """Returns service info."""
-    response = get_service_info.get_service_info(
-        config=current_app.config,
-        *args,
+    service_info = ServiceInfo()
+    response = service_info.get_service_info(
         **kwargs
     )
-    # log_request(request, response)
     return response
 
 
+
 # GET /tasks/{id}
-# @auth_token_optional
 @log_traffic
 def GetTask(id, *args, **kwargs):
     """Returns info for individual task."""
-    response = get_task.get_task(
-        config=current_app.config,
+    task_runs = TaskRuns()
+    response = task_runs.get_task(
         id=id,
-        *args,
         **kwargs
     )
-    # log_request(request, response)
     return response
 
 
 # GET /tasks
-# @auth_token_optional
 @log_traffic
 def ListTasks(*args, **kwargs):
     """Returns IDs and other info for all available tasks."""
-    response = list_tasks.list_tasks(
-        config=current_app.config,
-        *args,
+    tasks_run = TaskRuns()
+    response = tasks_run.list_tasks(
         **kwargs
     )
-    # log_request(request, response)
     return response
-
-
-# def log_request(request, response):
-#     """Writes request and response to log."""
-#     # TODO: write decorator for request logging
-#     logger.debug(
-#         (
-#             "Response to request \"{method} {path} {protocol}\" from "
-#             "{remote_addr}: {response}"
-#         ).format(
-#             method=request.environ['REQUEST_METHOD'],
-#             path=request.environ['PATH_INFO'],
-#             protocol=request.environ['SERVER_PROTOCOL'],
-#             remote_addr=request.environ['REMOTE_ADDR'],
-#             response=response,
-#         )
-#     )

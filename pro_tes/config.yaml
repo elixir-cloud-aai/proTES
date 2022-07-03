@@ -39,7 +39,7 @@ db:
                     indexes:
                         - keys:
                               task_id: 1
-                              celery_id: 1
+                              worker_id: 1
                           options:
                             'unique': True
                             'sparse': True
@@ -55,7 +55,7 @@ api:
         - path:
             - api/openapi.yaml
           add_operation_fields:
-              x-openapi-router-controller: pro_tes.ga4gh.tes.server
+              x-openapi-router-controller: pro_tes.ga4gh.tes.server 
           add_security_fields:
               x-bearerInfoFunc: app.validate_token
           disable_auth: True
@@ -100,3 +100,31 @@ exceptions:
     required_members: [['message'], ['code']]
     status_member: ['code']
     exceptions: pro_tes.exceptions.exceptions
+
+controllers:
+    post_task:
+        db:
+            insert_attempts: 10
+        task_id:
+            charset: string.ascii_uppercase + string.digits
+            length: 6
+        storage: '/data'
+        timeout:
+            post: null
+            poll: 2
+            job: null
+        polling:
+            wait: 3
+            attempts: 100
+    list_runs:
+        default_page_size: 5
+    celery:
+        monitor:
+            timeout: 0.1
+        message_maxsize: 16777216
+
+serviceInfo:
+    doc: Proxy TES for distributing tasks across a list of service TES instances
+    name: proTES
+    storage:
+        - file:///path/to/local/storage

@@ -20,7 +20,7 @@ bind = '{address}:{port}'.format(
 
 # Source environment variables for Gunicorn workers
 raw_env = [
-    "WES_CONFIG=%s" % os.environ.get('WES_CONFIG', ''),
+    "TES_CONFIG=%s" % os.environ.get('TES_CONFIG', ''),
     "RABBIT_HOST=%s" % os.environ.get('RABBIT_HOST', app_config.jobs.host),
     "RABBIT_PORT=%s" % os.environ.get('RABBIT_PORT', app_config.jobs.port),
     "MONGO_HOST=%s" % os.environ.get('MONGO_HOST', app_config.db.host),

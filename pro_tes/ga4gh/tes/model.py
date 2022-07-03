@@ -223,3 +223,85 @@ class TesListTasksResponse(BaseModel):
         None,
         description='Token used to return the next page of results.\nSee TaskListRequest.next_page_token',
     )
+    
+
+class RunLog(BaseModel):
+    """Model for entire task run log.
+
+    Args:
+        outputs: Name and destination of task outputs.
+        request: Form data passed during original task run request.
+        run_id: Unique identifier of task run.
+        state: State of task run.
+        task_logs: List of task/job logs.
+
+    Attributes:
+        outputs: Name and destination of task outputs.
+        request: Form data passed during originaltask run request.
+        run_id: Unique identifier of task run.
+        state: State of task run.
+        task_logs: List of task/job logs.
+    """
+    # outputs: Optional[Dict] = None
+    request: Optional[TesTask] = None
+    task_id: Optional[str] = None
+    run_log: Optional[TesExecutorLog] = None
+    state: TesState = TesState.UNKNOWN
+    task_logs: Optional[List[TesExecutorLog]] = []
+
+    class Config:
+        use_enum_values = True
+
+class DbDocument(BaseModel):
+    """Model for task run request database document.
+
+    Args:
+        run_log: Complete logging information for task run.
+        task_id: Identifier of task.
+        user_id: Identifier of resource owner.
+        tes_endpoint: Information about the endpoint to where the run request
+            was forwarded.
+
+    Attributes:
+        attachments: Names of attached files.
+        run_log: Complete logging information for task run.
+        task_id: Identifier of worker task.
+        user_id: Identifier of resource owner.
+        TES_endpoint: Information about the endpoint to where the run request
+            was forwarded.
+    """
+    
+    worker_id: Optional[str] = None
+    run_log: RunLog = RunLog()
+    user_id: Optional[str] = None
+    tes_endpoint: Optional[TesEndpoint] = None
+    
+
+        
+class TesEndpoint(BaseModel):
+    """Model for information on the external TES endpoint to which the incoming
+    task run request was relayed.
+
+    Args:
+        host: Host at which the TES API is served that is processing this
+            request; note that this should include the path information but
+            *not* the base path path defined in the TES API specification;
+            e.g., specify https://my.tes.com/api if the actual API is hosted at
+            https://my.tes.com/api/ga4gh/tes/v1.
+        base_path: Override the default path suffix defined in the TES API
+            specification, i.e., `/ga4gh/tes/v1`.
+        run_id: Identifier for task run on external TES endpoint.
+
+    Attributes:
+        host: Host at which the TES API is served that is processing this
+            request; note that this should include the path information but
+            *not* the base path path defined in the TES API specification;
+            e.g., specify https://my.tes.com/api if the actual API is hosted at
+            https://my.tes.com/api/ga4gh/tes/v1.
+        base_path: Override the default path suffix defined in the TES API
+            specification, i.e., `/ga4gh/tes/v1`.
+        run_id: Identifier for task run on external TES endpoint.
+    """
+    host: str
+    base_path: Optional[str] = '/vi/tasks'
+    task_id: Optional[str]
