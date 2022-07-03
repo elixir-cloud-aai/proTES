@@ -65,7 +65,7 @@ class TaskRuns:
         document.tes_endpoint = TesEndpoint(
             host="https://csc-tesk-noauth.rahtiapp.fi",
         )
-        # # get and attach workflow run owner
+        # # get and attach task run owner
         document.user_id = kwargs.get('user_id', None)
         
         # create run environment & insert run document into run collection
@@ -77,7 +77,7 @@ class TaskRuns:
             worker_id=document_stored.worker_id,
         )
         
-         # forward incoming WES request and validate response
+         # forward incoming TES request and validate response
         url = (
             f"{document_stored.tes_endpoint.host.rstrip('/')}/"
             f"{document_stored.tes_endpoint.base_path.strip('/')}"
@@ -88,12 +88,11 @@ class TaskRuns:
             f"hosted at: {url}"
         )
         
-        #TODO : Submitting of task sucessfully to TES endpoint
+        # #TODO : Submitting of task sucessfully to TES endpoint
         # try:
         #     task = tes.Task(document.run_log.request)
-        #     cli = tes.HTTPClient("https://csc-tesk-noauth.rahtiapp.fi",timeout = 5)
+        #     cli = tes.HTTPClient(url,timeout = 5)
         #     task_id = cli.create_task(task)
-        #     res = cli.get_task(task_id)
         # except EngineUnavailable:
         #     db_connector.update_task_state(state=TesState.SYSTEM_ERROR.value)
             
@@ -135,7 +134,7 @@ class TaskRuns:
             
         #TODO: to set view (minimal,basic,full)
         
-        # query database for workflow runs
+        # query database for task runs
         cursor = self.db_client.find(
             filter=filter_dict,
             projection={
@@ -177,7 +176,7 @@ class TaskRuns:
         **kwargs
     ) -> Dict:
         #TODO: to set view (minimal,basic,full)
-        # retrieve workflow run
+        # retrieve task run
         document = self.db_client.find_one(
             filter={'run_log.task_id': id},
             projection={
@@ -186,12 +185,12 @@ class TaskRuns:
                 '_id': False,
             }
         )
-        # raise error if workflow run was not found
+        # raise error if task run was not found
         if document is None:
             logger.error("Run '{id}' not found.".format(id=id))
             raise RunNotFound
     
-        # # raise error trying to access workflow run that is not owned by user
+        # # raise error trying to access task run that is not owned by user
         # # only if authorization enabled
         # self._check_access_permission(
         #     resource_id=id,
