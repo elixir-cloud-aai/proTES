@@ -2,16 +2,7 @@
 import logging
 from foca.utils.logging import log_traffic
 
-from celery import current_app as celery_app
 from connexion import request
-from flask import current_app
-
-# import pro_tes.ga4gh.tes.endpoints.cancel_task as cancel_task
-# import pro_tes.ga4gh.tes.endpoints.create_task as create_task
-# import pro_tes.ga4gh.tes.endpoints.get_service_info as get_service_info
-# import pro_tes.ga4gh.tes.endpoints.get_task as get_task
-# import pro_tes.ga4gh.tes.endpoints.list_tasks as list_tasks
-# from pro_tes.utils.decorators import auth_token_optional
 
 from typing import (
     Dict
@@ -38,17 +29,17 @@ def CancelTask(id, *args, **kwargs):
 
 # POST /tasks
 @log_traffic
-def CreateTask(*args, **kwargs)-> Dict[str, str]:
-    """Creates task."""
+def CreateTask(*args, **kwargs) -> Dict[str, str]:
+    # """Creates task."""
     task_runs = TaskRuns()
     response = task_runs.create_task(
-        request = request,
+        request=request,
         **kwargs
     )
     return response
 
-# GET /tasks/service-info
 
+# GET /tasks/service-info
 @log_traffic
 def GetServiceInfo(*args, **kwargs):
     """Returns service info."""
@@ -57,7 +48,6 @@ def GetServiceInfo(*args, **kwargs):
         **kwargs
     )
     return response
-
 
 
 # GET /tasks/{id}

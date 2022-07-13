@@ -9,6 +9,7 @@ def init_app() -> App:
     app = foca(Path(__file__).resolve().parent / "config.yaml")
     return app
 
+
 def run_app(app: App) -> None:
     app.run(port=app.port)
 

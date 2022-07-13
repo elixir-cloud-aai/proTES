@@ -25,7 +25,7 @@ raw_env = [
     "RABBIT_PORT=%s" % os.environ.get('RABBIT_PORT', app_config.jobs.port),
     "MONGO_HOST=%s" % os.environ.get('MONGO_HOST', app_config.db.host),
     "MONGO_PORT=%s" % os.environ.get('MONGO_PORT', app_config.db.port),
-    "MONGO_DBNAME=%s" % os.environ.get('MONGO_DBNAME', 'runStore'),
+    "MONGO_DBNAME=%s" % os.environ.get('MONGO_DBNAME', 'taskStore'),
     "MONGO_USERNAME=%s" % os.environ.get('MONGO_USERNAME', ''),
     "MONGO_PASSWORD=%s" % os.environ.get('MONGO_PASSWORD', ''),
 ]
