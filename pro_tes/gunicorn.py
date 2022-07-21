@@ -3,7 +3,7 @@ import os
 from pro_tes.app import init_app
 
 # Source application configuration
-app_config = init_app().app.config['FOCA']
+app_config = init_app().app.config.foca
 
 # Set Gunicorn number of workers and threads
 workers = int(os.environ.get('GUNICORN_PROCESSES', '1'))

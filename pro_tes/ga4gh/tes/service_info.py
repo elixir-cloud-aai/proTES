@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 class ServiceInfo:
 
     def __init__(self) -> None:
+        
         """Class for TES API service info server-side controller methods.
 
         Creates service info upon first request, if it does not exist.
@@ -30,7 +31,7 @@ class ServiceInfo:
             object_id: Database identifier for service info.
         """
         self.config: Dict = current_app.config
-        self.foca_config: Config = self.config['FOCA']
+        self.foca_config: Config = self.config.foca
         self.db_client_service_info: Collection = (
             self.foca_config.db.dbs['taskStore']
             .collections['service_info'].client

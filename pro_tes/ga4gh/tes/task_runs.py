@@ -47,7 +47,7 @@ class TaskRuns:
                 this is iteratively built up.
         """
         self.config: Dict = current_app.config
-        self.foca_config: Config = current_app.config['FOCA']
+        self.foca_config: Config = current_app.config.foca
         self.db_client: Collection = (
             self.foca_config.db.dbs['taskStore'].collections['tasks'].client
         )

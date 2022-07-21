@@ -2,11 +2,12 @@
 from pathlib import Path
 
 from connexion import App
-from foca.foca import foca
+from foca import Foca
 
 
 def init_app() -> App:
-    app = foca(Path(__file__).resolve().parent / "config.yaml")
+    foca = Foca(Path(__file__).resolve().parent / "config.yaml")
+    app = foca.create_app()
     return app
 
 

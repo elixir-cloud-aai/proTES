@@ -1,5 +1,5 @@
 # FOCA configuration
-# Available in app context as attributes of `current_app.config['FOCA']`
+# Available in app context as attributes of `current_app.config.foca`
 # Automatically validated via FOCA
 # Cf. https://foca.readthedocs.io/en/latest/modules/foca.models.html
 
