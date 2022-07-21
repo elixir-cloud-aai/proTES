@@ -178,7 +178,7 @@ class TaskRuns:
             page_size = kwargs['page_size']
         else:
             page_size = (
-                self.foca_config.controllers['list_task']['default_page_size']
+                self.foca_config.controllers['list_tasks']['default_page_size']
             )
         # extract/set page token
         if 'page_token' in kwargs:
