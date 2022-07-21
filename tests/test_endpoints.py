@@ -20,7 +20,7 @@ headers = {
 
 # test for POST /tasks endpoint
 def test_post_tasks_200():
-    """"""
+    """ Test POST /tasks for successful task creation"""
     post_response = requests.post(
         url=f"{tes_url}/tasks",
         headers=headers,
@@ -33,7 +33,7 @@ def test_post_tasks_200():
 
 # tests for GET /tasks
 def test_get_tasks_minimal_200():
-    """Test GET /tasks for sucessfull fetching of all tasks"""
+    """Test GET /tasks for successful fetching of all tasks"""
     params = {
         'view': 'MINIMAL'
     }
@@ -56,7 +56,7 @@ def test_get_tasks_minimal_200():
 
 
 def test_get_tasks_basic_200():
-    """Test GET /tasks for sucessfull fetching of all tasks"""
+    """Test GET /tasks for successful fetching of all tasks"""
     params = {
         'view': 'BASIC'
     }
@@ -82,7 +82,7 @@ def test_get_tasks_basic_200():
 
 
 def test_get_tasks_full_200():
-    """Test GET /tasks for sucessfull fetching of all tasks"""
+    """Test GET /tasks for successful fetching of all tasks"""
     params = {
         'view': 'FULL'
     }
@@ -165,3 +165,27 @@ def test_get_task_by_id_full():
     assert response.json()['executors']
     assert response.json()['executors'][0]['image']
     assert response.json()['executors'][0]['command']
+
+
+# test to GET /service-info
+def test_get_service_info_200():
+    response = requests.get(
+        url=f"{tes_url}/service-info"
+    )
+    assert response.status_code == 200
+
+
+# test for POST /tasks/{id}:cancel
+def test_cancel_task_200():
+    post_response = requests.post(
+        url=f"{tes_url}/tasks",
+        headers=headers,
+        json=tasks_body
+    )
+    id = post_response.json()['id']
+    response = requests.post(
+        url=f"{tes_url}/tasks/{id}:cancel",
+    )
+    # here we could also check the state of task if it\
+    # canceled or not
+    assert response.status_code == 200
