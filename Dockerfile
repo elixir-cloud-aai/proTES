@@ -1,15 +1,17 @@
 ##### BASE IMAGE #####
 # FROM python:3.7-slim-stretch
-FROM elixircloud/foca:20220524-py3.7
+
+#FROM elixircloud/foca:latest
+FROM elixircloud/foca:20220625-py3.10
+#FROM elixircloud/foca:20220625-py3.9
+#FROM elixircloud/foca:20220625-py3.8
+#FROM elixircloud/foca:20220524-py3.7
 
 ##### METADATA #####
-# LABEL base.image="python:3.6-slim-stretch"
-# LABEL version="1.1"
-LABEL base.image="elixircloud/foca:20220524-py3.7"
-LABEL version="2.0"
+LABEL base.image="elixircloud/foca:20220625-py3.10"
+LABEL version="1.1"
 LABEL software="proTES"
-# LABEL software.version="0.1.0"
-LABEL software.version="0.2.0"
+LABEL software.version="0.1.0"
 LABEL software.description="Flask microservice implementing the Global Alliance for Genomics and Health (GA4GH) Task Execution Service (TES) API specification as a proxy for task distribution."
 LABEL software.website="https://github.com/elixir-europe/proTES"
 LABEL software.documentation="https://github.com/elixir-europe/proTES"
