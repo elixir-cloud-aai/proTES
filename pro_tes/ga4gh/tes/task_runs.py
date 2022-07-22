@@ -403,7 +403,7 @@ class TaskRuns:
         #     'document.task_log.state' in TesState.UNKNOWN:
 
         # Cancel remote task
-        
+
         try:
             cli = tes.HTTPClient(url, timeout=5)
             cli.cancel_task(task_id=document['tes_endpoint']['task_id'])

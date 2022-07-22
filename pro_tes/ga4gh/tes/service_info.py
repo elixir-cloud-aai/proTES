@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 class ServiceInfo:
 
     def __init__(self) -> None:
-        
+
         """Class for TES API service info server-side controller methods.
 
         Creates service info upon first request, if it does not exist.
