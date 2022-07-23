@@ -41,7 +41,7 @@ jobs:
     - name: Create data directories
       run: mkdir -p ${HOME}/data/{db,output,tmp}
     - name: Docker compose up
-      run: docker-compose up -d
+      run: docker-compose up -d --build
     - name: Sleep 30
       run: sleep 30
     - name: PROBE
@@ -58,6 +58,8 @@ jobs:
            --header 'Accept: application/json' \
            "${PROBE_ENDPOINT}" \
           ) == '200' || exit 1
+    - name: Install pytest
+      run: pip install pytest
     - name: Test Endpoints with pytest (Integration Tests)
       run: pytest tests/test_endpoints.py
 
