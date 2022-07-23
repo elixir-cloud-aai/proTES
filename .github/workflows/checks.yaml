@@ -58,4 +58,9 @@ jobs:
            --header 'Accept: application/json' \
            "${PROBE_ENDPOINT}" \
           ) == '200' || exit 1
+    - name: Test Endpoints with pytest (Integration Tests)
+      run: pytest tests/test_endpoints.py
+
+
+
 
