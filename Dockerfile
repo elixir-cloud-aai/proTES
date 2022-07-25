@@ -1,8 +1,14 @@
 ##### BASE IMAGE #####
-FROM python:3.7-slim-stretch
+# FROM python:3.7-slim-stretch
+
+#FROM elixircloud/foca:latest
+FROM elixircloud/foca:20220625-py3.10
+#FROM elixircloud/foca:20220625-py3.9
+#FROM elixircloud/foca:20220625-py3.8
+#FROM elixircloud/foca:20220524-py3.7
 
 ##### METADATA #####
-LABEL base.image="python:3.6-slim-stretch"
+LABEL base.image="elixircloud/foca:20220625-py3.10"
 LABEL version="1.1"
 LABEL software="proTES"
 LABEL software.version="0.1.0"
@@ -29,6 +35,7 @@ WORKDIR /app
 
 ## Copy Python requirements
 COPY ./requirements.txt /app/requirements.txt
+COPY ./requirements_dev.txt /app/requirements_dev.txt
 
 ## Install Python dependencies
 RUN cd /app \
