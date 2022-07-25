@@ -1,3 +1,3 @@
-from pro_tes.app import run_server
+from pro_tes.app import init_app
 
-app, config = run_server()
+app = init_app()

@@ -2,13 +2,31 @@
 name: Test with docker compose
 on:
   push:
-    branches: [ dev ]
+    branches: [ dev , feature ]
   pull_request:
     branches: [ dev ]
 
 jobs:
+  code-style:
+    name: Run linting
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v2
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: "3.10"
+      - name: Install requirements
+        run: |
+          pip install -e .
+          pip install -r requirements_dev.txt
+      - name: Lint with flake8
+        run: flake8
   build:
     runs-on: ubuntu-latest
+    needs: [code-style]
     env:
       PROBE_ENDPOINT: localhost:8080/ga4gh/tes/v1/ui/
     strategy:
@@ -23,7 +41,7 @@ jobs:
     - name: Create data directories
       run: mkdir -p ${HOME}/data/{db,output,tmp}
     - name: Docker compose up
-      run: docker-compose up -d
+      run: docker-compose up -d --build
     - name: Sleep 30
       run: sleep 30
     - name: PROBE
@@ -40,4 +58,11 @@ jobs:
            --header 'Accept: application/json' \
            "${PROBE_ENDPOINT}" \
           ) == '200' || exit 1
+    - name: Install pytest
+      run: pip install pytest
+    - name: Test Endpoints with pytest (Integration Tests)
+      run: pytest tests/test_endpoints.py
+
+
+
 
