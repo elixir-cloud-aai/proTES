@@ -61,6 +61,8 @@ api:
           disable_auth: True
           connexion:
               strict_validation: True
+              # current specs have inconsistency, therefore disabling response validation
+              # see: https://github.com/ga4gh/task-execution-schemas/issues/136
               validate_responses: False
               options:
                   swagger_ui: True
