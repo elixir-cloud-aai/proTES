@@ -22,7 +22,7 @@ class TesCreateTaskResponse(BaseModel):
 class TesExecutor(BaseModel):
     image: str = Field(
         [""],
-        description='Name of the container image. The string will be passed as \
+        description='Name of the container image. The string will be passed as\
             the image\nargument to the containerization run command. \
             Examples:\n   - `ubuntu`\n   - `quay.io/aptible/ubuntu`\n  \
             - `gcr.io/my-org/my-image`\n   - \
@@ -153,7 +153,7 @@ class TesOutput(BaseModel):
     )
     url: str = Field(
         ...,
-        description='URL for the file to be copied by the TES server after the \
+        description='URL for the file to be copied by the TES server after the\
             task is complete.\nFor Example:\n - \
                 `s3://my-object-store/file1`\n - `gs://my-bucket/file2`\n \
                 - `file:///path/to/my/file`',
@@ -237,7 +237,7 @@ class ServiceType(BaseModel):
     )
     version: str = Field(
         ...,
-        description='Version of the API or specification. GA4GH specifications \
+        description='Version of the API or specification. GA4GH specifications\
             use semantic versioning.',
         example='1.0.0',
     )
@@ -282,16 +282,17 @@ class Service(BaseModel):
     )
     contactUrl: Optional[AnyUrl] = Field(
         None,
-        description='URL of the contact for the provider of this service, e.g. \
+        description='URL of the contact for the provider of this service, e.g.\
             a link to a contact form (RFC 3986 format), or an email \
                 (RFC 2368 format).',
         example='mailto:support@example.com',
     )
     documentationUrl: Optional[AnyUrl] = Field(
         None,
-        description='URL of the documentation of this service (RFC 3986 format).\
-            This should help someone learn how to use your service, including \
-                any specifics required to access data, e.g. authentication.',
+        description='URL of the documentation of this service \
+            (RFC 3986 format).This should help someone learn how \
+            to use your service, including any specifics required to \
+            access data, e.g. authentication.',
         example='https://docs.myservice.example.com',
     )
     createdAt: Optional[datetime] = Field(
@@ -334,26 +335,6 @@ class TesState(Enum):
     EXECUTOR_ERROR = 'EXECUTOR_ERROR'
     SYSTEM_ERROR = 'SYSTEM_ERROR'
     CANCELED = 'CANCELED'
-
-    @property
-    def is_finished(self):
-        """Check if a state is among the set of finished states."""
-        return self in (
-            self.COMPLETE,
-            self.EXECUTOR_ERROR,
-            self.SYSTEM_ERROR,
-            self.CANCELED,
-        )
-
-    @property
-    def is_cancelable(self):
-        """Check if a state is among the set of cancelable states."""
-        return self in (
-            self.QUEUED,
-            self.INITIALIZING,
-            self.RUNNING,
-            self.PAUSED,
-        )
 
 
 class TesTaskLog(BaseModel):
@@ -495,7 +476,7 @@ class TesListTasksResponse(BaseModel):
     )
     next_page_token: Optional[str] = Field(
         None,
-        description='Token used to return the next page of results. This value \
+        description='Token used to return the next page of results. This value\
             can be used\nin the `page_token` field of the next ListTasks \
             request.',
     )

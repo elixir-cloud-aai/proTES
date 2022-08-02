@@ -1,6 +1,7 @@
 import logging
 from typing import (
     Dict,
+    Optional
 )
 
 from bson.objectid import ObjectId
@@ -29,7 +30,7 @@ from pro_tes.utils.db_utils import DbDocumentConnector
 
 from datetime import datetime
 from dateutil.parser import parse as parse_time
-
+from pro_tes.tasks.tasks.track_task_progress import task__track_task_progress
 
 logger = logging.getLogger(__name__)
 
@@ -148,16 +149,14 @@ class TaskRuns:
                 )
             )
 
-        # Todo : Properly track task progress in background
-
         # track task progress in background
-        # self._track_task_progress(
-        #     worker_id= document_stored.worker_id,
-        #     remote_host= document_stored.tes_endpoint['host'],
-        #     remote_base_path= document_stored.tes_endpoint['base_path'],
-        #     remote_task_id= document_stored.tes_endpoint['task_id']
-        #
-        # )
+        self._track_progress(
+            worker_id=document_stored.worker_id,
+            remote_host=document_stored.tes_endpoint['host'],
+            remote_base_path=document_stored.tes_endpoint['base_path'],
+            remote_task_id=document_stored.tes_endpoint['task_id']
+
+        )
 
         return {'id': task_id}
 
@@ -515,43 +514,43 @@ class TaskRuns:
                 ]
         return payloads
 
-    # def _track_task_progress(
-    #         self,
-    #         worker_id : str,
-    #         remote_host: str,
-    #         remote_base_path: str,
-    #         remote_task_id = str,
-    #         # jwt: Optional[str] = None,
-    #         timeout : Optional[int] = None,
-    # ) -> None:
-    #     """Asynchronously track the task request on the remote TES.
-    #
-    #             Args:
-    #                 worker_id: Identifier for the background job.
-    #                 remote_host: Host at which the TES API is served that is
-    #                     processing this request; note that this should
-    #                     include the path information but *not* the base path
-    #                     path defined in the TES API specification; e.g.,
-    #                     specify https://my.tes.com/api if the actual API is
-    #                     hosted at https://my.tes.com/api/ga4gh/tes/v1.
-    #                 remote_base_path: Override the default path suffix
-    #                     defined in the TES API specification,
-    #                     i.e., `/ga4gh/tes/v1`.
-    #                 remote_task_id: Task identifier on remote WES service.
-    #                 jwt: Authorization bearer token to be passed on with
-    #                      task request to external engine.
-    #                 timeout: Timeout for the job. Set to `None` to disable
-    #                          timeout.
-    #             """
-        # task__track_run_progress.apply_async(
-        #     None,
-        #     {
-        #         'jwt': jwt,
-        #         'worker_id': worker_id,
-        #         'remote_host': remote_host,
-        #         'remote_base_path': remote_base_path,
-        #         'remote_task_id': remote_task_id,
-        #     },
-        #     soft_time_limit=timeout,
-        # )
-        # return None
+    def _track_progress(
+            self,
+            worker_id: str,
+            remote_host: str,
+            remote_base_path: str,
+            remote_task_id=str,
+            # jwt: Optional[str] = None,
+            timeout: Optional[int] = None,
+    ) -> None:
+        """Asynchronously track the task request on the remote TES.
+
+                Args:
+                    worker_id: Identifier for the background job.
+                    remote_host: Host at which the TES API is served that is
+                        processing this request; note that this should
+                        include the path information but *not* the base path
+                        path defined in the TES API specification; e.g.,
+                        specify https://my.tes.com/api if the actual API is
+                        hosted at https://my.tes.com/api/ga4gh/tes/v1.
+                    remote_base_path: Override the default path suffix
+                        defined in the TES API specification,
+                        i.e., `/ga4gh/tes/v1`.
+                    remote_task_id: Task identifier on remote WES service.
+                    jwt: Authorization bearer token to be passed on with
+                         task request to external engine.
+                    timeout: Timeout for the job. Set to `None` to disable
+                             timeout.
+                """
+        task__track_task_progress.apply_async(
+            None,
+            {
+                # 'jwt': jwt,
+                'worker_id': worker_id,
+                'remote_host': remote_host,
+                'remote_base_path': remote_base_path,
+                'remote_task_id': remote_task_id,
+            },
+            soft_time_limit=timeout,
+        )
+        return None
