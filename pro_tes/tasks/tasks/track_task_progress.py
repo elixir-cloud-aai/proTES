@@ -70,7 +70,7 @@ def task__track_task_progress(
     # track task progress
     task_state: TesState = TesState.UNKNOWN
     attempt: int = 1
-    while (task_state not in States.FINISHED) or \
+    while (task_state not in States.FINISHED) and \
             (attempt <= controller_config['polling']['attempts']):
         sleep(controller_config['polling']['wait'])
         try:
