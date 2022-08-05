@@ -149,6 +149,7 @@ class TaskRuns:
 
         # track task progress in background
         task__track_task_progress.apply_async(
+            None,
             {
                 'worker_id': document_stored.worker_id,
                 'remote_host': document_stored.tes_endpoint['host'],
