@@ -1,23 +1,24 @@
 import logging
 from typing import (
     Dict,
-    Optional
 )
 
 from bson.objectid import ObjectId
 from celery import uuid
+from datetime import datetime
+from dateutil.parser import parse as parse_time
 from foca.models.config import Config
 from foca.utils.misc import generate_id
 from flask import (
     current_app,
     request,
 )
-from requests import HTTPError
 from pymongo.collection import Collection
 from pymongo.errors import DuplicateKeyError
+from requests import HTTPError
+import tes
 from werkzeug.exceptions import BadRequest
 
-import tes
 from pro_tes.exceptions import (
     TaskNotFound,
 )
@@ -27,9 +28,6 @@ from pro_tes.ga4gh.tes.models import (
     TesState
 )
 from pro_tes.utils.db_utils import DbDocumentConnector
-
-from datetime import datetime
-from dateutil.parser import parse as parse_time
 from pro_tes.tasks.tasks.track_task_progress import task__track_task_progress
 
 logger = logging.getLogger(__name__)
@@ -59,12 +57,12 @@ class TaskRuns:
     ) -> Dict:
         """Start task.
 
-               Args:
-                   **kwargs: Additional keyword arguments passed along with
+        Args:
+            **kwargs: Additional keyword arguments passed along with
                              request.
-               Returns:
-                   task identifier.
-               """
+        Returns:
+            task identifier.
+        """
 
         # storing request as payload
         payload = request.json
@@ -150,12 +148,13 @@ class TaskRuns:
             )
 
         # track task progress in background
-        self._track_progress(
-            worker_id=document_stored.worker_id,
-            remote_host=document_stored.tes_endpoint['host'],
-            remote_base_path=document_stored.tes_endpoint['base_path'],
-            remote_task_id=document_stored.tes_endpoint['task_id']
-
+        task__track_task_progress.apply_async(
+            {
+                'worker_id': document_stored.worker_id,
+                'remote_host': document_stored.tes_endpoint['host'],
+                'remote_base_path': document_stored.tes_endpoint['base_path'],
+                'remote_task_id': document_stored.tes_endpoint['task_id']
+            },
         )
 
         return {'id': task_id}
@@ -166,13 +165,13 @@ class TaskRuns:
     ) -> Dict:
         """Return list of tasks.
 
-               Args:
-                   **kwargs: Keyword arguments passed along with request.
+        Args:
+            **kwargs: Keyword arguments passed along with request.
 
-               Returns:
-                   Response object according to TES API schema . Cf.
-                       https://github.com/ga4gh/task-execution-schemas/blob/9e9c5aa2648d683d5574f9dbd63a025b4aea285d/openapi/task_execution_service.openapi.yaml
-               """
+        Returns:
+            Response object according to TES API schema . Cf.
+            https://github.com/ga4gh/task-execution-schemas/blob/9e9c5aa2648d683d5574f9dbd63a025b4aea285d/openapi/task_execution_service.openapi.yaml
+        """
         if 'page_size' in kwargs:
             page_size = kwargs['page_size']
         else:
@@ -281,22 +280,20 @@ class TaskRuns:
     ) -> Dict:
         """Return detailed information about a task.
 
-                Args:
-                    task_id: task identifier.
-                    **kwargs: Additional keyword arguments passed along with
-                              request.
+        Args:
+            task_id: task identifier.
+            **kwargs: Additional keyword arguments passed along with request.
 
-                Returns:
-                    Response object according to TES API schema . Cf.
-                       https://github.com/ga4gh/task-execution-schemas/blob/9e9c5aa2648d683d5574f9dbd63a025b4aea285d/openapi/task_execution_service.openapi.yaml
+        Returns:
+            Response object according to TES API schema . Cf.
+            https://github.com/ga4gh/task-execution-schemas/blob/9e9c5aa2648d683d5574f9dbd63a025b4aea285d/openapi/task_execution_service.openapi.yaml
 
-                Raises:
-                    pro_tes.exceptions.Forbidden: The requester is not allowed
-                        to access the resource.
-                    pro_tes.exceptions.TaskNotFound: The requested task is not
-                        available.
-                """
-
+        Raises:
+            pro_tes.exceptions.Forbidden: The requester is not allowed
+                to access the resource.
+            pro_tes.exceptions.TaskNotFound: The requested task is not
+                available.
+        """
         # Set projection
         projection_MINIMAL = {
             # '_id': False,
@@ -357,21 +354,19 @@ class TaskRuns:
     ) -> Dict:
         """Cancel task.
 
-               Args:
-                   id: Task identifier.
-                   **kwargs: Additional keyword arguments passed along with
-                             request.
+        Args:
+            id: Task identifier.
+            **kwargs: Additional keyword arguments passed along with request.
 
-               Returns:
-                   Task identifier.
+        Returns:
+            Task identifier.
 
-               Raises:
-                   pro_tes.exceptions.Forbidden: The requester is not allowed
-                                                 to access the resource.
-                   pro_tes.exceptions.TaskNotFound: The requested task is not
-                       available.
-               """
-
+        Raises:
+            pro_tes.exceptions.Forbidden: The requester is not allowed
+                to access the resource.
+            pro_tes.exceptions.TaskNotFound: The requested task is not
+                available.
+        """
         document = self.db_client.find_one(
             filter={'task_log.id': id},
             projection={
@@ -513,44 +508,3 @@ class TaskRuns:
                     tes.models.SystemLog(**log) for log in log['system_logs']
                 ]
         return payloads
-
-    def _track_progress(
-            self,
-            worker_id: str,
-            remote_host: str,
-            remote_base_path: str,
-            remote_task_id=str,
-            # jwt: Optional[str] = None,
-            timeout: Optional[int] = None,
-    ) -> None:
-        """Asynchronously track the task request on the remote TES.
-
-                Args:
-                    worker_id: Identifier for the background job.
-                    remote_host: Host at which the TES API is served that is
-                        processing this request; note that this should
-                        include the path information but *not* the base path
-                        path defined in the TES API specification; e.g.,
-                        specify https://my.tes.com/api if the actual API is
-                        hosted at https://my.tes.com/api/ga4gh/tes/v1.
-                    remote_base_path: Override the default path suffix
-                        defined in the TES API specification,
-                        i.e., `/ga4gh/tes/v1`.
-                    remote_task_id: Task identifier on remote WES service.
-                    jwt: Authorization bearer token to be passed on with
-                         task request to external engine.
-                    timeout: Timeout for the job. Set to `None` to disable
-                             timeout.
-                """
-        task__track_task_progress.apply_async(
-            None,
-            {
-                # 'jwt': jwt,
-                'worker_id': worker_id,
-                'remote_host': remote_host,
-                'remote_base_path': remote_base_path,
-                'remote_task_id': remote_task_id,
-            },
-            soft_time_limit=timeout,
-        )
-        return None

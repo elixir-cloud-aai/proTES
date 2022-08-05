@@ -1,7 +1,5 @@
-# """Celery background task to process task asynchronously."""
+"""Celery background task to process task asynchronously."""
 
-
-from pro_tes.utils.db_utils import DbDocumentConnector
 import logging
 from time import sleep
 from typing import (
@@ -11,14 +9,15 @@ from typing import (
 from foca.database.register_mongodb import _create_mongo_client
 from foca.models.config import Config
 from flask import (Flask, current_app)
+import tes
 
 from pro_tes.ga4gh.tes.models import (
     TesState
 )
-
-import tes
+from pro_tes.utils.db_utils import DbDocumentConnector
 from pro_tes.celery_worker import celery
 from pro_tes.ga4gh.tes.states import States
+
 logger = logging.getLogger(__name__)
 
 
@@ -34,8 +33,22 @@ def task__track_task_progress(
         remote_host: str,
         remote_base_path: str,
         remote_task_id: str,
-        # jwt: Optional[str],
 ) -> str:
+    """Relay task run request to remote TES and track run progress.
+
+    Args:
+        remote_host: Host at which the TES API is served that is processing
+            this request; note that this should include the path information
+            but *not* the base path path defined in the TES API specification;
+            e.g., specify https://my.tes.com/api if the actual API is hosted at
+            https://my.tes.com/api/ga4gh/tes/v1.
+        remote_base_path: Override the default path suffix defined in the tes
+            API specification, i.e., `/ga4gh/tes/v1`.
+        remote_task_id: task run identifier on remote tes service.
+
+    Returns:
+        Task identifier.
+    """
     foca_config: Config = current_app.config.foca
     controller_config: Dict = foca_config.controllers['post_task']
 
