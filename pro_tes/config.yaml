@@ -93,7 +93,7 @@ jobs:
     port: 5672
     backend: 'rpc://'
     include:
-        - pro_tes.tasks.tasks.submit_task
+        - pro_tes.tasks.tasks.track_task_progress
 
 # Exception configuration
 # Cf. https://foca.readthedocs.io/en/latest/modules/foca.models.html#foca.models.config.ExceptionConfig
