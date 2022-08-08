@@ -1,4 +1,4 @@
-class States():
+class States:
 
     UNDEFINED = [
         'UNKNOWN',
