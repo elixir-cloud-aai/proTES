@@ -67,6 +67,12 @@ class TaskRuns:
         # storing request as payload
         payload = request.json
 
+        # store tes_uri in tes_uri List
+        tes_uri = payload['tes_uri']
+
+        # delete the tes_uri from payload else validation error
+        del payload['tes_uri']
+
         # Initialize database document
         document: DbDocument = DbDocument()
 
@@ -82,7 +88,7 @@ class TaskRuns:
 
         # get and attach suitable Tes endpoint
         document.tes_endpoint = TesEndpoint(
-            host="https://csc-tesk-noauth.rahtiapp.fi",
+            host=tes_uri[0],
         )
 
         url = (
@@ -146,7 +152,6 @@ class TaskRuns:
                     msg='.'.join(e.args),
                 )
             )
-
         # track task progress in background
         task__track_task_progress.apply_async(
             None,

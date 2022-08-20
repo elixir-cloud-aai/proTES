@@ -9,7 +9,9 @@ from typing import (
 )
 from pro_tes.ga4gh.tes.service_info import ServiceInfo
 from pro_tes.ga4gh.tes.task_runs import TaskRuns
-
+from pro_tes.middleware.middleware import (
+    Middleware
+)
 
 # Get logger instance
 logger = logging.getLogger(__name__)
@@ -30,10 +32,15 @@ def CancelTask(id, *args, **kwargs):
 # POST /tasks
 @log_traffic
 def CreateTask(*args, **kwargs) -> Dict[str, str]:
-    # """Creates task."""
+    """Creates task."""
+
+    # create instance of middleware
+    r = Middleware()
+    # inserting tes_uri in request body
+    requests = r.add_tes_endpoint(request_body=request)
     task_runs = TaskRuns()
     response = task_runs.create_task(
-        request=request,
+        request=requests,
         **kwargs
     )
     return response
