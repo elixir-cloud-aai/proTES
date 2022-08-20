@@ -1,6 +1,6 @@
 import random
 import requests
-from typing import Dict, List, Any
+from typing import List, Any
 
 from foca.models.config import Config
 from flask import (
