@@ -27,6 +27,7 @@ from pro_tes.ga4gh.tes.models import (
     TesEndpoint,
     TesState
 )
+from pro_tes.ga4gh.tes.states import States
 from pro_tes.utils.db_utils import DbDocumentConnector
 from pro_tes.tasks.tasks.track_task_progress import task__track_task_progress
 
@@ -84,7 +85,7 @@ class TaskRuns:
         document_stored = self._attach_request(
             payload=payload,
             document=document
-            )
+        )
 
         # get and attach suitable Tes endpoint
         document.tes_endpoint = TesEndpoint(
@@ -102,7 +103,7 @@ class TaskRuns:
         # create run environment & insert task document into task collection
         document_stored = self._create_run_environment(
             document=document_stored
-            )
+        )
 
         # instantiate database connector
         db_connector = DbDocumentConnector(
@@ -142,7 +143,7 @@ class TaskRuns:
         except Exception as e:
             db_connector.update_task_state(state=TesState.SYSTEM_ERROR.value)
             logger.error(
-                (   # noqa: F524
+                (  # noqa: F524
                     "Task '{document_stored.task_log['id']}' could not be \
                             sent to any TES instance."
                     "Task state was set to 'SYSTEM_ERROR'. Original error "
@@ -389,6 +390,7 @@ class TaskRuns:
             collection=self.db_client,
             worker_id=document['worker_id'],
         )
+
         # ensure resource is available
         if document is None:
             logger.error("task '{id}' not found.".format(id=id))
@@ -398,32 +400,31 @@ class TaskRuns:
             f"{document['tes_endpoint']['host'].rstrip('/')}/"
             f"{document['tes_endpoint']['base_path'].strip('/')}"
         )
+
         # If task is in cancelable state...
-        # if 'document.task_log.state' in TesState.is_cancelable or \
-        #     'document.task_log.state' in TesState.UNKNOWN:
+        if document['task_log']['state'] in States.FINISHED or \
+                document['task_log']['state'] in States.UNDEFINED:
 
-        # Cancel remote task
-
-        try:
-            cli = tes.HTTPClient(url, timeout=5)
-            cli.cancel_task(task_id=document['tes_endpoint']['task_id'])
-        except HTTPError:
-            pass
-
-            # Write log entry
-            logger.info(
-                (
-                    "Task '{id}' (worker ID '{worker_id}') was canceled."
-                ).format(
-                    id=id,
-                    worker_id=document['worker_id'],
+            # Cancel remote task
+            try:
+                cli = tes.HTTPClient(url, timeout=5)
+                cli.cancel_task(task_id=document['tes_endpoint']['task_id'])
+                # Update task state
+                db_connector.update_task_state(
+                    state='CANCELED',
                 )
-            )
+                # Write log entry
+                logger.info(
+                    (
+                        "Task '{id}' (worker ID '{worker_id}') was canceled."
+                    ).format(
+                        id=id,
+                        worker_id=document['worker_id'],
+                    )
+                )
+            except HTTPError:
+                pass
 
-        # Update task state
-        db_connector.update_task_state(
-            state='CANCELED',
-        )
         return {}
 
     def _create_run_environment(
