@@ -107,3 +107,10 @@ def task__track_task_progress(
             task_state = response.state
             db_client.update_task_state(state=task_state)
         attempt += 1
+    # final update of task_log in database after task is Finished
+    response = response.as_dict()
+    db_client.upsert_fields_in_root_object(
+        root='task_log',
+        **response
+    )
+
