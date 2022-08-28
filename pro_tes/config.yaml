@@ -128,3 +128,8 @@ serviceInfo:
     name: proTES
     storage:
         - file:///path/to/local/storage
+
+tes:
+    service_list:
+        - 'https://tesk-eu.hypatia-comp.athenarc.gr'
+        - 'https://csc-tesk-noauth.rahtiapp.fi'

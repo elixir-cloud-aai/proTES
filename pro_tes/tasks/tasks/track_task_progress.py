@@ -39,7 +39,7 @@ def task__track_task_progress(
     Args:
         remote_host: Host at which the TES API is served that is processing
             this request; note that this should include the path information
-            but *not* the base path path defined in the TES API specification;
+            but *not* the base path defined in the TES API specification;
             e.g., specify https://my.tes.com/api if the actual API is hosted at
             https://my.tes.com/api/ga4gh/tes/v1.
         remote_base_path: Override the default path suffix defined in the tes
@@ -79,6 +79,11 @@ def task__track_task_progress(
     except Exception:
         db_client.update_task_state(state=TesState.SYSTEM_ERROR.value)
         raise
+    response = response.as_dict()
+    db_client.upsert_fields_in_root_object(
+        root='task_log',
+        **response
+    )
 
     # track task progress
     task_state: TesState = TesState.UNKNOWN
@@ -102,3 +107,9 @@ def task__track_task_progress(
             task_state = response.state
             db_client.update_task_state(state=task_state)
         attempt += 1
+    # final update of database after task is Finished
+    response = response.as_dict()
+    db_client.upsert_fields_in_root_object(
+        root='task_log',
+        **response
+    )
