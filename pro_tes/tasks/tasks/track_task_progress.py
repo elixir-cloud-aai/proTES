@@ -88,8 +88,7 @@ def task__track_task_progress(
     # track task progress
     task_state: TesState = TesState.UNKNOWN
     attempt: int = 1
-    while (task_state not in States.FINISHED) and \
-            (attempt <= controller_config['polling']['attempts']):
+    while task_state not in States.FINISHED:
         sleep(controller_config['polling']['wait'])
         try:
             response = cli.get_task(
@@ -106,7 +105,7 @@ def task__track_task_progress(
         if response.state != task_state:
             task_state = response.state
             db_client.update_task_state(state=task_state)
-        attempt += 1
+
     # final update of database after task is Finished
     response = response.as_dict()
     db_client.upsert_fields_in_root_object(
