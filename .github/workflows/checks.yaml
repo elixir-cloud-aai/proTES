@@ -58,7 +58,15 @@ jobs:
            --header 'Accept: application/json' \
            "${PROBE_ENDPOINT}" \
           ) == '200' || exit 1
-    - name: Install pytest
-      run: pip install pytest
-    - name: Test Endpoints with pytest (Integration Tests)
-      run: pytest tests/test_endpoints.py
+    - name: Calculate integration test coverage
+      run: |
+        coverage run -m pytest tests/integrationTest/test_endpoints.py -W ignore::DeprecationWarning
+        coverage xml
+        coverage report -m
+    - name: Submit Report to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        files: ./coverage.xml
+        flags: Integration Tests
+        fail_ci_if_error: true
+        verbose: true
