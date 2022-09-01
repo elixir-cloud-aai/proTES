@@ -22,7 +22,6 @@ jobs:
         run: |
           pip install -e .
           pip install -r requirements_dev.txt
-          pip install -r req
       - name: Lint with flake8
         run: flake8
   build:
@@ -38,10 +37,9 @@ jobs:
     steps:
     - uses: actions/checkout@v2
     - name: Install dependencies
-      run: |
+      run: | 
         pip install docker-compose
         pip install -r requirements_dev.txt
-        pip install -r req
     - name: Create data directories
       run: mkdir -p ${HOME}/data/{db,output,tmp}
     - name: Docker compose up
