@@ -2,6 +2,7 @@
 
 [![Apache License](https://img.shields.io/badge/license-Apache%202.0-orange.svg?style=flat&color=important)](http://www.apache.org/licenses/LICENSE-2.0)
 [![Build Status](https://travis-ci.org/elixir-europe/proTES.svg?branch=dev)](https://travis-ci.org/elixir-europe/proTES)
+[![codecov](https://codecov.io/gh/elixir-cloud-aai/proTES/branch/dev/graph/badge.svg?token=QVU11E9B6G)](https://codecov.io/gh/elixir-cloud-aai/proTES)
 
 ## Synopsis
 
