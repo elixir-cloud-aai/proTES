@@ -37,7 +37,9 @@ jobs:
     steps:
     - uses: actions/checkout@v2
     - name: Install dependencies
-      run: pip install docker-compose
+      run: | 
+        pip install docker-compose
+        pip install -r requirements_dev.txt
     - name: Create data directories
       run: mkdir -p ${HOME}/data/{db,output,tmp}
     - name: Docker compose up
@@ -58,7 +60,7 @@ jobs:
            --header 'Accept: application/json' \
            "${PROBE_ENDPOINT}" \
           ) == '200' || exit 1
-    - name: Install pytest
-      run: pip install pytest
     - name: Test Endpoints with pytest (Integration Tests)
-      run: pytest tests/test_endpoints.py
+      run: pytest tests/integrationTest
+
+
