@@ -18,6 +18,16 @@ class TaskNotFound(NotFound):
     pass
 
 
+class EngineProblem(InternalServerError):
+    """The external workflow engine appears to experience problems."""
+    pass
+
+
+class EngineUnavailable(EngineProblem):
+    """The external workflow engine is not available."""
+    pass
+
+
 class IdsUnavailableProblem(PyMongoError):
     """Raised when no task identifier could be found for insertion into
     the database collection.
@@ -61,6 +71,10 @@ exceptions = {
     TaskNotFound: {
         "message": "The requested task wasn't found.",
         "code": '404',
+    },
+    EngineUnavailable: {
+        "message": "Could not reach remote TES service.",
+        "code": '500',
     },
     InternalServerError: {
         "message": "An unexpected error occurred.",

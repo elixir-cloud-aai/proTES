@@ -342,7 +342,7 @@ class TaskRuns:
         # raise error if task was not found
         if document is None:
             logger.error("Task '{id}' not found.".format(id=id))
-            raise
+            raise TaskNotFound
 
         # # raise error trying to access task that is not owned by user
         # # only if authorization enabled
