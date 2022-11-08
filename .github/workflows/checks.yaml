@@ -61,7 +61,7 @@ jobs:
     name: Build and publish app image
     runs-on: ubuntu-latest
     if: ${{ github.event_name == 'pull_request' }}
-    needs: [lint, test]
+    #needs: [lint, test]
     steps:
       - name: Check out repository
         uses: actions/checkout@v3
