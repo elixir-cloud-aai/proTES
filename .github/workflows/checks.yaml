@@ -37,7 +37,10 @@ jobs:
         with:
           python-version: "3.10"
       - name: Install requirements
-        run: pip install -r requirements_dev.txt
+        run: |
+          pip install -r requirements.txt
+          pip install -r requirements_dev.txt
+          pip install -e .
       - name: Start app
         run: docker-compose up -d --build
       - name: Wait until app is up
@@ -70,7 +73,7 @@ jobs:
           echo "TAG=$(date '+%Y%m%d')" >> $GITHUB_ENV
       - name: Build and publish image
         id: docker
-        uses: philips-software/docker-ci-scripts@v4.5.0
+        uses: philips-software/docker-ci-scripts@v5
         with:
           dockerfile: .
           image-name: "protes"
