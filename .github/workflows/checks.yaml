@@ -5,6 +5,7 @@
 name: build app
 on:
   push:
+    #branches: [dev]
     branches: [dev, ci-build-push]
   pull_request:
     #branches: [dev]
@@ -86,4 +87,5 @@ jobs:
       - name: Verify that image was pushed
         run: |
           echo "Push indicator: ${{ steps.docker.outputs.push-indicator }}"
-          test ${{ steps.docker.outputs.push-indicator }} == "true"
+          echo "# Set to 'true' if image was pushed, empty string otherwise"
+          test "${{ steps.docker.outputs.push-indicator }}" == "true"
