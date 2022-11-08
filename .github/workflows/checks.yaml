@@ -1,66 +1,58 @@
----
-name: Test with docker compose
+# This workflow will build the project, lint, run tests, and build and push
+# Docker images. For more information see:
+# https://help.github.com/actions/language-and-framework-guides/using-python-with-github-actions
+
+name: build app
 on:
   push:
-    branches: [ dev , feature ]
+    branches: [dev]
   pull_request:
-    branches: [ dev ]
+    branches: [dev]
 
 jobs:
-  code-style:
+  lint:
     name: Run linting
     runs-on: ubuntu-latest
-
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v2
-      - name: Set up Python
+      - name: check out repository
+        uses: actions/checkout@v3
+      - name: set up Python
         uses: actions/setup-python@v2
         with:
           python-version: "3.10"
-      - name: Install requirements
+      - name: install requirements
         run: |
           pip install -e .
           pip install -r requirements_dev.txt
-      - name: Lint with flake8
+      - name: lint with flake8
         run: flake8
-  build:
+  test:
+    name: Run tests
     runs-on: ubuntu-latest
-    needs: [code-style]
     env:
       PROBE_ENDPOINT: localhost:8080/ga4gh/tes/v1/ui/
-    strategy:
-      fail-fast: true
-      matrix:
-        python-version: ["3.7", "3.8","3.9", "3.10"]
-
     steps:
-    - uses: actions/checkout@v2
-    - name: Install dependencies
-      run: | 
-        pip install docker-compose
-        pip install -r requirements_dev.txt
-    - name: Create data directories
-      run: mkdir -p ${HOME}/data/{db,output,tmp}
-    - name: Docker compose up
-      run: docker-compose up -d --build
-    - name: Sleep 30
-      run: sleep 30
-    - name: PROBE
-      run: echo "${PROBE_ENDPOINT}"
-    - name: Test
-      run: |
-        test $( \
-          curl \
-           -sL \
-           -v \
-           -o /dev/null \
-           -w '%{http_code}' \
-           -X GET \
-           --header 'Accept: application/json' \
-           "${PROBE_ENDPOINT}" \
-          ) == '200' || exit 1
-    - name: Test Endpoints with pytest (Integration Tests)
-      run: pytest tests/integrationTest
-
-
+      - name: check out repository
+        uses: actions/checkout@v2
+      #      - name: create data directories
+      #        run: mkdir -p ${HOME}/data/{db,output,tmp}
+      - name: start up app
+        run: docker-compose up -d --build
+      - name: wait until app is up
+        run: sleep 30
+      - name: run health check
+        run: |
+          echo "${PROBE_ENDPOINT}"
+          test $( \
+            curl \
+             -sL \
+             -v \
+             -o /dev/null \
+             -w '%{http_code}' \
+             -X GET \
+             --header 'Accept: application/json' \
+             "${PROBE_ENDPOINT}" \
+            ) == '200' || exit 1
+      - name: run integration tests
+        run: pytest tests/integrationTest
+#    needs: [code-style]
