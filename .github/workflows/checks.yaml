@@ -73,7 +73,7 @@ jobs:
           echo "TAG=$(date '+%Y%m%d')" >> $GITHUB_ENV
       - name: Build and publish image
         id: docker
-        uses: philips-software/docker-ci-scripts@v5
+        uses: philips-software/docker-ci-scripts@v5.0.0
         with:
           dockerfile: .
           image-name: "protes"
