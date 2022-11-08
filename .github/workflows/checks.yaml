@@ -5,6 +5,7 @@
 name: build app
 on:
   push:
+    #branches: [dev]
     branches: [dev, ci-build-push]
   pull_request:
     branches: [dev]
@@ -60,8 +61,7 @@ jobs:
   publish:
     name: Build and publish app image
     runs-on: ubuntu-latest
-    #if: ${{ github.event_name == 'push' }}
-    if: ${{ github.event_name == 'pull_request' }}
+    if: ${{ github.event_name == 'push' }}
     #needs: [lint, test]
     steps:
       - name: Check out repository
@@ -85,4 +85,6 @@ jobs:
           GITHUB_ORGANIZATION: ${{ github.repository_owner }}
       - name: Verify that image was pushed
         run: |
-          test ${{ steps.docker.outputs.push-indicator }} == "true"
+          echo "Push indicator: ${{ steps.docker.outputs.push-indicator }}"
+          echo "# Set to 'true' if image was pushed, empty string otherwise"
+          test "${{ steps.docker.outputs.push-indicator }}" == "true"
