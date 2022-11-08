@@ -69,14 +69,19 @@ jobs:
         run: |
           echo "TAG=$(date '+%Y%m%d')" >> $GITHUB_ENV
       - name: Build and publish image
+        id: docker
         uses: philips-software/docker-ci-scripts@v4.5.0
         with:
           dockerfile: .
           image-name: "protes"
           tags: "latest ${{ env.TAG }}"
-          push-branches: ${{ github.event.repository.default_branch }}
+          #push-branches: "${{ github.event.repository.default_branch }}"
+          push-branches: "ci-build-push ${{ github.event.repository.default_branch }}"
         env:
           REGISTRY_USERNAME: ${{ secrets.DOCKERHUB_LOGIN }}
           REGISTRY_TOKEN: "${{ secrets.DOCKERHUB_TOKEN }}"
           DOCKER_ORGANIZATION: ${{ secrets.DOCKERHUB_ORG }}
           GITHUB_ORGANIZATION: ${{ github.repository_owner }}
+      - name: Verify that image was pushed
+        run: |
+          test ${{ steps.docker.outputs.push-indicator }} == "true"
