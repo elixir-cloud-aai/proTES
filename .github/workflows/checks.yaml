@@ -64,7 +64,7 @@ jobs:
     steps:
       - uses: philips-software/docker-ci-scripts@v4.5.0
         with:
-          dockerfile: "./Dockerfile"
+          dockerfile: .
           image-name: "protes"
           tags: "latest $(date '+%Y%m%d')"
           push-branches: |
