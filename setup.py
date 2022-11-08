@@ -1,11 +1,16 @@
+from pathlib import Path
 from setuptools import (setup, find_packages)
+
+root_dir = Path(__file__).parent.resolve()
+
+exec(open(root_dir / "pro_tes" / "version.py").read())
 
 with open('README.md', 'r') as fh:
     long_description = fh.read()
 
 setup(
     name='pro-tes',
-    version='0.1.0',
+    version=__version__,  # noqa: F821
     author='ELIXIR-Europe',
     author_email='alexander.kanitz@alumni.ethz.ch',
     description='Proxy GA4GH TES server',
