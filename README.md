@@ -1,37 +1,40 @@
 # proTES
 
-[![Apache License](https://img.shields.io/badge/license-Apache%202.0-orange.svg?style=flat&color=important)](http://www.apache.org/licenses/LICENSE-2.0)
-[![Build Status](https://travis-ci.org/elixir-europe/proTES.svg?branch=dev)](https://travis-ci.org/elixir-europe/proTES)
+[![license][badge-license]][badge-url-license]
+[![chat][badge-chat]][badge-url-chat]
+[![ci][badge-ci]][badge-url-ci]
 
 ## Synopsis
 
-[Flask] microservice implementing the [Global Alliance for Genomics and Health]
-(GA4GH) [Task Execution Service] (TES) API specification for injecting
-middleware (such as task distribution) logic into TES requests.
+[Flask][res-flask] microservice implementing the [Global Alliance for Genomics
+and Health (GA4GH)][res-ga4gh] [Task Execution Service (TES)
+API][res-ga4gh-tes] specification for injecting middleware (such as task
+distribution logic) into TES requests.
 
 ## Description
 
 proTES is a proxy-like implementation of the [GA4GH TES OpenAPI specification]
-based on [Flask] and [Connexion] built for distributing TES tasks over different
-TES service instances and injecting other middleware into TES requests.
+based on [Flask][res-flask] and [Connexion][res-connexion] built for
+distributing TES tasks over different TES service instances and injecting other
+middleware into TES requests.
 
-proTES is part of [ELIXIR Cloud & AAI], a multinational effort at establishing
-and implementing FAIR data sharing and promoting reproducible data analyses and
-responsible data handling in the Life Sciences.
+proTES is part of [ELIXIR Cloud & AAI][res-elixir-cloud-aai], a multinational
+effort at establishing and implementing FAIR data sharing and promoting
+reproducible data analyses and responsible data handling in the life sciences.
 
 ## Installation
 
-For production-grade [Kubernetes]-based deployment, see [separate
-instructions](deployment/README.md). For testing/development purposes, you can
+For production-grade [Kubernetes][res-kubernetes]-based deployment, see
+[separate instructions][docs-deploy]. For testing/development purposes, you can
 use the instructions described below.
 
 ### Requirements
 
 Ensure you have the following software installed:
 
-* [Docker] (18.06.1-ce, build e68fc7a)
-* [docker-compose] (1.22.0, build f46880fe)
-* [Git] (1.8.3.1)
+* [Docker][res-docker] (18.06.1-ce, build e68fc7a)
+* [docker-compose][res-docker-compose] (1.22.0, build f46880fe)
+* [Git][res-git] (1.8.3.1)
 
 > **Note:** These indicated versions are those that were used for
 > developing/testing. Other versions may or may not work.
@@ -81,7 +84,7 @@ docker-compose up -d --build
 Visit Swagger UI
 
 ```bash
-firefox http://localhost:7878/ga4gh/tes/v1/ui
+firefox http://localhost:8080/ga4gh/tes/v1/ui
 ```
 
 > **Note:** Host and port may differ if you have changed the configuration or
@@ -91,8 +94,8 @@ firefox http://localhost:7878/ga4gh/tes/v1/ui
 
 This project is a community effort and lives off your contributions, be it in
 the form of bug reports, feature requests, discussions, or fixes and other
-code changes. Please read [these guidelines](CONTRIBUTING.md) if you want to
-contribute. And please mind the [code of conduct](CODE_OF_CONDUCT.md) for all
+code changes. Please read [these guidelines][docs-contributing] if you want to
+contribute. And please mind the [code of conduct][docs-coc] for all
 interactions with the community.
 
 ## Versioning
@@ -100,38 +103,46 @@ interactions with the community.
 Development of the app is currently still in alpha stage, and current "versions"
 are for internal use only. We are aiming to have a fully spec-compliant
 ("feature complete") version of the app available by the end of 2018. The plan
-is to then adopt a [semantic versioning] scheme in which we would shadow TES
-spec versioning for major and minor versions, and release patched versions
-intermittently.
+is to then adopt a [semantic versioning][res-sem-ver] scheme in which we would
+shadow TES spec versioning for major and minor versions, and release patched
+versions intermittently.
 
 ## License
-This project is covered by the [Apache License 2.0] also [shipped with this
-repository](LICENSE).
-[shipped with this repository](LICENSE).
+
+This project is covered by the [Apache License 2.0][badge-url-license] also
+[shipped with this repository][docs-license].
 
 ## Contact
 
-The project is a collaborative effort under the umbrella of [ELIXIR
-Europe](https://www.elixir-europe.org/).
-
-Please contact the [project leader](mailto:alexander.kanitz@sib.swiss) for
-inquiries, proposals, questions etc. that are not covered by these docs.
-
-## References
+If you have suggestions for or find issue with this app, please use the
+[issue tracker][contact-issue-tracker]. If you would like to reach out to us
+for anything else, you can join our [Slack board][badge-url-chat], start a
+thread in our [Q&A forum][contact-qa], or send us an [email][contact-email].
 
 [![GA4GH logo](images/logo-ga4gh.png)](https://www.ga4gh.org/)
 [![ELIXIR logo](images/logo-elixir.png)](https://www.elixir-europe.org/)
-[![ELIXIR Cloud & AAI log](images/logo-elixir-cloud.png)](https://elixir-europe.github.io/cloud/)
-[Apache License 2.0]: <https://www.apache.org/licenses/LICENSE-2.0>
-[license-apache]: <https://www.apache.org/licenses/LICENSE-2.0>
-[Connexion]: <https://github.com/zalando/connexion>
-[Docker]: <https://www.docker.com/>
-[docker-compose]: <https://docs.docker.com/compose/>
-[ELIXIR Cloud & AAI]: <https://elixir-europe.github.io/cloud/>
-[Flask]: <http://flask.pocoo.org/>
-[GA4GH TES OpenAPI specification]: <https://github.com/ga4gh/task-execution-schemas>
-[Git]: <https://git-scm.com/>
-[Global Alliance for Genomics and Health]: <https://www.ga4gh.org/>
-[Kubernetes]: <https://kubernetes.io/>
-[semantic versioning]: <https://semver.org/>
-[Task Execution Service]: <https://github.com/ga4gh/task-execution-schemas>
+[![ELIXIR Cloud & AAI logo](images/logo-elixir-cloud.png)](https://elixir-europe.github.io/cloud/)
+
+[badge-chat]: <https://img.shields.io/static/v1?label=chat&message=Slack&color=ff6994>
+[badge-ci]: <https://github.com/elixir-cloud-aai/proTES/actions/workflows/checks.yaml/badge.svg>
+[badge-license]: <https://img.shields.io/badge/license-Apache%202.0-blue.svg>
+[badge-url-chat]: <https://join.slack.com/t/elixir-cloud/shared_invite/enQtNzA3NTQ5Mzg2NjQ3LTZjZGI1OGQ5ZTRiOTRkY2ExMGUxNmQyODAxMDdjM2EyZDQ1YWM0ZGFjOTJhNzg5NjE0YmJiZTZhZDVhOWE4MWM>
+[badge-url-ci]: <https://github.com/elixir-cloud-aai/proTES/actions/workflows/checks.yaml>
+[badge-url-license]: <http://www.apache.org/licenses/LICENSE-2.0>
+[contact-email]: <mailto:cloud-service@elixir-europe.org>
+[contact-issue-tracker]: <https://github.com/elixir-cloud-aai/landing-page/issues>
+[contact-qa]: <https://github.com/elixir-cloud-aai/elixir-cloud-aai/discussions>
+[docs-coc]: CODE_OF_CONDUCT.md
+[docs-contributing]: CONTRIBUTING.md
+[docs-deploy]: deployment/README.md
+[docs-license]: LICENSE
+[res-connexion]: <https://github.com/zalando/connexion>
+[res-docker]: <https://www.docker.com/>
+[res-docker-compose]: <https://docs.docker.com/compose/>
+[res-elixir-cloud-aai]: <https://elixir-cloud.dcc.sib.swiss/>
+[res-flask]: <http://flask.pocoo.org/>
+[res-ga4gh]: <https://www.ga4gh.org/>
+[res-ga4gh-tes]: <https://github.com/ga4gh/task-execution-schemas>
+[res-git]: <https://git-scm.com/>
+[res-kubernetes]: <https://kubernetes.io/>
+[res-sem-ver]: <https://semver.org/>
