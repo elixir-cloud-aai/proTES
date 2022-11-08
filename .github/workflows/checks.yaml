@@ -64,7 +64,7 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v3
-      - name: Create tags
+      - name: Generate tag
         run: |
           echo "TAG=$(date '+%Y%m%d')" >> $GITHUB_ENV
       - name: Build and publish image
@@ -73,9 +73,7 @@ jobs:
           dockerfile: .
           image-name: "protes"
           tags: "latest ${{ env.TAG }}"
-          push-branches: |
-            format('refs/heads/{0}', github.event.repository.default_branch)
-            ci-build-push
+          push-branches: ${{ github.event.repository.default_branch }}
         env:
           REGISTRY_USERNAME: ${{ secrets.DOCKERHUB_LOGIN }}
           REGISTRY_TOKEN: "${{ secrets.DOCKERHUB_TOKEN }}"
