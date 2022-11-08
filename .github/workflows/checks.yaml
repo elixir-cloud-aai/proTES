@@ -14,17 +14,15 @@ jobs:
     name: Run linting
     runs-on: ubuntu-latest
     steps:
-      - name: check out repository
+      - name: Check out repository
         uses: actions/checkout@v3
-      - name: set up Python
+      - name: Set up Python
         uses: actions/setup-python@v2
         with:
           python-version: "3.10"
-      - name: install requirements
-        run: |
-          pip install -e .
-          pip install -r requirements_dev.txt
-      - name: lint with flake8
+      - name: Install requirements
+        run: pip install -r requirements_dev.txt
+      - name: Lint with flake8
         run: flake8
   test:
     name: Run tests
@@ -32,15 +30,19 @@ jobs:
     env:
       PROBE_ENDPOINT: localhost:8080/ga4gh/tes/v1/ui/
     steps:
-      - name: check out repository
+      - name: Check out repository
         uses: actions/checkout@v2
-      #      - name: create data directories
-      #        run: mkdir -p ${HOME}/data/{db,output,tmp}
-      - name: start up app
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: "3.10"
+      - name: Install requirements
+        run: pip install -r requirements_dev.txt
+      - name: Start app
         run: docker-compose up -d --build
-      - name: wait until app is up
+      - name: Wait until app is up
         run: sleep 30
-      - name: run health check
+      - name: Run health check
         run: |
           echo "${PROBE_ENDPOINT}"
           test $( \
@@ -53,6 +55,5 @@ jobs:
              --header 'Accept: application/json' \
              "${PROBE_ENDPOINT}" \
             ) == '200' || exit 1
-      - name: run integration tests
+      - name: Run integration tests
         run: pytest tests/integrationTest
-#    needs: [code-style]
