@@ -5,11 +5,9 @@
 name: build app
 on:
   push:
-    #branches: [dev]
-    branches: [dev, ci-build-push]
+    branches: [dev]
   pull_request:
-    #branches: [dev]
-    branches: [dev, ci-build-push]
+    branches: [dev]
 
 jobs:
   lint:
@@ -62,8 +60,8 @@ jobs:
   publish:
     name: Build and publish app image
     runs-on: ubuntu-latest
-    #if: ${{ github.event_name == 'push' }}
-    #needs: [lint, test]
+    if: ${{ github.event_name == 'push' }}
+    needs: [lint, test]
     steps:
       - name: Check out repository
         uses: actions/checkout@v3
