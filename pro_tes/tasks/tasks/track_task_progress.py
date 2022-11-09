@@ -8,20 +8,21 @@ from typing import (
 
 from foca.database.register_mongodb import _create_mongo_client
 from foca.models.config import Config
-from flask import (Flask, current_app)
+from flask import Flask
+from flask import current_app as current_flask_app
 import tes
 
 from pro_tes.ga4gh.tes.models import (
     TesState
 )
 from pro_tes.utils.db_utils import DbDocumentConnector
-from pro_tes.celery_worker import celery
 from pro_tes.ga4gh.tes.states import States
+from celery import current_app as current_celery_app
 
 logger = logging.getLogger(__name__)
 
 
-@celery.task(
+@current_celery_app.task(
     name='tasks.track_run_progress',
     bind=True,
     ignore_result=True,
@@ -49,7 +50,7 @@ def task__track_task_progress(
     Returns:
         Task identifier.
     """
-    foca_config: Config = current_app.config.foca
+    foca_config: Config = current_flask_app.config.foca
     controller_config: Dict = foca_config.controllers['post_task']
 
     # create database client
