@@ -27,3 +27,7 @@ COPY ./ .
 
 ## Install app
 RUN pip install -e .
+
+## Add permissions for storing updated API specification
+## (required by FOCA)
+RUN chmod -R a+rwx /app/pro_tes/api
