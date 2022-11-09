@@ -13,13 +13,13 @@ spec:
         app: {{ .Values.protes.appName }}
     spec:
       initContainers:
-        - name: vol-init
-          image: busybox
-          command: [ 'mkdir' ]
-          args: [ '-p', '/data/db', '/data/specs' ]
-          volumeMounts:
-            - mountPath: /data
-              name: protes-volume
+      - name: vol-init
+        image: busybox
+        command: [ 'mkdir' ]
+        args: [ '-p', '/data/db', '/data/specs' ]
+        volumeMounts:
+        - mountPath: /data
+          name: protes-volume
       containers:
       - name: protes
         image: {{ .Values.protes.image }}
@@ -29,7 +29,7 @@ spec:
         args: [ '--log-level', 'debug', '-c', 'config.py', 'wsgi:app' ]
         env:
         - name: MONGO_HOST
-          value: {{ .Values.mongodb.appName}}
+          value: {{ .Values.mongodb.appName }}
         - name: MONGO_PORT
           value: "27017"
         - name: MONGO_USERNAME
@@ -48,7 +48,7 @@ spec:
               key: database-name
               name: {{ .Values.mongodb.appName }}
         - name: RABBIT_HOST
-          value: {{ .Values.rabbitmq.appName}}
+          value: {{ .Values.rabbitmq.appName }}
         - name: RABBIT_PORT
           value: "5672"
         livenessProbe:
@@ -71,4 +71,4 @@ spec:
       volumes:
       - name: protes-volume
         persistentVolumeClaim:
-          claimName: {{ .Values.protes.appName}}-volume
+          claimName: {{ .Values.protes.appName }}-volume
