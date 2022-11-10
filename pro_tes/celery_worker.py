@@ -1,9 +1,8 @@
 """Entry point for Celery workers."""
 
-from foca.factories.celery_app import create_celery_app
+from pathlib import Path
 
-from pro_tes.app import init_app
+from foca import Foca
 
-
-flask_app = init_app().app
-celery = create_celery_app(app=flask_app)
+foca = Foca(Path(__file__).resolve().parent / "config.yaml")
+celery = foca.create_celery_app()
