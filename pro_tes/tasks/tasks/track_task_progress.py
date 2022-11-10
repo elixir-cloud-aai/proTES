@@ -9,31 +9,29 @@ from typing import (
 from foca.database.register_mongodb import _create_mongo_client
 from foca.models.config import Config
 from flask import Flask
-from flask import current_app as current_flask_app
+from flask import current_app
 import tes
 
-from pro_tes.ga4gh.tes.models import (
-    TesState
-)
+from pro_tes.ga4gh.tes.models import TesState
 from pro_tes.utils.db_utils import DbDocumentConnector
 from pro_tes.ga4gh.tes.states import States
-from celery import current_app as current_celery_app
+from pro_tes.celery_worker import celery
 
 logger = logging.getLogger(__name__)
 
 
-@current_celery_app.task(
-    name='tasks.track_run_progress',
+@celery.task(
+    name="tasks.track_run_progress",
     bind=True,
     ignore_result=True,
     track_started=True,
 )
 def task__track_task_progress(
-        self,
-        worker_id: str,
-        remote_host: str,
-        remote_base_path: str,
-        remote_task_id: str,
+    self,
+    worker_id: str,
+    remote_host: str,
+    remote_base_path: str,
+    remote_task_id: str,
 ) -> str:
     """Relay task run request to remote TES and track run progress.
 
@@ -50,16 +48,16 @@ def task__track_task_progress(
     Returns:
         Task identifier.
     """
-    foca_config: Config = current_flask_app.config.foca
-    controller_config: Dict = foca_config.controllers['post_task']
+    foca_config: Config = current_app.config.foca
+    controller_config: Dict = foca_config.controllers["post_task"]
 
     # create database client
     collection = _create_mongo_client(
         app=Flask(__name__),
         host=foca_config.db.host,
         port=foca_config.db.port,
-        db='taskStore',
-    ).db['tasks']
+        db="taskStore",
+    ).db["tasks"]
     db_client = DbDocumentConnector(
         collection=collection,
         worker_id=worker_id,
@@ -68,10 +66,7 @@ def task__track_task_progress(
     # update state: INITIALIZING
     db_client.update_task_state(state=TesState.INITIALIZING.value)
 
-    url = (
-        f"{remote_host.strip('/')}/"
-        f"{remote_base_path.strip('/')}"
-    )
+    url = f"{remote_host.strip('/')}/{remote_base_path.strip('/')}"
 
     # fetch task log and upsert database document
     try:
@@ -81,22 +76,19 @@ def task__track_task_progress(
         db_client.update_task_state(state=TesState.SYSTEM_ERROR.value)
         raise
     response = response.as_dict()
-    db_client.upsert_fields_in_root_object(
-        root='task_log',
-        **response
-    )
+    db_client.upsert_fields_in_root_object(root="task_log", **response)
 
     # track task progress
     task_state: TesState = TesState.UNKNOWN
     attempt: int = 1
     while task_state not in States.FINISHED:
-        sleep(controller_config['polling']['wait'])
+        sleep(controller_config["polling"]["wait"])
         try:
             response = cli.get_task(
                 task_id=remote_task_id,
             )
         except Exception as exc:
-            if attempt <= controller_config['polling']['attempts']:
+            if attempt <= controller_config["polling"]["attempts"]:
                 attempt += 1
                 logger.warning(exc, exc_info=True)
                 continue
@@ -105,11 +97,8 @@ def task__track_task_progress(
                 raise
         if response.state != task_state:
             task_state = response.state
-            db_client.update_task_state(state=task_state)
+            db_client.update_task_state(state=str(task_state))
 
     # final update of database after task is Finished
     response = response.as_dict()
-    db_client.upsert_fields_in_root_object(
-        root='task_log',
-        **response
-    )
+    db_client.upsert_fields_in_root_object(root="task_log", **response)

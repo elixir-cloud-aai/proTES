@@ -1,8 +1,7 @@
 ##### BASE IMAGE #####
-FROM elixircloud/foca:20221107-py3.10
+FROM elixircloud/foca:20221110-py3.10
 
 ##### METADATA #####
-LABEL base.image="elixircloud/foca:20221107-py3.10"
 LABEL version="1.2"
 LABEL software="proTES"
 LABEL software.description="Flask microservice implementing the Global Alliance for Genomics and Health (GA4GH) Task Execution Service (TES) API specification as a proxy for middleware injection (e.g., task distribution logic)."
