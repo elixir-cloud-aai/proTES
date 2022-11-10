@@ -15,6 +15,6 @@ def run_app(app: App) -> None:
     app.run(port=app.port)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     app = init_app()
     run_app(app)
