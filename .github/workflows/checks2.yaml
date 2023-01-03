@@ -1,4 +1,4 @@
-name: proTES checks
+name: cwl-WES checks
 
 on:
   push:
@@ -16,7 +16,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: "3.10"
+          python-version: "3.7"
       - name: Install requirements
         run: |
           pip install .
@@ -31,32 +31,17 @@ jobs:
     permissions:
       contents: read
       packages: write
-    env:
-      PROBE_ENDPOINT: localhost:8080/ga4gh/tes/v1/ui/
     steps:
       - name: Check out repository
         uses: actions/checkout@v3
       - name: Deploy app
         run: docker-compose up -d --build
       - name: Wait for app startup
-        run: sleep 20
-      - name: Run health check
         shell: bash
-        run: |
-          echo "${PROBE_ENDPOINT}"
-          test $( \
-            curl \
-             -sL \
-             -v \
-             -o /dev/null \
-             -w '%{http_code}' \
-             -X GET \
-             --header 'Accept: application/json' \
-             "${PROBE_ENDPOINT}" \
-            ) == '200' || exit 1
+        run: sleep 20
       - name: Run integration tests
         shell: bash
-        run: pytest tests/integrationTest
+        run: bash tests/integration_tests.sh
       - name: Tear down app
         run: docker-compose down
   publish:
@@ -75,7 +60,7 @@ jobs:
         uses: philips-software/docker-ci-scripts@v5.0.0
         with:
           dockerfile: .
-          image-name: "protes"
+          image-name: "cwl-wes"
           tags: "latest ${{ env.TAG }}"
           push-branches: "${{ github.event.repository.default_branch }}"
         env:

@@ -1,40 +1,39 @@
-"""Utility functions for MongoDB document insertion, updates and retrieval."""
+"""Utility class for common MongoDB operations."""
 
 import logging
-from typing import (
-    Mapping,
-)
+from typing import Mapping, Optional
 from pymongo.collection import ReturnDocument
 from pymongo import collection as Collection
 
-from pro_tes.ga4gh.tes.models import (
-    DbDocument,
-    TesState,
-)
+from pro_tes.ga4gh.tes.models import DbDocument, TesState
 
 logger = logging.getLogger(__name__)
 
 
 class DbDocumentConnector:
+    """MongoDB connector to a given proTES database document.
+
+    Args:
+        collection: Database collection.
+        worker_id: Celery task identifier.
+
+    Attributes:
+        collection: Database collection.
+        worker_id: Celery task identifier.
+    """
 
     def __init__(
-            self,
-            collection: Collection,
-            worker_id: str,
+        self,
+        collection: Collection,
+        worker_id: str,
     ) -> None:
-        """MongoDB connector to a given `pro_wes.ga4gh.wes.models.DbDocument`
-            document.
-
-        Args:
-            collection: Database collection.
-            worker_id: Celery task identifier.
-        """
+        """Construct object instance."""
         self.collection: Collection = collection
         self.worker_id: str = worker_id
 
     def get_document(
-            self,
-            projection: Mapping = {'_id': False},
+        self,
+        projection: Optional[Mapping] = None,
     ) -> DbDocument:
         """Get document associated with task.
 
@@ -50,8 +49,10 @@ class DbDocumentConnector:
         Raise:
             ValueError: Returned document does not conform to schema.
         """
+        if projection is None:
+            projection = {"_id": False}
         document_unvalidated = self.collection.find_one(
-            filter={'worker_id': self.worker_id},
+            filter={"worker_id": self.worker_id},
             projection=projection,
         )
         try:
@@ -64,8 +65,8 @@ class DbDocumentConnector:
         return document
 
     def update_task_state(
-            self,
-            state: str = 'UNKNOWN',
+        self,
+        state: str = "UNKNOWN",
     ) -> None:
         """Update task status.
 
@@ -73,48 +74,51 @@ class DbDocumentConnector:
             state: New task status; one of `pro_wes.ga4gh.wes.models.State`.
 
         Raises:
-            Passed
+            ValueError: Invalid state passed.
         """
         try:
             TesState(state)
         except Exception as exc:
-            raise ValueError(
-                f"Unknown state: {state}"
-            ) from exc
+            raise ValueError(f"Unknown state: {state}") from exc
         self.collection.find_one_and_update(
-            {'worker_id': self.worker_id},
-            {'$set': {'task_log.state': state}},
+            {"worker_id": self.worker_id},
+            {"$set": {"task_log.state": state}},
         )
         logger.info(f"[{self.worker_id}] {state}")
-        return None
 
     def upsert_fields_in_root_object(
-            self,
-            root: str,
-            projection: Mapping = {'_id': False},
-            **kwargs: object,
+        self,
+        root: str,
+        projection: Optional[Mapping] = None,
+        **kwargs: object,
     ) -> DbDocument:
-        """Insert (or update) fields in(to) the same root object and return
-        document.
-        """
-        document_unvalidated = self.collection.find_one_and_update(
+        """Insert or update fields in(to) the same root (object) field.
 
-            {'worker_id': self.worker_id},
-            {'$set': {
-                '.'.join([root, key]):
-                    value for (key, value) in kwargs.items()
-            }},
+        Args:
+            root: Root field name.
+            projection: A projection object indicating which fields of the
+                document to return. By default, all fields except the MongoDB
+                identifier `_id` are returned.
+            **kwargs: Key-value pairs of fields to insert/update.
+
+        Returns:
+            Inserted/updated document, or `None` if database operation failed.
+        """
+        if projection is None:
+            projection = {"_id": False}
+        document_unvalidated = self.collection.find_one_and_update(
+            {"worker_id": self.worker_id},
+            {
+                "$set": {
+                    ".".join([root, key]): value
+                    for (key, value) in kwargs.items()
+                }
+            },
             projection=projection,
-            return_document=ReturnDocument.AFTER
+            return_document=ReturnDocument.AFTER,
         )
         try:
-            # document: DbDocument = DbDocument(**document_unvalidated)
-            document: DbDocument = DbDocument()
-            document.task_log = document_unvalidated['task_log']
-            document.worker_id = document_unvalidated['worker_id']
-            document.tes_endpoint = document_unvalidated['tes_endpoint']
-            if 'user_id' in document_unvalidated:
-                document.user_id = document_unvalidated['user_id']
+            document: DbDocument = DbDocument(**document_unvalidated)
         except Exception as exc:
             raise ValueError(
                 "Database document does not conform to schema: "

@@ -1,175 +1,161 @@
+"""Class implementing TES API-server-side controller methods."""
+
+from copy import deepcopy
+from datetime import datetime
 import logging
-from typing import (
-    Dict,
-)
+from typing import Dict, Tuple
 
 from bson.objectid import ObjectId
 from celery import uuid
-from datetime import datetime
 from dateutil.parser import parse as parse_time
+from flask import current_app, request
 from foca.models.config import Config
 from foca.utils.misc import generate_id
-from flask import (
-    current_app,
-    request,
-)
 from pymongo.collection import Collection
-from pymongo.errors import DuplicateKeyError
+from pymongo.errors import DuplicateKeyError, PyMongoError
 from requests import HTTPError
 import tes
-from werkzeug.exceptions import BadRequest
 
-from pro_tes.exceptions import (
-    TaskNotFound,
-)
+from pro_tes.exceptions import BadRequest, InternalServerError, TaskNotFound
 from pro_tes.ga4gh.tes.models import (
     DbDocument,
     TesEndpoint,
-    TesState
+    TesState,
+    TesTask,
 )
 from pro_tes.ga4gh.tes.states import States
-from pro_tes.utils.db_utils import DbDocumentConnector
-from pro_tes.tasks.tasks.track_task_progress import task__track_task_progress
+from pro_tes.tasks.track_task_progress import task__track_task_progress
+from pro_tes.utils.db import DbDocumentConnector
+
+# pragma pylint: disable=invalid-name,redefined-builtin,unused-argument
 
 logger = logging.getLogger(__name__)
 
 
 class TaskRuns:
+    """Class for TES API server-side controller methods.
+
+    Attributes:
+        foca_config: FOCA configuration.
+        db_client: Database collection storing task objects.
+        document: Document to be inserted into the collection. Note that it is
+            built up iteratively.
+    """
 
     def __init__(self) -> None:
-        """Class for TES API server-side controller methods.
-
-        Attributes:
-            config: App configuration.
-            foca_config: FOCA configuration.
-            db_client: Database collection storing task objects.
-            document: Document to be inserted into the collection. Note that
-                this is iteratively built up.
-        """
-        self.config: Dict = current_app.config
+        """Construct object instance."""
         self.foca_config: Config = current_app.config.foca
         self.db_client: Collection = (
-            self.foca_config.db.dbs['taskStore'].collections['tasks'].client
+            self.foca_config.db.dbs["taskStore"].collections["tasks"].client
         )
 
-    def create_task(
-            self,
-            **kwargs
-    ) -> Dict:
+    def create_task(self, **kwargs) -> Dict:
         """Start task.
 
         Args:
             **kwargs: Additional keyword arguments passed along with
                              request.
         Returns:
-            task identifier.
+            Task identifier.
         """
+        payload: Dict = deepcopy(request.json)
 
-        # storing request as payload
-        payload = request.json
+        db_document: DbDocument = DbDocument()
+        db_document.tes_endpoint = TesEndpoint(host=payload["tes_uri"])
 
-        # store tes_uri in tes_uri List
-        tes_uri = payload['tes_uri']
+        del payload["tes_uri"]
 
-        # delete the tes_uri from payload else validation error
-        del payload['tes_uri']
+        db_document.task_incoming = TesTask(**payload)
+        db_document.task_incoming.state = TesState.UNKNOWN
+        db_document.user_id = kwargs.get("user_id", None)
 
-        # Initialize database document
-        document: DbDocument = DbDocument()
+        (task_id, worker_id) = self._write_doc_to_db(document=db_document)
 
-        # storing data of payload into payloads so that it can be used to\
-        # sanitize request to be passed to py-tes client
-        payloads = dict.copy(payload)
+        db_document.task_incoming.id = task_id
+        db_document.worker_id = worker_id
 
-        # store payload in Tes task model
-        document_stored = self._attach_request(
-            payload=payload,
-            document=document
+        url: str = (
+            f"{db_document.tes_endpoint.host.rstrip('/')}/"
+            f"{db_document.tes_endpoint.base_path.strip('/')}"
         )
-
-        # get and attach suitable Tes endpoint
-        document.tes_endpoint = TesEndpoint(
-            host=tes_uri[0],
+        logger.info(
+            "Trying to send incoming task with task identifier "
+            f"'{db_document.task_incoming.id}' and worker job identifier "
+            f"'{db_document.worker_id}' to TES endpoint hosted at: {url}"
         )
-
-        url = (
-            f"{document_stored.tes_endpoint.host.rstrip('/')}/"
-            f"{document_stored.tes_endpoint.base_path.strip('/')}"
-        )
-
-        # get and attach task owner
-        document.user_id = kwargs.get('user_id', None)
-
-        # create run environment & insert task document into task collection
-        document_stored = self._create_run_environment(
-            document=document_stored
-        )
-
-        # instantiate database connector
         db_connector = DbDocumentConnector(
             collection=self.db_client,
-            worker_id=document_stored.worker_id,
+            worker_id=db_document.worker_id,
         )
-
-        logger.info(
-            f"Sending task '{document_stored.task_log['id']}' with "
-            f"task identifier '{document_stored.worker_id}' to TES endpoint "
-            f"hosted at: {url}"
-        )
-
-        # Converting payload according to the tes-client model
-        payloads = self._sanitize_request(payloads=payloads)
+        payload = self._sanitize_request(payload=payload)
 
         try:
-            task = tes.Task(**payloads)
-            cli = tes.HTTPClient(url, timeout=5)
-            task_id = cli.create_task(task)
-            res = cli.get_task(task_id)
-            document_stored.task_log['id'] = res.id
-
-            # storing the document in database
-            document_stored: DbDocument = (
-                db_connector.upsert_fields_in_root_object(
-                    root='tes_endpoint',
-                    task_id=res.id,
-                )
-            )
-            document_stored: DbDocument = (
-                db_connector.upsert_fields_in_root_object(
-                    root='task_log',
-                    id=res.id,
-                )
-            )
-        except Exception as e:
+            task = tes.Task(**payload)
+        except TypeError as exc:
             db_connector.update_task_state(state=TesState.SYSTEM_ERROR.value)
-            logger.error(
-                (  # noqa: F524
-                    "Task '{document_stored.task_log['id']}' could not be \
-                            sent to any TES instance."
-                    "Task state was set to 'SYSTEM_ERROR'. Original error "
-                    "message: '{type}: {msg}'"
-                ).format(
-                    type=type(e).__name__,
-                    msg='.'.join(e.args),
-                )
+            raise BadRequest(
+                f"Task '{db_document.task_incoming.id}' could not be sent "
+                f"to TES endpoint hosted at: {url}. Incoming request invalid. "
+                f"Original error message: '{type(exc).__name__}: "
+                f"{exc}'"
+            ) from exc
+        try:
+            cli = tes.HTTPClient(url, timeout=5)
+        except ValueError as exc:
+            db_connector.update_task_state(state=TesState.SYSTEM_ERROR.value)
+            raise InternalServerError(
+                f"Task '{db_document.task_incoming.id}' could not be sent "
+                f"to TES endpoint hosted at: {url}. Invalid TES endpoint URL. "
+                f"Original error message: '{type(exc).__name__}: "
+                f"{exc}'"
+            ) from exc
+        try:
+            task_id = cli.create_task(task)
+        except HTTPError as exc:
+            db_connector.update_task_state(state=TesState.SYSTEM_ERROR.value)
+            raise InternalServerError(
+                f"Task '{db_document.task_incoming.id}' could not be sent "
+                f"to TES endpoint hosted at: {url}. Task could not be "
+                f"created. Original error message: '{type(exc).__name__}: "
+                f"{exc}'"
+            ) from exc
+        logger.info(
+            f"Task '{db_document.task_incoming.id}' forwarded to TES endpoint "
+            f"hosted at: {url}. proTES task identifier: {task_id}."
+        )
+        try:
+            res: Dict = cli.get_task(task_id)
+            db_document = db_connector.upsert_fields_in_root_object(
+                root="task_outgoing",
+                **res,  # pylint: disable=not-a-mapping
             )
-        # track task progress in background
+        except HTTPError as exc:
+            logger.error(
+                f"Task '{db_document.task_incoming.id}' info could not be "
+                f"retrieved from TES endpoint hosted at: {url}. Original "
+                f"error message: '{type(exc).__name__}: {exc}'"
+            )
+        except PyMongoError as exc:
+            logger.error(
+                "Database could not be updated with task info retrieved for "
+                f"task '{db_document.task_incoming.id}' sent to TES endpoint "
+                f"hosted at: {url}. Original error message: "
+                f"'{type(exc).__name__}: {exc}'"
+            )
+
         task__track_task_progress.apply_async(
             None,
             {
-                'worker_id': document_stored.worker_id,
-                'remote_host': document_stored.tes_endpoint['host'],
-                'remote_base_path': document_stored.tes_endpoint['base_path'],
-                'remote_task_id': document_stored.tes_endpoint['task_id']
+                "worker_id": db_document.worker_id,
+                "remote_host": db_document.tes_endpoint.host,
+                "remote_base_path": db_document.tes_endpoint.base_path,
+                "remote_task_id": db_document.task_outgoing.id,
             },
         )
 
-        return {'id': task_id}
+        return {"id": task_id}
 
-    def list_tasks(
-            self,
-            **kwargs
-    ) -> Dict:
+    def list_tasks(self, **kwargs) -> Dict:
         """Return list of tasks.
 
         Args:
@@ -179,186 +165,70 @@ class TaskRuns:
             Response object according to TES API schema . Cf.
             https://github.com/ga4gh/task-execution-schemas/blob/9e9c5aa2648d683d5574f9dbd63a025b4aea285d/openapi/task_execution_service.openapi.yaml
         """
-        if 'page_size' in kwargs:
-            page_size = kwargs['page_size']
-        else:
-            page_size = (
-                self.foca_config.controllers['list_tasks']['default_page_size']
-            )
-        # extract/set page token
-        if 'page_token' in kwargs:
-            page_token = kwargs['page_token']
-        else:
-            page_token = ''
-
-        # initialize filter dictionary
-        filter_dict = {}
-
-        # add filter for user-owned tasks if user ID is available
-        if 'user_id' in kwargs:
-            filter_dict['user_id'] = kwargs['user_id']
-
-            # add pagination filter based on last object ID
-        if page_token != '':
-            filter_dict['_id'] = {'$lt': ObjectId(page_token)}
-
-        # Set projection
-        projection_MINIMAL = {
-            # '_id': False,
-            'task_log.id': True,
-            'task_log.state': True,
-        }
-        projection_BASIC = {
-            # '_id': False,
-            'task_log.inputs.content': False,
-            'task_log.system_logs': False,
-            'task_log.logs.stdout': False,
-            'task_log.logs.stderr': False,
-            'tes_endpoint': False,
-            'worker_id': False
-        }
-        projection_FULL = {
-            # '_id': False,
-            'worker_id': False,
-            'tes_endpoint': False,
-        }
-
-        # Check view mode
-        if 'view' in kwargs:
-            view = kwargs['view']
-        else:
-            view = "BASIC"
-        if view == "MINIMAL":
-            projection = projection_MINIMAL
-        elif view == "BASIC":
-            projection = projection_BASIC
-        elif view == "FULL":
-            projection = projection_FULL
-        else:
-            raise BadRequest
-
-        # query database for tasks
-        cursor = self.db_client.find(
-            filter=filter_dict,
-            projection=projection
-            # sort results by descending object ID (+/- newest to oldest)
-        ).sort(
-            '_id', -1
-            # implement page size limit
-        ).limit(
-            page_size
+        page_size = kwargs.get(
+            "page_size",
+            self.foca_config.controllers["list_tasks"]["default_page_size"],
         )
+        page_token = kwargs.get("page_token")
+        filter_dict = {}
+        filter_dict["user_id"] = kwargs.get("user_id")
 
-        # convert cursor to list
+        if page_token is not None:
+            filter_dict["_id"] = {"$lt": ObjectId(page_token)}
+        view = kwargs.get("view", "BASIC")
+        projection = self._set_projection(view=view)
+
+        cursor = (
+            self.db_client.find(filter=filter_dict, projection=projection)
+            .sort("_id", -1)
+            .limit(page_size)
+        )
         tasks_list = list(cursor)
 
-        # get next page token from ID of last task in cursor
         if tasks_list:
-            next_page_token = str(tasks_list[-1]['_id'])
+            next_page_token = str(tasks_list[-1]["_id"])
         else:
-            next_page_token = ''
+            next_page_token = ""
 
-        # reshape list of task
         tasks_lists = []
         for task in tasks_list:
-            del task['_id']
-            if projection == projection_MINIMAL:
-                task['id'] = task['task_log']['id']
-                task['state'] = task['task_log']['state']
-                tasks_lists.append({
-                    'id': task['id'],
-                    'state': task['state']
-                })
-            if projection == projection_BASIC:
-                tasks_lists.append(task['task_log'])
-            if projection == projection_FULL:
-                tasks_lists.append(task['task_log'])
+            del task["_id"]
+            if view == "MINIMAL":
+                task["id"] = task["task_outgoing"]["id"]
+                task["state"] = task["task_outgoing"]["state"]
+                tasks_lists.append({"id": task["id"], "state": task["state"]})
+            if view == "BASIC":
+                tasks_lists.append(task["task_outgoing"])
+            if view == "FULL":
+                tasks_lists.append(task["task_outgoing"])
 
-        # build and return response
-        return {
-            'next_page_token': next_page_token,
-            'tasks': tasks_lists
-        }
+        return {"next_page_token": next_page_token, "tasks": tasks_lists}
 
-    def get_task(
-            self,
-            id=str,
-            **kwargs
-    ) -> Dict:
+    def get_task(self, id=str, **kwargs) -> Dict:
         """Return detailed information about a task.
 
         Args:
-            task_id: task identifier.
+            task_id: Task identifier.
             **kwargs: Additional keyword arguments passed along with request.
 
         Returns:
             Response object according to TES API schema . Cf.
-            https://github.com/ga4gh/task-execution-schemas/blob/9e9c5aa2648d683d5574f9dbd63a025b4aea285d/openapi/task_execution_service.openapi.yaml
+                https://github.com/ga4gh/task-execution-schemas/blob/9e9c5aa2648d683d5574f9dbd63a025b4aea285d/openapi/task_execution_service.openapi.yaml
 
         Raises:
-            pro_tes.exceptions.Forbidden: The requester is not allowed
-                to access the resource.
             pro_tes.exceptions.TaskNotFound: The requested task is not
                 available.
         """
-        # Set projection
-        projection_MINIMAL = {
-            # '_id': False,
-            'task_log.id': True,
-            'task_log.state': True,
-        }
-
-        projection_BASIC = {
-            # '_id': False,
-            'task_log.inputs.content': False,
-            'task_log.system_logs': False,
-            'task_log.logs.stdout': False,
-            'task_log.logs.stderr': False,
-            'tes_endpoint': False,
-        }
-        projection_FULL = {
-            # '_id': False,
-            'worker_id': False,
-            'tes_endpoint': False,
-        }
-        # Check view mode
-        if 'view' in kwargs:
-            view = kwargs['view']
-        else:
-            view = "BASIC"
-        if view == "MINIMAL":
-            projection = projection_MINIMAL
-        elif view == "BASIC":
-            projection = projection_BASIC
-        elif view == "FULL":
-            projection = projection_FULL
-        else:
-            raise BadRequest
-
+        projection = self._set_projection(view=kwargs.get("view", "BASIC"))
         document = self.db_client.find_one(
-            filter={'task_log.id': id},
-            projection=projection
+            filter={"task_outgoing.id": id}, projection=projection
         )
-        # raise error if task was not found
         if document is None:
-            logger.error("Task '{id}' not found.".format(id=id))
-            raise
+            logger.error(f"Task '{id}' not found.")
+            raise TaskNotFound
+        return document["task_outgoing"]
 
-        # # raise error trying to access task that is not owned by user
-        # # only if authorization enabled
-        # self._check_access_permission(
-        #     resource_id=id,
-        #     owner=document.get('user_id', None),
-        #     requester=kwargs.get('user_id', None),
-        # )
-
-        return document['task_log']
-
-    def cancel_task(
-            self,
-            id: str,
-            **kwargs
-    ) -> Dict:
+    def cancel_task(self, id: str, **kwargs) -> Dict:
         """Cancel task.
 
         Args:
@@ -375,143 +245,150 @@ class TaskRuns:
                 available.
         """
         document = self.db_client.find_one(
-            filter={'task_log.id': id},
+            filter={"task_outgoing.id": id},
             projection={
-                'user_id': True,
-                'tes_endpoint.host': True,
-                'tes_endpoint.base_path': True,
-                'tes_endpoint.task_id': True,
-                'task_log.state': True,
-                '_id': False,
-                'worker_id': True
-            }
+                "user_id": True,
+                "tes_endpoint.host": True,
+                "tes_endpoint.base_path": True,
+                "tes_endpoint.task_id": True,
+                "task_outgoing.state": True,
+                "_id": False,
+                "worker_id": True,
+            },
         )
-        db_connector = DbDocumentConnector(
-            collection=self.db_client,
-            worker_id=document['worker_id'],
-        )
-
-        # ensure resource is available
         if document is None:
-            logger.error("task '{id}' not found.".format(id=id))
+            logger.error(f"task '{id}' not found.")
             raise TaskNotFound
 
-        url = (
-            f"{document['tes_endpoint']['host'].rstrip('/')}/"
-            f"{document['tes_endpoint']['base_path'].strip('/')}"
-        )
-
-        # If task is in cancelable state...
-        if document['task_log']['state'] in States.FINISHED or \
-                document['task_log']['state'] in States.UNDEFINED:
-
-            # Cancel remote task
-            try:
-                cli = tes.HTTPClient(url, timeout=5)
-                cli.cancel_task(task_id=document['tes_endpoint']['task_id'])
-                # Update task state
-                db_connector.update_task_state(
-                    state='CANCELED',
-                )
-                # Write log entry
-                logger.info(
-                    (
-                        "Task '{id}' (worker ID '{worker_id}') was canceled."
-                    ).format(
-                        id=id,
-                        worker_id=document['worker_id'],
-                    )
-                )
-            except HTTPError:
-                pass
-
+        if document["task_outgoing"]["state"] in States.CANCELABLE:
+            db_connector = DbDocumentConnector(
+                collection=self.db_client,
+                worker_id=document["worker_id"],
+            )
+            url: str = (
+                f"{document['tes_endpoint']['host'].rstrip('/')}/"
+                f"{document['tes_endpoint']['base_path'].strip('/')}"
+            )
+            logger.info(
+                "Trying cancel task with task identifier"
+                f" '{document['task_outgoing']['id']}' and worker job"
+                f" identifier '{document['worker_id']}' running at TES"
+                f" endpoint hosted at: {url}"
+            )
+            cli = tes.HTTPClient(url, timeout=5)
+            cli.cancel_task(task_id=document["tes_endpoint"]["task_id"])
+            db_connector.update_task_state(
+                state="CANCELED",
+            )
+            logger.info(
+                f"Task '{id}' with worker ID '{document['worker_id']}'"
+                " canceled."
+            )
         return {}
 
-    def _create_run_environment(
-            self,
-            document: DbDocument,
-    ) -> DbDocument:
+    def _write_doc_to_db(
+        self,
+        document: DbDocument,
+    ) -> Tuple[str, str]:
+        """Create database entry for task.
 
-        controller_config = self.foca_config.controllers['post_task']
-        # try until unused task id was found
-        attempt = 1
-        while attempt <= controller_config['db']['insert_attempts']:
-            attempt += 1
-            task_id = generate_id(
-                charset=controller_config['task_id']['charset'],
-                length=controller_config['task_id']['length'],
+        Args:
+            document: Document to be written to database.
+
+        Returns:
+            Tuple of task id and worker id.
+        """
+        controller_config = self.foca_config.controllers["post_task"]
+        charset = controller_config["task_id"]["charset"]
+        length = controller_config["task_id"]["length"]
+
+        # try inserting until unused task id found
+        for _ in range(controller_config["db"]["insert_attempts"]):
+            document.task_incoming.id = generate_id(
+                charset=charset,
+                length=length,
             )
-            # create 'id feild in document and asign it with task_id created
-            document.task_log['id'] = task_id
-
-            # assign initial state of the task in document
-            document.task_log['state'] = TesState.UNKNOWN.value
-
-            # create worker id for task identification
             document.worker_id = uuid()
-
-            # insert document into database
             try:
-                self.db_client.insert(
-                    document.dict(
-                        exclude_none=True,
-                    )
-                )
+                self.db_client.insert(document.dict(exclude_none=True))
             except DuplicateKeyError:
                 continue
-            return document
+            assert document is not None
+            return document.task_incoming.id, document.worker_id
+        raise DuplicateKeyError("Could not insert document into database.")
 
-    def _attach_request(
-            self,
-            payload: dict,
-            document: DbDocument
-    ) -> DbDocument:
-        # attach request
-        document.task_log = payload
+    def _sanitize_request(self, payload: dict) -> Dict:
+        """Sanitize request for use with py-tes.
 
-        return document
+        Args:
+            payloads: Request payload.
 
-    def _sanitize_request(
-            self,
-            payloads: dict
-    ) -> Dict:
-
-        # process or sanitiza request for use with py-tes
+        Returns:
+            Sanitized request payload.
+        """
         time_now = datetime.now().strftime("%m-%d-%Y %H:%M:%S")
-        if 'creation_time' not in payloads:
-            payloads['creation_time'] = parse_time(time_now)
-        if 'inputs' in payloads:
-            payloads['inputs'] = [
-                tes.models.Input(**input) for input in payloads['inputs']
+        if "creation_time" not in payload:
+            payload["creation_time"] = parse_time(time_now)
+        if "inputs" in payload:
+            payload["inputs"] = [
+                tes.models.Input(**input) for input in payload["inputs"]
             ]
-        if 'outputs' in payloads:
-            payloads['outputs'] = [
-                tes.models.Output(**output) for output in payloads['outputs']
+        if "outputs" in payload:
+            payload["outputs"] = [
+                tes.models.Output(**output) for output in payload["outputs"]
             ]
-        if 'resources' in payloads:
-            payloads['resources'] = \
-                tes.models.Resources(**payloads['resources'])
+        if "resources" in payload:
+            payload["resources"] = tes.models.Resources(**payload["resources"])
+        if "executors" in payload:
+            payload["executors"] = [
+                tes.models.Executor(**executor)
+                for executor in payload["executors"]
+            ]
+        for log in payload.get("logs", []):
+            log["start_time"] = time_now
+            log["end_time"] = time_now
+            log["logs"] = [
+                tes.models.ExecutorLog(**log) for log in log["logs"]
+            ]
+            if "outputs" in log:
+                for output in log["outputs"]:
+                    output["size_bytes"] = 0
+                log["outputs"] = [
+                    tes.models.OutputFileLog(**log)
+                    for log in log["system_logs"]
+                ]
+        return payload
 
-        if 'executors' in payloads:
-            payloads['executors'] = [
-                tes.models.Executor(**executor) for executor in
-                payloads['executors']
-            ]
-        if 'logs' in payloads:
-            for log in payloads['logs']:
-                log['start_time'] = time_now
-                log['end_time'] = time_now
-            log['logs'] = [
-                tes.models.ExecutorLog(**log) for log in log['logs']
-            ]
-            if 'outputs' in log:
-                for output in log['outputs']:
-                    output['size_bytes'] = 0
-                log['outputs'] = [
-                    tes.models.SystemLog(**log) for log in log['system_logs']
-                ]
-            if 'system_logs' in log:
-                log['system_logs'] = [
-                    tes.models.SystemLog(**log) for log in log['system_logs']
-                ]
-        return payloads
+    def _set_projection(self, view: str) -> Dict:
+        """Set database projectoin for selected view.
+
+        Args:
+            view: View path parameter.
+
+        Returns:
+            Database projection for selected view.
+
+        Raises:
+            pro_tes.exceptions.BadRequest: Invalid view parameter.
+        """
+        if view == "MINIMAL":
+            projection = {
+                "task_outgoing.id": True,
+                "task_outgoing.state": True,
+            }
+        elif view == "BASIC":
+            projection = {
+                "task_outgoing.inputs.content": False,
+                "task_outgoing.system_logs": False,
+                "task_outgoing.logs.stdout": False,
+                "task_outgoing.logs.stderr": False,
+                "tes_endpoint": False,
+            }
+        elif view == "FULL":
+            projection = {
+                "worker_id": False,
+                "tes_endpoint": False,
+            }
+        else:
+            raise BadRequest
+        return projection
