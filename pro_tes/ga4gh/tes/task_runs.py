@@ -13,8 +13,9 @@ from foca.models.config import Config
 from foca.utils.misc import generate_id
 from pymongo.collection import Collection
 from pymongo.errors import DuplicateKeyError, PyMongoError
-from requests import HTTPError
+import requests
 import tes
+from tes.models import Task
 
 from pro_tes.exceptions import BadRequest, InternalServerError, TaskNotFound
 from pro_tes.ga4gh.tes.models import (
@@ -26,6 +27,7 @@ from pro_tes.ga4gh.tes.models import (
 from pro_tes.ga4gh.tes.states import States
 from pro_tes.tasks.track_task_progress import task__track_task_progress
 from pro_tes.utils.db import DbDocumentConnector
+from pro_tes.utils.models import TaskModelConverter
 
 # pragma pylint: disable=invalid-name,redefined-builtin,unused-argument
 
@@ -76,7 +78,7 @@ class TaskRuns:
 
         url: str = (
             f"{db_document.tes_endpoint.host.rstrip('/')}/"
-            f"{db_document.tes_endpoint.base_path.strip('/')}"
+            f"{db_document.tes_endpoint.base_path.lstrip('/')}"
         )
         logger.info(
             "Trying to send incoming task with task identifier "
@@ -90,7 +92,7 @@ class TaskRuns:
         payload = self._sanitize_request(payload=payload)
 
         try:
-            task = tes.Task(**payload)
+            payload_marshalled = tes.Task(**payload)
         except TypeError as exc:
             db_connector.update_task_state(state=TesState.SYSTEM_ERROR.value)
             raise BadRequest(
@@ -110,8 +112,8 @@ class TaskRuns:
                 f"{exc}'"
             ) from exc
         try:
-            task_id = cli.create_task(task)
-        except HTTPError as exc:
+            task_id = cli.create_task(payload_marshalled)
+        except requests.HTTPError as exc:
             db_connector.update_task_state(state=TesState.SYSTEM_ERROR.value)
             raise InternalServerError(
                 f"Task '{db_document.task_incoming.id}' could not be sent "
@@ -124,12 +126,14 @@ class TaskRuns:
             f"hosted at: {url}. proTES task identifier: {task_id}."
         )
         try:
-            res: Dict = cli.get_task(task_id)
+            task: Task = cli.get_task(task_id)
+            task_model_converter = TaskModelConverter(task=task)
+            task_converted: TesTask = task_model_converter.convert_task()
             db_document = db_connector.upsert_fields_in_root_object(
                 root="task_outgoing",
-                **res,  # pylint: disable=not-a-mapping
+                **task_converted.dict(),
             )
-        except HTTPError as exc:
+        except requests.HTTPError as exc:
             logger.error(
                 f"Task '{db_document.task_incoming.id}' info could not be "
                 f"retrieved from TES endpoint hosted at: {url}. Original "
@@ -246,42 +250,36 @@ class TaskRuns:
         """
         document = self.db_client.find_one(
             filter={"task_outgoing.id": id},
-            projection={
-                "user_id": True,
-                "tes_endpoint.host": True,
-                "tes_endpoint.base_path": True,
-                "tes_endpoint.task_id": True,
-                "task_outgoing.state": True,
-                "_id": False,
-                "worker_id": True,
-            },
+            projection={"_id": False},
         )
         if document is None:
             logger.error(f"task '{id}' not found.")
             raise TaskNotFound
+        db_document = DbDocument(**document)
 
-        if document["task_outgoing"]["state"] in States.CANCELABLE:
+        if db_document.task_outgoing.state in States.CANCELABLE:
             db_connector = DbDocumentConnector(
                 collection=self.db_client,
-                worker_id=document["worker_id"],
+                worker_id=db_document.worker_id,
             )
             url: str = (
-                f"{document['tes_endpoint']['host'].rstrip('/')}/"
-                f"{document['tes_endpoint']['base_path'].strip('/')}"
+                f"{db_document.tes_endpoint.host.rstrip('/')}/"
+                f"{db_document.tes_endpoint.base_path.strip('/')}"
             )
+            logger.warning(f"DB document: {db_document}")
             logger.info(
                 "Trying cancel task with task identifier"
-                f" '{document['task_outgoing']['id']}' and worker job"
-                f" identifier '{document['worker_id']}' running at TES"
+                f" '{db_document.task_outgoing.id}' and worker job"
+                f" identifier '{db_document.worker_id}' running at TES"
                 f" endpoint hosted at: {url}"
             )
             cli = tes.HTTPClient(url, timeout=5)
-            cli.cancel_task(task_id=document["tes_endpoint"]["task_id"])
+            cli.cancel_task(task_id=db_document.task_outgoing.id)
             db_connector.update_task_state(
                 state="CANCELED",
             )
             logger.info(
-                f"Task '{id}' with worker ID '{document['worker_id']}'"
+                f"Task '{id}' with worker ID '{db_document.worker_id}'"
                 " canceled."
             )
         return {}

@@ -15,6 +15,8 @@ from typing import Dict, List, Optional
 
 from pydantic import AnyUrl, BaseModel, Field
 
+# pragma pylint: disable=too-few-public-methods
+
 
 class TesCancelTaskResponse(BaseModel):
     pass
@@ -575,6 +577,11 @@ class TesTask(BaseModel):
         example="2020-10-02T10:00:00-05:00",
     )
 
+    class Config:
+        """Pydantic configuration for model."""
+
+        use_enum_values = True
+
 
 class TesListTasksResponse(BaseModel):
     tasks: List[TesTask] = Field(
@@ -643,7 +650,12 @@ class DbDocument(BaseModel):
     """
 
     task_incoming: TesTask = TesTask()
-    task_outgoing: TesTask = TesTask()
+    task_outgoing: TesTask = TesTask(executors=[])
     user_id: Optional[str] = None
     worker_id: str = ""
     tes_endpoint: TesEndpoint = TesEndpoint()
+
+    class Config:
+        """Pydantic configuration for model."""
+
+        use_enum_values = True

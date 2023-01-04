@@ -31,8 +31,6 @@ jobs:
     permissions:
       contents: read
       packages: write
-    env:
-      PROBE_ENDPOINT: localhost:8080/ga4gh/tes/v1/ui/
     steps:
       - name: Check out repository
         uses: actions/checkout@v3
@@ -48,23 +46,9 @@ jobs:
         run: docker-compose up -d --build
       - name: Wait for app startup
         run: sleep 20
-      - name: Run health check
-        shell: bash
-        run: |
-          echo "${PROBE_ENDPOINT}"
-          test $( \
-            curl \
-             -sL \
-             -v \
-             -o /dev/null \
-             -w '%{http_code}' \
-             -X GET \
-             --header 'Accept: application/json' \
-             "${PROBE_ENDPOINT}" \
-            ) == '200' || exit 1
       - name: Run integration tests
         shell: bash
-        run: pytest tests/integrationTest
+        run: pytest tests/test_integration
       - name: Tear down app
         run: docker-compose down
   publish:

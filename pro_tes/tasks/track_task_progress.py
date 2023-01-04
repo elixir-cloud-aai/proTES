@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
     track_started=True,
 )
 def task__track_task_progress(
+    self,  # pylint: disable=unused-argument
     worker_id: str,
     remote_host: str,
     remote_base_path: str,
