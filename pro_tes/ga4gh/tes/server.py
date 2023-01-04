@@ -1,4 +1,4 @@
-"""Controller for GA4GH TES API endpoints."""
+"""Controllers for GA4GH TES API endpoints."""
 
 import logging
 from typing import Dict
