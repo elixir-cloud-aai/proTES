@@ -1,8 +1,5 @@
-# This workflow will build the project, lint, run tests, and build and push
-# Docker images. For more information see:
-# https://help.github.com/actions/language-and-framework-guides/using-python-with-github-actions
+name: proTES checks
 
-name: build app
 on:
   push:
     branches: [dev]
@@ -21,14 +18,19 @@ jobs:
         with:
           python-version: "3.10"
       - name: Install requirements
-        run: pip install -r requirements_dev.txt
-      - name: Lint with flake8
-        run: flake8
+        run: |
+          pip install .
+          pip install -r requirements_dev.txt
+      - name: Lint with Flake8
+        run: flake8 pro_tes/ setup.py
+      - name: Lint with Pylint
+        run: pylint pro_tes/ setup.py
   test:
     name: Run tests
     runs-on: ubuntu-latest
-    env:
-      PROBE_ENDPOINT: localhost:8080/ga4gh/tes/v1/ui/
+    permissions:
+      contents: read
+      packages: write
     steps:
       - name: Check out repository
         uses: actions/checkout@v3
@@ -38,28 +40,17 @@ jobs:
           python-version: "3.10"
       - name: Install requirements
         run: |
-          pip install -r requirements.txt
+          pip install .
           pip install -r requirements_dev.txt
-          pip install -e .
-      - name: Start app
+      - name: Deploy app
         run: docker-compose up -d --build
-      - name: Wait until app is up
-        run: sleep 30
-      - name: Run health check
-        run: |
-          echo "${PROBE_ENDPOINT}"
-          test $( \
-            curl \
-             -sL \
-             -v \
-             -o /dev/null \
-             -w '%{http_code}' \
-             -X GET \
-             --header 'Accept: application/json' \
-             "${PROBE_ENDPOINT}" \
-            ) == '200' || exit 1
+      - name: Wait for app startup
+        run: sleep 20
       - name: Run integration tests
-        run: pytest tests/integrationTest
+        shell: bash
+        run: pytest tests/test_integration
+      - name: Tear down app
+        run: docker-compose down
   publish:
     name: Build and publish app image
     runs-on: ubuntu-latest
