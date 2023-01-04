@@ -36,6 +36,14 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v3
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+      - name: Install requirements
+        run: |
+          pip install .
+          pip install -r requirements_dev.txt
       - name: Deploy app
         run: docker-compose up -d --build
       - name: Wait for app startup
