@@ -620,7 +620,7 @@ class TesEndpoint(BaseModel):
         task_id: Identifier for tasks on external TES endpoint.
     """
 
-    host: str
+    host: str = ""
     base_path: str = ""
 
 
