@@ -15,16 +15,10 @@ LABEL maintainer.organisation="ELIXIR Cloud & AAI"
 ENV LOGNAME=ipython
 ENV USER=ipython
 
-# Install general dependencies
-RUN apt-get update && apt-get install -y nodejs openssl git build-essential python3-dev
-
-## Set working directory
 WORKDIR /app
-
-## Copy app files
+COPY ./requirements.txt /app/requirements.txt
+RUN pip install -r requirements.txt
 COPY ./ .
-
-## Install app
 RUN pip install -e .
 
 ## Add permissions for storing updated API specification

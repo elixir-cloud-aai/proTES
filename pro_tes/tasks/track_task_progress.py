@@ -13,7 +13,7 @@ from flask import current_app
 import tes
 
 from pro_tes.ga4gh.tes.models import TesState
-from pro_tes.utils.db_utils import DbDocumentConnector
+from pro_tes.utils.db import DbDocumentConnector
 from pro_tes.ga4gh.tes.states import States
 from pro_tes.celery_worker import celery
 
@@ -27,12 +27,12 @@ logger = logging.getLogger(__name__)
     track_started=True,
 )
 def task__track_task_progress(
-    self,
+    self,  # pylint: disable=unused-argument
     worker_id: str,
     remote_host: str,
     remote_base_path: str,
     remote_task_id: str,
-) -> str:
+) -> None:
     """Relay task run request to remote TES and track run progress.
 
     Args:
@@ -87,14 +87,13 @@ def task__track_task_progress(
             response = cli.get_task(
                 task_id=remote_task_id,
             )
-        except Exception as exc:
+        except Exception as exc:  # pylint: disable=broad-except
             if attempt <= controller_config["polling"]["attempts"]:
                 attempt += 1
                 logger.warning(exc, exc_info=True)
                 continue
-            else:
-                db_client.update_task_state(state=TesState.SYSTEM_ERROR.value)
-                raise
+            db_client.update_task_state(state=TesState.SYSTEM_ERROR.value)
+            raise
         if response.state != task_state:
             task_state = response.state
             db_client.update_task_state(state=str(task_state))

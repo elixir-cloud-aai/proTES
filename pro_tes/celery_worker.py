@@ -1,8 +1,11 @@
-"""Entry point for Celery workers."""
+"""Celery worker entry point."""
 
 from pathlib import Path
 
+from celery import Celery
 from foca import Foca
 
-foca = Foca(Path(__file__).resolve().parent / "config.yaml")
-celery = foca.create_celery_app()
+foca = Foca(
+    config_file=Path(__file__).resolve().parent / "config.yaml",
+)
+celery: Celery = foca.create_celery_app()

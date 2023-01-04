@@ -1,7 +1,9 @@
-coverage==6.4
-coveralls==3.3.1
-flake8==4.0.1
-mongomock==4.0.0
-pylint==2.13.9
-pytest==7.1.2
-python-semantic-release==7.29.0
+black>=22.10.0
+coverage>=6.5
+flake8>=5.0.4
+flake8-docstrings>=1.6.0
+mongomock>=4.1.2
+mypy>=0.990
+pylint>=2.15.5
+pytest>=7.2.0
+python-semantic-release>=7.32.2
