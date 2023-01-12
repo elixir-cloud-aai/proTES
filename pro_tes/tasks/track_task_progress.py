@@ -2,9 +2,7 @@
 
 import logging
 from time import sleep
-from typing import (
-    Dict,
-)
+from typing import Dict
 
 from foca.database.register_mongodb import _create_mongo_client
 from foca.models.config import Config
@@ -12,14 +10,16 @@ from flask import Flask
 from flask import current_app
 import tes
 
-from pro_tes.ga4gh.tes.models import TesState
+from pro_tes.ga4gh.tes.models import TesState, TesTask
 from pro_tes.utils.db import DbDocumentConnector
 from pro_tes.ga4gh.tes.states import States
 from pro_tes.celery_worker import celery
+from pro_tes.utils.models import TaskModelConverter
 
 logger = logging.getLogger(__name__)
 
 
+# pylint: disable-msg=too-many-locals
 @celery.task(
     name="tasks.track_run_progress",
     bind=True,
@@ -75,8 +75,6 @@ def task__track_task_progress(
     except Exception:
         db_client.update_task_state(state=TesState.SYSTEM_ERROR.value)
         raise
-    response = response.as_dict()
-    db_client.upsert_fields_in_root_object(root="task_log", **response)
 
     # track task progress
     task_state: TesState = TesState.UNKNOWN
@@ -99,5 +97,8 @@ def task__track_task_progress(
             db_client.update_task_state(state=str(task_state))
 
     # final update of database after task is Finished
-    response = response.as_dict()
-    db_client.upsert_fields_in_root_object(root="task_log", **response)
+    task_model_converter = TaskModelConverter(task=response)
+    task_converted: TesTask = task_model_converter.convert_task()
+    db_client.upsert_fields_in_root_object(
+        root="task_outgoing", **task_converted.dict()
+    )
