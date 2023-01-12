@@ -27,11 +27,11 @@ logger = logging.getLogger(__name__)
     track_started=True,
 )
 def task__track_task_progress(
-        self,  # pylint: disable=unused-argument
-        worker_id: str,
-        remote_host: str,
-        remote_base_path: str,
-        remote_task_id: str,
+    self,  # pylint: disable=unused-argument
+    worker_id: str,
+    remote_host: str,
+    remote_base_path: str,
+    remote_task_id: str,
 ) -> None:
     """Relay task run request to remote TES and track run progress.
 
@@ -100,5 +100,5 @@ def task__track_task_progress(
     task_model_converter = TaskModelConverter(task=response)
     task_converted: TesTask = task_model_converter.convert_task()
     db_client.upsert_fields_in_root_object(
-        root="task_outgoing",
-        **task_converted.dict())
+        root="task_outgoing", **task_converted.dict()
+    )
