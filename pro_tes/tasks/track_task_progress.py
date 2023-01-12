@@ -19,6 +19,7 @@ from pro_tes.utils.models import TaskModelConverter
 logger = logging.getLogger(__name__)
 
 
+# pylint: disable-msg=too-many-locals
 @celery.task(
     name="tasks.track_run_progress",
     bind=True,
@@ -26,11 +27,11 @@ logger = logging.getLogger(__name__)
     track_started=True,
 )
 def task__track_task_progress(
-    self,  # pylint: disable=unused-argument
-    worker_id: str,
-    remote_host: str,
-    remote_base_path: str,
-    remote_task_id: str,
+        self,  # pylint: disable=unused-argument
+        worker_id: str,
+        remote_host: str,
+        remote_base_path: str,
+        remote_task_id: str,
 ) -> None:
     """Relay task run request to remote TES and track run progress.
 
