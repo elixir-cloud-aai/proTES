@@ -98,4 +98,6 @@ def task__track_task_progress(
     # final update of database after task is Finished
     task_model_converter = TaskModelConverter(task=response)
     task_converted: TesTask = task_model_converter.convert_task()
-    db_client.upsert_fields_in_root_object(root="task_outgoing", **task_converted.dict())
+    db_client.upsert_fields_in_root_object(
+        root="task_outgoing",
+        **task_converted.dict())
