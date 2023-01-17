@@ -5,7 +5,9 @@ from typing import (
     Dict,
 )
 
-from pro_tes.middleware.task_distribution import task_distribution
+from pro_tes.middleware.task_distribution import task_distribution_by_distance, \
+    random_task_distribution
+
 
 # pragma pylint: disable=too-few-public-methods
 
@@ -27,10 +29,24 @@ class TaskDistributionMiddleware(AbstractMiddleware):
 
     def __init__(self):
         """Construct object instance."""
-        self.tes_uri = task_distribution()
+        self.tes_uri = []
+        self.input_uri = []
 
     def modify_request(self, request) -> Dict:
-        """Add TES instance to request body."""
+        """Add the best possible TES instance to request body."""
+
+        if "inputs" in request.json.keys():
+            for index in range(len(request.json["inputs"])):
+                if "url" in request.json["inputs"][index].keys():
+                    self.input_uri.append(request.json["inputs"][index]["url"])
+                else:
+                    continue
+
+        if len(self.input_uri) is not 0:
+            self.tes_uri = task_distribution_by_distance(self.input_uri)
+        else:
+            self.tes_uri = random_task_distribution()
+
         if len(self.tes_uri) != 0:
             request.json["tes_uri"] = self.tes_uri
         else:
