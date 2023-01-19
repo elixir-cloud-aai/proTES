@@ -13,7 +13,10 @@ from geopy.distance import geodesic
 from flask import current_app
 import requests
 
+from pro_tes.middleware.models import AccessUriCombination, TesUriList
 
+
+# pylint: disable-msg=too-many-locals
 def random_task_distribution() -> Optional[str]:
     """Random task distributor.
 
@@ -29,7 +32,9 @@ def random_task_distribution() -> Optional[str]:
         random_tes_uri: str = random.choice(tes_uri)
         response = requests.get(url=random_tes_uri, timeout=timeout)
         if response.status_code == 200:
-            return random_tes_uri
+            tes_uri.clear()
+            tes_uri.insert(0, random_tes_uri)
+            return tes_uri
         tes_uri.remove(random_tes_uri)
     return None
 
@@ -39,38 +44,25 @@ def task_distribution_by_distance(input_uri: List) -> Optional[List]:
 
     Distributes task by selecting the TES instance having minimum
     distance between the input files and TES Instance.
+
+    Args:
+        input_uri: List of inputs of a TES task request
     Returns:
         A list of ranked TES instance.
     """
     foca_conf = current_app.config.foca
     tes_uri: List[str] = deepcopy(foca_conf.tes["service_list"])
-    access_uri_combination = get_uri_combination(input_uri, tes_uri)
     distances_full: Dict[str, Dict] = {}
-    distances: List[Dict[str, float]] = []
-    ips = {}
+    access_uri_combination = get_uri_combination(input_uri, tes_uri)
 
-    # Create a pair of TES IP and Input IP for each object and each
-    # URI combination
-    for index in range(len(tes_uri)):
-        try:
-            tes_domain = urlparse(tes_uri[index]).netloc
-            tes_ip = gethostbyname(tes_domain)
-        except KeyError:
-            continue
-        except gaierror:
-            continue
-        for y in range(len(input_uri)):
-            try:
-                obj_ip = gethostbyname(urlparse(input_uri[y]).netloc)
-            except gaierror:
-                break
-            ips[(index, y)] = (tes_ip, obj_ip)
+    # get the combination of the tes ip and input ip
+    ips = ip_combination(input_uri=input_uri, tes_uri=tes_uri)
 
     ips_unique: Dict[Set[str], List[Tuple[int, str]]] = {
         v: [] for v in ips.values()  # type: ignore
     }
-    for k, v in ips.items():
-        ips_unique[v].append(k)
+    for key, value in ips.items():
+        ips_unique[value].append(key)
 
     # Calculate distances between all IPs
     distances_unique: Dict[Set[str], float] = {}
@@ -86,7 +78,8 @@ def task_distribution_by_distance(input_uri: List) -> Optional[List]:
             distances_unique[ip_tuple] = 0
         else:
             try:
-                distances_unique[ip_tuple] = distances_full["distances"][ip_tuple]
+                distances_unique[ip_tuple] = \
+                    distances_full["distances"][ip_tuple]
             except KeyError:
                 pass
 
@@ -100,10 +93,10 @@ def task_distribution_by_distance(input_uri: List) -> Optional[List]:
     # Map distances back to each access URI combination
     distances = [deepcopy({}) for i in range(len(tes_uri))]
 
-    for ip_set, combinations in ips_unique.items():  # type: ignore
-        for combination in combinations:
+    for ip_set, combination in ips_unique.items():  # type: ignore
+        for combo in combination:
             try:
-                distances[combination[0]][combination[1]] = distances_unique[ip_set]
+                distances[combo[0]][combo[1]] = distances_unique[ip_set]
             except KeyError:
                 pass
 
@@ -111,69 +104,106 @@ def task_distribution_by_distance(input_uri: List) -> Optional[List]:
     for combination in distances:
         combination["total"] = sum(combination.values())
 
-    # Add total distance corresponding to each TES uri in access URI combination
-    for index in range(len(distances)):
-        access_uri_combination["tes_uri_list"][index]["total_distance"] = distances[index][
-            "total"
-        ]
+    # Add total distance corresponding to TES uri's in
+    # access URI combination
+    for index, value in enumerate(access_uri_combination.tes_uri_list):
+        value.total_distance = distances[index]["total"]
 
+    combination = access_uri_combination.convert_combination_to_dict()
     # sorting the TES uri in decreasing order of total distance
-    sorted_tes_uri = sorted(access_uri_combination["tes_uri_list"], key=lambda x: x["total_distance"])
-
-    access_uri_combination["tes_uri_list"] = sorted_tes_uri
+    ranked_combination = sorted(
+        combination["tes_uri_list"], key=lambda x: x["total_distance"]
+    )
 
     ranked_tes_uri = []
-    for index in range(len(sorted_tes_uri)):
-        ranked_tes_uri.append(sorted_tes_uri[index]["tes_uri"])
+    for index, value in enumerate(ranked_combination):
+        ranked_tes_uri.append(value["tes_uri"])
+
     return ranked_tes_uri
 
 
-def get_uri_combination(input_uri: List, tes_uri: List) -> List:
-    """Creates a combination of input uris and TES uri.
+def get_uri_combination(
+        input_uri: List,
+        tes_uri: List
+) -> AccessUriCombination:
+    """Create a combination of input uris and tes uri.
 
+    Args:
+        input_uri: List of input uris of TES request.
+        tes_uri: List of TES instance.
     Returns:
-        A Combination of Input uris and TES uri.
+        A AccessUriCombination object of the form like:
         {
-        "input_uri": [
+            "input_uri": [
                     "ftp://vm4466.kaj.pouta.csc.fi/upload/foivos/test1.txt",
                     "ftp://vm4466.kaj.pouta.csc.fi/upload/foivos/test2.txt",
                     "ftp://vm4466.kaj.pouta.csc.fi/upload/foivos/test3.txt",
-                ],
-        "tes_uri_list": [
-            {
-                "tes_uri": "https://tesk-eu.hypatia-comp.athenarc.gr",
-                "total_distance": None
-            },
-            {
-                "tes_uri": "https://csc-tesk-noauth.rahtiapp.fi",
-                "total_distance": None
-            },
-            {
-                "tes_uri": "https://tesk-na.cloud.e-infra.cz",
-                "total_distance" : None
-            },
-        ]
+            ],
+
+            "tes_uri_list": [
+                {
+                    "tes_uri": "https://tesk-eu.hypatia-comp.athenarc.gr",
+                    "total_distance": None
+                },
+                {
+                    "tes_uri": "https://csc-tesk-noauth.rahtiapp.fi",
+                    "total_distance": None
+                },
+                {
+                    "tes_uri": "https://tesk-na.cloud.e-infra.cz",
+                    "total_distance" : None
+                },
+            ]
         }
     """
-    combination = {
-        "input_uri": input_uri,
-        "tes_uri_list": []
-    }
+    tes_uri_list = []
+    for uri in tes_uri:
+        obj = TesUriList(tes_uri=uri, total_distance=None)
+        tes_uri_list.append(obj)
 
-    for index in range(len(tes_uri)):
-        combination["tes_uri_list"].insert(index,
-                                           {
-                                               "tes_uri": tes_uri[index],
-                                               "total_distance": None
-                                           }
-                                           )
-    return combination
+    access_uri_combination = AccessUriCombination(
+        input_uri=input_uri, tes_uri_list=tes_uri_list
+    )
+    return access_uri_combination
+
+
+def ip_combination(input_uri: List[str], tes_uri: List[str]) -> Dict:
+    """Create a pair of TES IP and Input IP.
+
+    Args:
+        input_uri: List of input uris of TES request.
+        tes_uri: List of TES instance.
+
+    Returns:
+        A dictionary of combination of tes ip with all the input ips.
+    """
+    ips = {}
+
+    obj_ip_list = []
+    for index, uri in enumerate(input_uri):
+        try:
+            obj_ip = gethostbyname(urlparse(uri).netloc)
+        except gaierror:
+            break
+        obj_ip_list.append(obj_ip)
+
+    for index, uri in enumerate(tes_uri):
+        try:
+            tes_domain = urlparse(uri).netloc
+            tes_ip = gethostbyname(tes_domain)
+        except KeyError:
+            continue
+        except gaierror:
+            continue
+        for count, obj_ip in enumerate(obj_ip_list):
+            ips[(index, count)] = (tes_ip, obj_ip)
+    return ips
 
 
 def ip_distance(
         *args: str,
 ) -> Dict[str, Dict]:
-    """Computes IP distance between ip pairs.
+    """Compute ip distance between ip pairs.
 
     :param *args: IP addresses of the form '8.8.8.8' without schema and
             suffixes.
@@ -192,9 +222,9 @@ def ip_distance(
 
     # Locate IPs
     ip_locs = {}
-    for ip in args:
+    for ips in args:
         try:
-            ip_locs[ip] = DbIpCity.get(ip, api_key="free")
+            ip_locs[ips] = DbIpCity.get(ips, api_key="free")
         except InvalidRequestError:
             pass
 

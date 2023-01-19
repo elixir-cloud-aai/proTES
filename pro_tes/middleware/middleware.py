@@ -5,13 +5,13 @@ from typing import (
     Dict,
 )
 
-from pro_tes.middleware.task_distribution import task_distribution_by_distance, \
-    random_task_distribution
+from pro_tes.middleware.task_distribution import (
+    task_distribution_by_distance,
+    random_task_distribution,
+)
 
 
 # pragma pylint: disable=too-few-public-methods
-
-
 class AbstractMiddleware(metaclass=abc.ABCMeta):
     """Abstract class to implement different middleware."""
 
@@ -34,7 +34,6 @@ class TaskDistributionMiddleware(AbstractMiddleware):
 
     def modify_request(self, request) -> Dict:
         """Add the best possible TES instance to request body."""
-
         if "inputs" in request.json.keys():
             for index in range(len(request.json["inputs"])):
                 if "url" in request.json["inputs"][index].keys():
@@ -42,7 +41,7 @@ class TaskDistributionMiddleware(AbstractMiddleware):
                 else:
                     continue
 
-        if len(self.input_uri) is not 0:
+        if len(self.input_uri) != 0:
             self.tes_uri = task_distribution_by_distance(self.input_uri)
         else:
             self.tes_uri = random_task_distribution()
