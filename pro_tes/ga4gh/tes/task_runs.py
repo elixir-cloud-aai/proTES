@@ -17,7 +17,7 @@ import requests
 import tes
 from tes.models import Task
 
-from pro_tes.exceptions import BadRequest, InternalServerError, TaskNotFound
+from pro_tes.exceptions import BadRequest, TaskNotFound
 from pro_tes.ga4gh.tes.models import (
     DbDocument,
     TesEndpoint,
@@ -102,89 +102,87 @@ class TaskRuns:
                 f"{exc}'"
             ) from exc
 
-        try:
-            for tes_uri in tes_uri_list:
-                db_document.tes_endpoint = TesEndpoint(host=tes_uri)
-                url: str = (
-                    f"{db_document.tes_endpoint.host.rstrip('/')}/"
-                    f"{db_document.tes_endpoint.base_path.lstrip('/')}"
+        for tes_uri in tes_uri_list:
+            db_document.tes_endpoint = TesEndpoint(host=tes_uri)
+            url: str = (
+                f"{db_document.tes_endpoint.host.rstrip('/')}/"
+                f"{db_document.tes_endpoint.base_path.lstrip('/')}"
+            )
+            try:
+                cli = tes.HTTPClient(url, timeout=5)
+            except ValueError as exc:
+                db_connector.update_task_state(
+                    state=TesState.SYSTEM_ERROR.value
                 )
-                try:
-                    cli = tes.HTTPClient(url, timeout=5)
-                except ValueError as exc:
-                    db_connector.update_task_state(
-                        state=TesState.SYSTEM_ERROR.value
-                    )
-                    logger.info(
-                        f"Task '{db_document.task_incoming.id}' could not "
-                        f"be sentto TES endpoint hosted at: {url}. Invalid TES"
-                        f" endpoint URL. Original error message: "
-                        f"'{type(exc).__name__}: {exc}'"
-                    )
-                    continue
+                logger.info(
+                    f"Task '{db_document.task_incoming.id}' could not "
+                    f"be sentto TES endpoint hosted at: {url}. Invalid TES"
+                    f" endpoint URL. Original error message: "
+                    f"'{type(exc).__name__}: {exc}'"
+                )
+                continue
 
-                try:
-                    task_id = cli.create_task(payload_marshalled)
-                except requests.HTTPError as exc:
-                    db_connector.update_task_state(
-                        state=TesState.SYSTEM_ERROR.value
-                    )
-                    logger.info(
-                        f"Task '{db_document.task_incoming.id}' "
-                        f"could not be sent to TES endpoint hosted "
-                        f"at: {url}. Task could not be created. Original "
-                        f"error message: '{type(exc).__name__}: "
-                        f"{exc}'"
-                    )
-                    continue
-
+            try:
+                task_id = cli.create_task(payload_marshalled)
+            except requests.HTTPError as exc:
+                db_connector.update_task_state(
+                    state=TesState.SYSTEM_ERROR.value
+                )
                 logger.info(
                     f"Task '{db_document.task_incoming.id}' "
-                    f"forwarded to TES endpoint "
-                    f"hosted at: {url}. proTES task identifier: {task_id}."
+                    f"could not be sent to TES endpoint hosted "
+                    f"at: {url}. Task could not be created. Original "
+                    f"error message: '{type(exc).__name__}: "
+                    f"{exc}'"
                 )
-                try:
-                    task: Task = cli.get_task(task_id)
-                    task_model_converter = TaskModelConverter(task=task)
-                    task_converted: TesTask = \
-                        task_model_converter.convert_task()
-                    db_document = db_connector.upsert_fields_in_root_object(
-                        root="task_outgoing",
-                        **task_converted.dict(),
-                    )
-                except requests.HTTPError as exc:
-                    logger.error(
-                        f"Task '{db_document.task_incoming.id}' info could "
-                        f"not be retrieved from TES endpoint hosted at: "
-                        f"{url}. Original error message: "
-                        f"'{type(exc).__name__}: {exc}'"
-                    )
-                except PyMongoError as exc:
-                    logger.error(
-                        "Database could not be updated with task info "
-                        f"retrieved for task '{db_document.task_incoming.id}'"
-                        f"sent to TES endpoint hosted at: {url}. "
-                        f"Original error message:'{type(exc).__name__}: {exc}'"
-                    )
-                task__track_task_progress.apply_async(
-                    None,
-                    {
-                        "worker_id": db_document.worker_id,
-                        "remote_host": db_document.tes_endpoint.host,
-                        "remote_base_path": db_document.tes_endpoint.base_path,
-                        "remote_task_id": db_document.task_outgoing.id,
-                    },
-                )
-                return {"id": task_id}
+                continue
 
-        except Exception as exc:
-            db_connector.update_task_state(state=TesState.SYSTEM_ERROR.value)
-            raise InternalServerError(
-                f"Task '{db_document.task_incoming.id}' could not be sent "
-                f"to any of the TES endpoint available"
-                f"Original error message: '{type(exc).__name__}: "
-                f"{exc}'"
-            ) from exc
+            logger.info(
+                f"Task '{db_document.task_incoming.id}' "
+                f"forwarded to TES endpoint "
+                f"hosted at: {url}. proTES task identifier: {task_id}."
+            )
+            try:
+                task: Task = cli.get_task(task_id)
+                task_model_converter = TaskModelConverter(task=task)
+                task_converted: TesTask = task_model_converter.convert_task()
+                db_document = db_connector.upsert_fields_in_root_object(
+                    root="task_outgoing",
+                    **task_converted.dict(),
+                )
+            except requests.HTTPError as exc:
+                logger.error(
+                    f"Task '{db_document.task_incoming.id}' info could "
+                    f"not be retrieved from TES endpoint hosted at: "
+                    f"{url}. Original error message: "
+                    f"'{type(exc).__name__}: {exc}'"
+                )
+            except PyMongoError as exc:
+                logger.error(
+                    "Database could not be updated with task info "
+                    f"retrieved for task '{db_document.task_incoming.id}'"
+                    f"sent to TES endpoint hosted at: {url}. "
+                    f"Original error message:'{type(exc).__name__}: {exc}'"
+                )
+            tes_endpoint_dict = {'host': tes_uri, 'base_path': ''}
+            db_document = db_connector.upsert_fields_in_root_object(
+                root="tes_endpoint",
+                **tes_endpoint_dict,
+            )
+            logger.info(
+                f"TES endpoint: '{db_document.tes_endpoint.host}' "
+                f"finally to database "
+            )
+            task__track_task_progress.apply_async(
+                None,
+                {
+                    "worker_id": db_document.worker_id,
+                    "remote_host": db_document.tes_endpoint.host,
+                    "remote_base_path": db_document.tes_endpoint.base_path,
+                    "remote_task_id": db_document.task_outgoing.id,
+                },
+            )
+            return {"id": task_id}
 
     def list_tasks(self, **kwargs) -> Dict:
         """Return list of tasks.
