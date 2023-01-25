@@ -1,4 +1,5 @@
 """Module for random task distribution."""
+
 import random
 from copy import deepcopy
 from typing import List, Optional

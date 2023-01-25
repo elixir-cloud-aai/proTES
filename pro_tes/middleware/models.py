@@ -1,7 +1,10 @@
 """Model for the Access Uri Combination."""
-# pylint: disable=no-name-in-module
+
+# pragma pylint: disable=no-name-in-module
+
 from typing import List
-from pydantic import BaseModel, AnyUrl, HttpUrl
+
+from pydantic import AnyUrl, BaseModel, HttpUrl
 
 # pragma pylint: disable=too-few-public-methods
 
@@ -19,7 +22,7 @@ class TaskParams(BaseModel):
 
 
 class TesDeployment(BaseModel):
-    """Combination of the tes_uri and its stats"""
+    """Combination of the tes_uri and its stats."""
 
     tes_uri: HttpUrl
     stats: TesStats
