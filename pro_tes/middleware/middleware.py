@@ -1,17 +1,18 @@
 """Middleware to inject into TES requests."""
 
 import abc
-from typing import (
-    Dict,
-)
+from typing import Dict
 
-from pro_tes.middleware.task_distribution import (
+from pro_tes.middleware.task_distribution.distance import (
     task_distribution_by_distance,
+)
+from pro_tes.middleware.task_distribution.random import (
     random_task_distribution,
 )
 
-
 # pragma pylint: disable=too-few-public-methods
+
+
 class AbstractMiddleware(metaclass=abc.ABCMeta):
     """Abstract class to implement different middleware."""
 

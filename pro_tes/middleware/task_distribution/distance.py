@@ -1,46 +1,24 @@
-"""Module for task distribution logic."""
-
+"""Module for distance based task distribution logic ."""
 from copy import deepcopy
-import random
-from urllib.parse import urlparse
-from socket import gaierror, gethostbyname
-from typing import Dict, List, Set, Tuple, Optional
 from itertools import combinations
-from ip2geotools.errors import InvalidRequestError
-from ip2geotools.databases.noncommercial import DbIpCity
-from geopy.distance import geodesic
+from socket import gaierror, gethostbyname
+from typing import Dict, List, Optional, Set, Tuple
+from urllib.parse import urlparse
 
 from flask import current_app
-import requests
+from geopy.distance import geodesic
+from ip2geotools.databases.noncommercial import DbIpCity
+from ip2geotools.errors import InvalidRequestError
 
 from pro_tes.middleware.models import (
-    AccessUriCombination, TesDeployment, TesStats, TaskParams
+    AccessUriCombination,
+    TaskParams,
+    TesDeployment,
+    TesStats
 )
 
 # pylint: disable-msg=R0912
 # pylint: disable-msg=too-many-locals
-
-
-def random_task_distribution() -> Optional[List]:
-    """Random task distributor.
-
-    Randomly distribute tasks across available TES instances.
-
-    Returns:
-        A randomly selected, available TES instance.
-    """
-    foca_conf = current_app.config.foca
-    tes_uri: List[str] = deepcopy(foca_conf.tes["service_list"])
-    timeout: int = foca_conf.controllers["post_task"]["timeout"]["poll"]
-    while len(tes_uri) != 0:
-        random_tes_uri: str = random.choice(tes_uri)
-        response = requests.get(url=random_tes_uri, timeout=timeout)
-        if response.status_code == 200:
-            tes_uri.clear()
-            tes_uri.insert(0, random_tes_uri)
-            return tes_uri
-        tes_uri.remove(random_tes_uri)
-    return None
 
 
 def task_distribution_by_distance(input_uri: List) -> Optional[List]:
@@ -116,12 +94,12 @@ def task_distribution_by_distance(input_uri: List) -> Optional[List]:
 
     # sorting the TES uri in decreasing order of total distance
     ranked_combination = sorted(
-        combination, key=lambda x: x['stats']['total_distance']
+        combination, key=lambda x: x["stats"]["total_distance"]
     )
 
     ranked_tes_uri = []
     for index, value in enumerate(ranked_combination):
-        ranked_tes_uri.append(str(value['tes_uri']))
+        ranked_tes_uri.append(str(value["tes_uri"]))
 
     return ranked_tes_uri
 
