@@ -13,11 +13,15 @@ from geopy.distance import geodesic
 from flask import current_app
 import requests
 
-from pro_tes.middleware.models import AccessUriCombination, TesUriList
+from pro_tes.middleware.models import (
+    AccessUriCombination, TesDeployment, TesStats, TaskParams
+)
 
-
+# pylint: disable-msg=R0912
 # pylint: disable-msg=too-many-locals
-def random_task_distribution() -> Optional[str]:
+
+
+def random_task_distribution() -> Optional[List]:
     """Random task distributor.
 
     Randomly distribute tasks across available TES instances.
@@ -57,7 +61,6 @@ def task_distribution_by_distance(input_uri: List) -> Optional[List]:
 
     # get the combination of the tes ip and input ip
     ips = ip_combination(input_uri=input_uri, tes_uri=tes_uri)
-
     ips_unique: Dict[Set[str], List[Tuple[int, str]]] = {
         v: [] for v in ips.values()  # type: ignore
     }
@@ -67,7 +70,6 @@ def task_distribution_by_distance(input_uri: List) -> Optional[List]:
     # Calculate distances between all IPs
     distances_unique: Dict[Set[str], float] = {}
     ips_all = frozenset().union(*list(ips_unique.keys()))  # type: ignore
-
     try:
         distances_full = ip_distance(*ips_all)
     except ValueError:
@@ -92,7 +94,6 @@ def task_distribution_by_distance(input_uri: List) -> Optional[List]:
 
     # Map distances back to each access URI combination
     distances = [deepcopy({}) for i in range(len(tes_uri))]
-
     for ip_set, combination in ips_unique.items():  # type: ignore
         for combo in combination:
             try:
@@ -106,18 +107,21 @@ def task_distribution_by_distance(input_uri: List) -> Optional[List]:
 
     # Add total distance corresponding to TES uri's in
     # access URI combination
-    for index, value in enumerate(access_uri_combination.tes_uri_list):
-        value.total_distance = distances[index]["total"]
+    for index, value in enumerate(access_uri_combination.tes_deployments):
+        value.stats.total_distance = distances[index]["total"]
 
-    combination = access_uri_combination.convert_combination_to_dict()
+    combination = []
+    for index, value in enumerate(access_uri_combination.tes_deployments):
+        combination.append(value.dict())
+
     # sorting the TES uri in decreasing order of total distance
     ranked_combination = sorted(
-        combination["tes_uri_list"], key=lambda x: x["total_distance"]
+        combination, key=lambda x: x['stats']['total_distance']
     )
 
     ranked_tes_uri = []
     for index, value in enumerate(ranked_combination):
-        ranked_tes_uri.append(value["tes_uri"])
+        ranked_tes_uri.append(str(value['tes_uri']))
 
     return ranked_tes_uri
 
@@ -134,35 +138,44 @@ def get_uri_combination(
     Returns:
         A AccessUriCombination object of the form like:
         {
-            "input_uri": [
+            "task_params": {
+                "input_uri": [
                     "ftp://vm4466.kaj.pouta.csc.fi/upload/foivos/test1.txt",
                     "ftp://vm4466.kaj.pouta.csc.fi/upload/foivos/test2.txt",
                     "ftp://vm4466.kaj.pouta.csc.fi/upload/foivos/test3.txt",
-            ],
+                ]
+            },
 
-            "tes_uri_list": [
-                {
-                    "tes_uri": "https://tesk-eu.hypatia-comp.athenarc.gr",
-                    "total_distance": None
+            "tes_deployments": [
+                {   "tes_uri": "https://tesk-eu.hypatia-comp.athenarc.gr",
+                    "stats": {
+                        "total_distance": None
+                    }
                 },
-                {
-                    "tes_uri": "https://csc-tesk-noauth.rahtiapp.fi",
-                    "total_distance": None
+                {   "tes_uri": "https://csc-tesk-noauth.rahtiapp.fi",
+                    "stats": {
+                        "total_distance": None
+                    }
                 },
-                {
-                    "tes_uri": "https://tesk-na.cloud.e-infra.cz",
-                    "total_distance" : None
+                {   "tes_uri": "https://tesk-na.cloud.e-infra.cz",
+                    "stats": {
+                        "total_distance": None
+                    }
                 },
-            ]
         }
     """
-    tes_uri_list = []
+    tes_deployment_list = []
     for uri in tes_uri:
-        obj = TesUriList(tes_uri=uri, total_distance=None)
-        tes_uri_list.append(obj)
+        temp_obj = TesDeployment(
+            tes_uri=uri,
+            stats=TesStats(total_distance=None)
+        )
+        tes_deployment_list.append(temp_obj)
 
+    task_param = TaskParams(input_uris=input_uri)
     access_uri_combination = AccessUriCombination(
-        input_uri=input_uri, tes_uri_list=tes_uri_list
+        task_params=task_param,
+        tes_deployments=tes_deployment_list
     )
     return access_uri_combination
 
