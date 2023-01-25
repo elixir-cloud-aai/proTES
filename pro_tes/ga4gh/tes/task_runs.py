@@ -1,12 +1,10 @@
 """Class implementing TES API-server-side controller methods."""
 
-import logging
 from copy import deepcopy
 from datetime import datetime
+import logging
 from typing import Dict, Tuple
 
-import requests
-import tes
 from bson.objectid import ObjectId
 from celery import uuid
 from dateutil.parser import parse as parse_time
@@ -15,6 +13,8 @@ from foca.models.config import Config
 from foca.utils.misc import generate_id
 from pymongo.collection import Collection
 from pymongo.errors import DuplicateKeyError, PyMongoError
+import requests
+import tes
 from tes.models import Task
 
 from pro_tes.exceptions import BadRequest, TaskNotFound

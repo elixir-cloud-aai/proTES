@@ -1,10 +1,12 @@
 """Model for the Access Uri Combination."""
 
-# pragma pylint: disable=no-name-in-module
-
 from typing import List
 
-from pydantic import AnyUrl, BaseModel, HttpUrl
+from pydantic import (  # pragma pylint: disable=no-name-in-module
+    AnyUrl,
+    BaseModel,
+    HttpUrl,
+)
 
 # pragma pylint: disable=too-few-public-methods
 

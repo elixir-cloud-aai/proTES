@@ -1,1 +1,1 @@
-"""proTES task distribution middlewares."""
+"""proTES task distribution middleware."""

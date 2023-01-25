@@ -3,12 +3,7 @@
 import abc
 from typing import Dict
 
-from pro_tes.middleware.task_distribution.distance import (
-    task_distribution_by_distance,
-)
-from pro_tes.middleware.task_distribution.random import (
-    random_task_distribution,
-)
+from pro_tes.middleware.task_distribution import distance, random
 
 # pragma pylint: disable=too-few-public-methods
 
@@ -43,9 +38,9 @@ class TaskDistributionMiddleware(AbstractMiddleware):
                     continue
 
         if len(self.input_uri) != 0:
-            self.tes_uri = task_distribution_by_distance(self.input_uri)
+            self.tes_uri = distance.task_distribution(self.input_uri)
         else:
-            self.tes_uri = random_task_distribution()
+            self.tes_uri = random.task_distribution()
 
         if len(self.tes_uri) != 0:
             request.json["tes_uri"] = self.tes_uri

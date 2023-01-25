@@ -1,4 +1,4 @@
-"""Module for distance-based task distribution logic ."""
+"""Module for distance-based task distribution logic."""
 
 from copy import deepcopy
 from itertools import combinations

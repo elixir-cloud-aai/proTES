@@ -8,7 +8,7 @@ import requests
 from flask import current_app
 
 
-def random_task_distribution() -> Optional[List]:
+def task_distribution() -> Optional[List]:
     """Random task distributor.
 
     Randomly distribute tasks across available TES instances.
