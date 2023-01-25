@@ -1,4 +1,4 @@
-"""Module for distance based task distribution logic ."""
+"""Module for distance-based task distribution logic ."""
 
 from copy import deepcopy
 from itertools import combinations
@@ -18,11 +18,8 @@ from pro_tes.middleware.models import (
     TesStats
 )
 
-# pylint: disable-msg=R0912
-# pylint: disable-msg=too-many-locals
 
-
-def task_distribution_by_distance(input_uri: List) -> Optional[List]:
+def task_distribution(input_uri: List) -> Optional[List]:
     """Task distributor.
 
     Distributes task by selecting the TES instance having minimum
@@ -35,7 +32,6 @@ def task_distribution_by_distance(input_uri: List) -> Optional[List]:
     """
     foca_conf = current_app.config.foca
     tes_uri: List[str] = deepcopy(foca_conf.tes["service_list"])
-    distances_full: Dict[str, Dict] = {}
     access_uri_combination = get_uri_combination(input_uri, tes_uri)
 
     # get the combination of the tes ip and input ip
@@ -47,38 +43,7 @@ def task_distribution_by_distance(input_uri: List) -> Optional[List]:
         ips_unique[value].append(key)
 
     # Calculate distances between all IPs
-    distances_unique: Dict[Set[str], float] = {}
-    ips_all = frozenset().union(*list(ips_unique.keys()))  # type: ignore
-    try:
-        distances_full = ip_distance(*ips_all)
-    except ValueError:
-        pass
-
-    for ip_tuple in ips_unique.keys():
-        if len(set(ip_tuple)) == 1:
-            distances_unique[ip_tuple] = 0
-        else:
-            try:
-                distances_unique[ip_tuple] = \
-                    distances_full["distances"][ip_tuple]
-            except KeyError:
-                pass
-
-    # Reshape distances keys for logging
-    keys = list(distances_full["distances"].keys())
-    keys = ["|".join([str(i) for i in t]) for t in keys]
-    distances_full["distances"] = dict(
-        zip(keys, list(distances_full["distances"].values()))
-    )
-
-    # Map distances back to each access URI combination
-    distances = [deepcopy({}) for i in range(len(tes_uri))]
-    for ip_set, combination in ips_unique.items():  # type: ignore
-        for combo in combination:
-            try:
-                distances[combo[0]][combo[1]] = distances_unique[ip_set]
-            except KeyError:
-                pass
+    distances = calculate_distance(ips_unique, tes_uri)
 
     # Add distance totals
     for combination in distances:
@@ -89,20 +54,9 @@ def task_distribution_by_distance(input_uri: List) -> Optional[List]:
     for index, value in enumerate(access_uri_combination.tes_deployments):
         value.stats.total_distance = distances[index]["total"]
 
-    combination = []
-    for index, value in enumerate(access_uri_combination.tes_deployments):
-        combination.append(value.dict())
+    ranked_tes_uris = rank_tes_instances(access_uri_combination)
 
-    # sorting the TES uri in decreasing order of total distance
-    ranked_combination = sorted(
-        combination, key=lambda x: x["stats"]["total_distance"]
-    )
-
-    ranked_tes_uri = []
-    for index, value in enumerate(ranked_combination):
-        ranked_tes_uri.append(str(value["tes_uri"]))
-
-    return ranked_tes_uri
+    return ranked_tes_uris
 
 
 def get_uri_combination(
@@ -240,3 +194,78 @@ def ip_distance(
     res["distances"] = dist
 
     return res
+
+
+def calculate_distance(
+        ips_unique: Dict[Set[str], List[Tuple[int, str]]],
+        tes_uri: List[str]
+) -> Dict[Set[str], float]:
+    """Calculate distances between all IPs.
+
+    Args:
+        ips_unique: A dictionary of unique ips.
+        tes_uri: List of TES instance.
+
+    Returns:
+        A dictionary of distances between all ips.
+    """
+    distances_unique: Dict[Set[str], float] = {}
+    ips_all = frozenset().union(*list(ips_unique.keys()))  # type: ignore
+    try:
+        distances_full = ip_distance(*ips_all)
+    except ValueError:
+        pass
+
+    for ip_tuple in ips_unique.keys():
+        if len(set(ip_tuple)) == 1:
+            distances_unique[ip_tuple] = 0
+        else:
+            try:
+                distances_unique[ip_tuple] = \
+                    distances_full["distances"][ip_tuple]
+            except KeyError:
+                pass
+
+    # Reshape distances keys for logging
+    keys = list(distances_full["distances"].keys())
+    keys = ["|".join([str(i) for i in t]) for t in keys]
+    distances_full["distances"] = dict(
+        zip(keys, list(distances_full["distances"].values()))
+    )
+
+    # Map distances back to each combination
+    distances = [deepcopy({}) for i in range(len(tes_uri))]
+    for ip_set, combination in ips_unique.items():  # type: ignore
+        for combo in combination:
+            try:
+                distances[combo[0]][combo[1]] = distances_unique[ip_set]
+            except KeyError:
+                pass
+
+    return distances
+
+
+def rank_tes_instances(
+        access_uri_combination: AccessUriCombination
+) -> List[str]:
+    """Rank the tes instance based on the total distance.
+
+    Args:
+        access_uri_combination: Combination of task_params and tes_deployments.
+
+    Returns:
+        A list of tes uri in increasing order of total distance.
+    """
+    combination = []
+    for value in access_uri_combination.tes_deployments:
+        combination.append(value.dict())
+
+    # sorting the TES uri in decreasing order of total distance
+    ranked_combination = sorted(
+        combination, key=lambda x: x["stats"]["total_distance"]
+    )
+
+    ranked_tes_uri = []
+    for value in ranked_combination:
+        ranked_tes_uri.append(str(value["tes_uri"]))
+    return ranked_tes_uri
