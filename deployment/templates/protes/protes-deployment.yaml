@@ -58,7 +58,7 @@ spec:
           periodSeconds: 20
         readinessProbe:
           httpGet:
-            path: /ga4gh/tes/v1/tasks/service-info
+            path: /ga4gh/tes/v1/service-info
             port: protes-port
           initialDelaySeconds: 3
           periodSeconds: 3
