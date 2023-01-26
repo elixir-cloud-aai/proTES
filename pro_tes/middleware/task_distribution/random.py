@@ -27,4 +27,4 @@ def task_distribution() -> Optional[List]:
             tes_uri.insert(0, random_tes_uri)
             return tes_uri
         tes_uri.remove(random_tes_uri)
-    return None
+    return []
