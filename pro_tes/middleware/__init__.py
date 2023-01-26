@@ -1,1 +1,1 @@
-"""proTES middlwares."""
+"""proTES middleware."""

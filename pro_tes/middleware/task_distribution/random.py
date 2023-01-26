@@ -1,14 +1,14 @@
-"""Module for task distribution logic."""
+"""Module for random task distribution."""
 
-from copy import deepcopy
 import random
+from copy import deepcopy
 from typing import List, Optional
 
-from flask import current_app
 import requests
+from flask import current_app
 
 
-def task_distribution() -> Optional[str]:
+def task_distribution() -> Optional[List]:
     """Random task distributor.
 
     Randomly distribute tasks across available TES instances.
@@ -23,6 +23,8 @@ def task_distribution() -> Optional[str]:
         random_tes_uri: str = random.choice(tes_uri)
         response = requests.get(url=random_tes_uri, timeout=timeout)
         if response.status_code == 200:
-            return random_tes_uri
+            tes_uri.clear()
+            tes_uri.insert(0, random_tes_uri)
+            return tes_uri
         tes_uri.remove(random_tes_uri)
-    return None
+    return []
