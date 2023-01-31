@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 
 
 # pylint: disable-msg=too-many-locals
+# pylint: disable=unsubscriptable-object
 @celery.task(
     name="tasks.track_run_progress",
     bind=True,

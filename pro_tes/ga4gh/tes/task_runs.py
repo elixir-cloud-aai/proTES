@@ -28,6 +28,7 @@ from pro_tes.utils.models import TaskModelConverter
 
 # pragma pylint: disable=invalid-name,redefined-builtin,unused-argument
 # pragma pylint: disable=too-many-locals
+# pylint: disable=unsubscriptable-object
 
 logger = logging.getLogger(__name__)
 
