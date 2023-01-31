@@ -117,7 +117,7 @@ controllers:
       wait: 3
       attempts: 100
   list_tasks:
-    default_page_size: 5
+    default_page_size: 256
   celery:
     monitor:
       timeout: 0.1
