@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 
 
 # pylint: disable-msg=too-many-locals
+# pylint: disable=unsubscriptable-object
 @celery.task(
     name="tasks.track_run_progress",
     bind=True,
@@ -96,9 +97,18 @@ def task__track_task_progress(
             task_state = response.state
             db_client.update_task_state(state=str(task_state))
 
-    # final update of database after task is Finished
     task_model_converter = TaskModelConverter(task=response)
     task_converted: TesTask = task_model_converter.convert_task()
+
+    document = db_client.get_document()
+
+    # updating task_incoming after task is finished
+    document.task_incoming.state = task_converted.state
+    for index, logs in enumerate(task_converted.logs):
+        document.task_incoming.logs[index].logs = logs.logs
+        document.task_incoming.logs[index].outputs = logs.outputs
+
+    # updating the database
     db_client.upsert_fields_in_root_object(
-        root="task_outgoing", **task_converted.dict()
+        root="task_incoming", **document.task_incoming.dict()
     )

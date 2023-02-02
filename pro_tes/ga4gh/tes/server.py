@@ -43,9 +43,13 @@ def CreateTask(*args, **kwargs) -> Dict:
         **kwargs: Arbitrary keyword arguments.
     """
     task_distributor = TaskDistributionMiddleware()
-    requests = task_distributor.modify_request(request=request)
+    requests, start_time = task_distributor.modify_request(request=request)
     task_runs = TaskRuns()
-    response = task_runs.create_task(request=requests, **kwargs)
+    response = task_runs.create_task(
+        request=requests,
+        start_time=start_time,
+        **kwargs
+    )
     return response
 
 
