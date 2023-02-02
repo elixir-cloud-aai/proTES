@@ -1,7 +1,7 @@
 """Middleware to inject into TES requests."""
 
 import abc
-from typing import Dict
+from datetime import datetime
 
 from pro_tes.middleware.task_distribution import distance, random
 
@@ -28,8 +28,10 @@ class TaskDistributionMiddleware(AbstractMiddleware):
         self.tes_uri = []
         self.input_uri = []
 
-    def modify_request(self, request) -> Dict:
+    def modify_request(self, request):
         """Add the best possible TES instance to request body."""
+        start_time = datetime.now().strftime("%m-%d-%Y %H:%M:%S")
+
         if "inputs" in request.json.keys():
             for index in range(len(request.json["inputs"])):
                 if "url" in request.json["inputs"][index].keys():
@@ -46,4 +48,4 @@ class TaskDistributionMiddleware(AbstractMiddleware):
             request.json["tes_uri"] = self.tes_uri
         else:
             raise Exception
-        return request
+        return request, start_time
