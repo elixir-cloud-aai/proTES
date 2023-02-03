@@ -19,7 +19,8 @@ from tes.models import Task
 
 from pro_tes.exceptions import BadRequest, TaskNotFound
 from pro_tes.ga4gh.tes.models import (
-    DbDocument, TesEndpoint, TesState, TesTask, TesTaskLog
+    DbDocument, TesEndpoint, TesState, TesTask, TesTaskLog,
+    TesNextTes
 )
 from pro_tes.ga4gh.tes.states import States
 from pro_tes.tasks.track_task_progress import task__track_task_progress
@@ -49,6 +50,7 @@ class TaskRuns:
         self.db_client: Collection = (
             self.foca_config.db.dbs["taskStore"].collections["tasks"].client
         )
+        self.store_logs = self.foca_config.storeLogs["execution_trace"]
 
     def create_task(self, **kwargs) -> Dict:
         """Start task.
@@ -158,6 +160,7 @@ class TaskRuns:
                     f"sent to TES endpoint hosted at: {url}. "
                     f"Original error message:'{type(exc).__name__}: {exc}'"
                 )
+            # update task_logs, tes_endpoint and task_incoming in db
             db_document = self._update_doc_in_db(
                 db_connector=db_connector,
                 tes_uri=tes_uri,
@@ -282,9 +285,13 @@ class TaskRuns:
                 f"{db_document.tes_endpoint.host.rstrip('/')}/"
                 f"{db_document.tes_endpoint.base_path.strip('/')}"
             )
-            task_id = db_document.task_incoming.logs[0].metadata[
-                "remote_task_id"
-            ]
+            if self.store_logs:
+                task_id = db_document.task_incoming.logs[0].\
+                    metadata.forwarded_to.id
+            else:
+                task_id = db_document.task_incoming.logs[0].metadata[
+                    "remote_task_id"
+                ]
             logger.warning(f"DB document: {db_document}")
             logger.info(
                 "Trying cancel task with task identifier"
@@ -442,10 +449,10 @@ class TaskRuns:
         return payloads['logs']
 
     def _update_doc_in_db(
-            self,
-            db_connector,
-            tes_uri: str,
-            remote_task_id: str,
+        self,
+        db_connector,
+        tes_uri: str,
+        remote_task_id: str,
     ) -> DbDocument:
         """Update the document in the database."""
         time_now = datetime.now().strftime("%m-%d-%Y %H:%M:%S")
@@ -463,11 +470,17 @@ class TaskRuns:
             logs.end_time = time_now
 
         # updating the metadata in TesTask logs
-        for logs in db_document.task_incoming.logs:
-            logs.metadata = {
-                "tes_uri": tes_uri,
-                "remote_task_id": remote_task_id
-            }
+        if self.store_logs:
+            db_document = self._update_task_metadata(
+                db_document=db_document,
+                tes_uri=tes_uri,
+                remote_task_id=remote_task_id
+            )
+        else:
+            for logs in db_document.task_incoming.logs:
+                logs.metadata = {
+                    "remote_task_id": remote_task_id
+                }
 
         db_document = db_connector.upsert_fields_in_root_object(
             root="task_incoming",
@@ -477,4 +490,17 @@ class TaskRuns:
             f"Task '{db_document.task_incoming}' "
             f"inserted to database "
         )
+        return db_document
+
+    def _update_task_metadata(
+        self,
+        db_document: DbDocument,
+        tes_uri: str,
+        remote_task_id: str
+    ) -> DbDocument:
+        """Update the task metadata."""
+        for logs in db_document.task_incoming.logs:
+            tesNextTes_obj = TesNextTes(id=remote_task_id, url=tes_uri)
+            if logs.metadata.forwarded_to is None:
+                logs.metadata.forwarded_to = tesNextTes_obj
         return db_document

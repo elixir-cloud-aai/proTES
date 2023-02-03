@@ -1,0 +1,26 @@
+components:
+  schemas:
+    tesTaskLog:
+        properties:
+          metadata:
+            properties:
+              forwarded_to:
+                $ref: '#/components/schemas/tesNextTes'
+                description: TaskLog describes logging information related to a Task.
+    tesNextTes:
+      required:
+        - url
+        - id
+      type: object
+      properties:
+        url:
+          type: string
+          description: TES server to which the task was forwarded.
+          example: https://my.tes.instance/
+        id:
+          type: string
+          description: Task identifier assigned by the TES server to which the task was forwarded.
+          example: job-0012345
+        forwarded_to:
+          $ref: '#/components/schemas/tesNextTes'
+      description: Describes the TES server to which the task was forwarded, if applicable.
