@@ -13,6 +13,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Dict, List, Optional
 
+# pragma pylint: disable=no-name-in-module
 from pydantic import AnyUrl, BaseModel, Field
 
 # pragma pylint: disable=too-few-public-methods
@@ -418,16 +419,40 @@ class TesState(Enum):
     CANCELED = "CANCELED"
 
 
+class TesNextTes(BaseModel):
+    """Create model instance for next TESNextTes."""
+
+    url: str = Field(
+        ...,
+        description="TES server to which the task was forwarded.",
+        example="https://my.tes.instance/",
+    )
+    id: str = Field(
+        ...,
+        description="Task identifier assigned by the "
+        "TES server to which the task was forwarded.",
+        example="job-0012345",
+    )
+    forwarded_to: Optional[TesNextTes] = None
+
+
+class Metadata(BaseModel):
+    """Create model instance for metadata."""
+
+    forwarded_to: Optional[TesNextTes] = Field(
+        None, description="TaskLog describes logging "
+                          "information related to a Task"
+    )
+
+
 class TesTaskLog(BaseModel):
     logs: List[TesExecutorLog] = Field(
-        ..., description="Logs for each         executor"
+        ..., description="Logs for each executor"
     )
-    metadata: Optional[Dict[str, str]] = Field(
+    metadata: Optional[Metadata] = Field(
         None,
-        description=(
-            "Arbitrary logging metadata included by the            "
-            " implementation."
-        ),
+        description="Arbitrary logging metadata"
+                    "included by the implementation.",
         example={"host": "worker-001", "slurmm_id": 123456},
     )
     start_time: Optional[str] = Field(
@@ -659,3 +684,6 @@ class DbDocument(BaseModel):
         """Pydantic configuration for model."""
 
         use_enum_values = True
+
+
+TesNextTes.update_forward_refs()

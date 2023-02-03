@@ -54,6 +54,7 @@ api:
   specs:
     - path:
         - api/9e9c5aa.task_execution_service.openapi.yaml
+        - api/additional_logs.yaml
       add_operation_fields:
         x-openapi-router-controller: ga4gh.tes.server
       add_security_fields:
@@ -134,3 +135,6 @@ tes:
     - "https://tesk-eu.hypatia-comp.athenarc.gr"
     - "https://csc-tesk-noauth.rahtiapp.fi"
     - "https://tesk-na.cloud.e-infra.cz"
+
+storeLogs:
+  execution_trace: True
