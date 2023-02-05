@@ -2,29 +2,18 @@
 
 import random
 from copy import deepcopy
-from typing import List, Optional
+from typing import List
 
-import requests
 from flask import current_app
 
 
-def task_distribution() -> Optional[List]:
-    """Random task distributor.
-
-    Randomly distribute tasks across available TES instances.
+def task_distribution() -> List[str]:
+    """Randomize list of TES instances.
 
     Returns:
-        A randomly selected, available TES instance.
+        Randomly shuffled list of TES instances.
     """
     foca_conf = current_app.config.foca
     tes_uri: List[str] = deepcopy(foca_conf.tes["service_list"])
-    timeout: int = foca_conf.controllers["post_task"]["timeout"]["poll"]
-    while len(tes_uri) != 0:
-        random_tes_uri: str = random.choice(tes_uri)
-        response = requests.get(url=random_tes_uri, timeout=timeout)
-        if response.status_code == 200:
-            tes_uri.clear()
-            tes_uri.insert(0, random_tes_uri)
-            return tes_uri
-        tes_uri.remove(random_tes_uri)
-    return []
+    random.shuffle(tes_uri)
+    return tes_uri
