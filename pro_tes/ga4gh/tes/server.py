@@ -46,9 +46,7 @@ def CreateTask(*args, **kwargs) -> Dict:
     requests, start_time = task_distributor.modify_request(request=request)
     task_runs = TaskRuns()
     response = task_runs.create_task(
-        request=requests,
-        start_time=start_time,
-        **kwargs
+        request=requests, start_time=start_time, **kwargs
     )
     return response
 
