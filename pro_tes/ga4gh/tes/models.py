@@ -139,7 +139,11 @@ class TesExecutorLog(BaseModel):
             " Task.outputs to upload that file\nto permanent storage."
         ),
     )
-    exit_code: int = Field(..., description="Exit code.")
+    # exit code not optional according to specs, but Funnel may return 'null'
+    exit_code: Optional[int] = Field(
+        None,
+        description="Exit code.",
+    )
 
 
 class TesFileType(Enum):
@@ -429,8 +433,10 @@ class TesNextTes(BaseModel):
     )
     id: str = Field(
         ...,
-        description="Task identifier assigned by the "
-        "TES server to which the task was forwarded.",
+        description=(
+            "Task identifier assigned by the "
+            "TES server to which the task was forwarded."
+        ),
         example="job-0012345",
     )
     forwarded_to: Optional[TesNextTes] = None
@@ -440,8 +446,8 @@ class Metadata(BaseModel):
     """Create model instance for metadata."""
 
     forwarded_to: Optional[TesNextTes] = Field(
-        None, description="TaskLog describes logging "
-                          "information related to a Task"
+        None,
+        description="TaskLog describes logging information related to a Task",
     )
 
 
@@ -451,8 +457,9 @@ class TesTaskLog(BaseModel):
     )
     metadata: Optional[Metadata] = Field(
         None,
-        description="Arbitrary logging metadata"
-                    "included by the implementation.",
+        description=(
+            "Arbitrary logging metadataincluded by the implementation."
+        ),
         example={"host": "worker-001", "slurmm_id": 123456},
     )
     start_time: Optional[str] = Field(
@@ -628,6 +635,22 @@ class TesListTasksResponse(BaseModel):
     )
 
 
+class BasicAuth(BaseModel):
+    """Model instance for basic authorization credentials.
+
+    Args:
+        username: Username for basic authorization.
+        password: Password for basic authorization.
+
+    Attributes:
+        username: Username for basic authorization.
+        password: Password for basic authorization.
+    """
+
+    username: Optional[str] = None
+    password: Optional[str] = None
+
+
 class TesEndpoint(BaseModel):
     """Create model instance for external TES endpoint.
 
@@ -664,6 +687,7 @@ class DbDocument(BaseModel):
         task_outgoing: Information about outgoing task.
         user_id: Identifier of resource owner.
         worker_id: Identifier of worker task.
+        basic_auth: Basic authentication credentials.
         tes_endpoint: External TES endpoint.
 
     Attributes:
@@ -671,6 +695,7 @@ class DbDocument(BaseModel):
         task_outgoing: Information about outgoing task.
         user_id: Identifier of resource owner.
         worker_id: Identifier of worker task.
+        basic_auth: Basic authentication credentials.
         tes_endpoint: External TES endpoint.
     """
 
@@ -678,6 +703,7 @@ class DbDocument(BaseModel):
     task_outgoing: TesTask = TesTask(executors=[])
     user_id: Optional[str] = None
     worker_id: str = ""
+    basic_auth: BasicAuth = BasicAuth()
     tes_endpoint: TesEndpoint = TesEndpoint()
 
     class Config:

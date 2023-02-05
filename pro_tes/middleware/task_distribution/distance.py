@@ -15,11 +15,15 @@ from pro_tes.middleware.models import (
     AccessUriCombination,
     TaskParams,
     TesDeployment,
-    TesStats
+    TesStats,
 )
 
+import logging
 
-def task_distribution(input_uri: List) -> Optional[List]:
+logger = logging.getLogger(__name__)
+
+
+def task_distribution(input_uri: List) -> List:
     """Task distributor.
 
     Distributes task by selecting the TES instance having minimum
@@ -27,11 +31,13 @@ def task_distribution(input_uri: List) -> Optional[List]:
 
     Args:
         input_uri: List of inputs of a TES task request
+
     Returns:
         A list of ranked TES instance.
     """
     foca_conf = current_app.config.foca
     tes_uri: List[str] = deepcopy(foca_conf.tes["service_list"])
+    logger.warning("TES URI: %s", tes_uri)
     access_uri_combination = get_uri_combination(input_uri, tes_uri)
 
     # get the combination of the tes ip and input ip
@@ -60,8 +66,7 @@ def task_distribution(input_uri: List) -> Optional[List]:
 
 
 def get_uri_combination(
-        input_uri: List,
-        tes_uri: List
+    input_uri: List, tes_uri: List
 ) -> AccessUriCombination:
     """Create a combination of input uris and tes uri.
 
@@ -100,15 +105,13 @@ def get_uri_combination(
     tes_deployment_list = []
     for uri in tes_uri:
         temp_obj = TesDeployment(
-            tes_uri=uri,
-            stats=TesStats(total_distance=None)
+            tes_uri=uri, stats=TesStats(total_distance=None)
         )
         tes_deployment_list.append(temp_obj)
 
     task_param = TaskParams(input_uris=input_uri)
     access_uri_combination = AccessUriCombination(
-        task_params=task_param,
-        tes_deployments=tes_deployment_list
+        task_params=task_param, tes_deployments=tes_deployment_list
     )
     return access_uri_combination
 
@@ -147,7 +150,7 @@ def ip_combination(input_uri: List[str], tes_uri: List[str]) -> Dict:
 
 
 def ip_distance(
-        *args: str,
+    *args: str,
 ) -> Dict[str, Dict]:
     """Compute ip distance between ip pairs.
 
@@ -197,8 +200,7 @@ def ip_distance(
 
 
 def calculate_distance(
-        ips_unique: Dict[Set[str], List[Tuple[int, str]]],
-        tes_uri: List[str]
+    ips_unique: Dict[Set[str], List[Tuple[int, str]]], tes_uri: List[str]
 ) -> Dict[Set[str], float]:
     """Calculate distances between all IPs.
 
@@ -221,8 +223,9 @@ def calculate_distance(
             distances_unique[ip_tuple] = 0
         else:
             try:
-                distances_unique[ip_tuple] = \
-                    distances_full["distances"][ip_tuple]
+                distances_unique[ip_tuple] = distances_full["distances"][
+                    ip_tuple
+                ]
             except KeyError:
                 pass
 
@@ -246,7 +249,7 @@ def calculate_distance(
 
 
 def rank_tes_instances(
-        access_uri_combination: AccessUriCombination
+    access_uri_combination: AccessUriCombination,
 ) -> List[str]:
     """Rank the tes instance based on the total distance.
 

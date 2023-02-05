@@ -33,10 +33,13 @@ def task__track_task_progress(
     remote_host: str,
     remote_base_path: str,
     remote_task_id: str,
+    user: str,
+    password: str,
 ) -> None:
     """Relay task run request to remote TES and track run progress.
 
     Args:
+        worker_id: Worker identifier.
         remote_host: Host at which the TES API is served that is processing
             this request; note that this should include the path information
             but *not* the base path defined in the TES API specification;
@@ -45,6 +48,8 @@ def task__track_task_progress(
         remote_base_path: Override the default path suffix defined in the tes
             API specification, i.e., `/ga4gh/tes/v1`.
         remote_task_id: task run identifier on remote tes service.
+        user: User name for basic authentication.
+        password: Password for basic authentication.
 
     Returns:
         Task identifier.
@@ -71,7 +76,12 @@ def task__track_task_progress(
 
     # fetch task log and upsert database document
     try:
-        cli = tes.HTTPClient(url, timeout=5)
+        cli = tes.HTTPClient(
+            url,
+            timeout=5,
+            user=user,
+            password=password,
+        )
         response = cli.get_task(task_id=remote_task_id)
     except Exception:
         db_client.update_task_state(state=TesState.SYSTEM_ERROR.value)
