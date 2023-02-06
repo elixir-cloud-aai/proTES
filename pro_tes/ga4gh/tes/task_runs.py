@@ -4,6 +4,7 @@ from copy import deepcopy
 from datetime import datetime
 import logging
 from typing import Dict, Optional, Tuple
+from urllib.parse import urlsplit, urlunsplit
 
 from bson.objectid import ObjectId
 from celery import uuid
@@ -17,7 +18,7 @@ import requests
 import tes
 from tes.models import Task
 
-from pro_tes.exceptions import BadRequest, TaskNotFound, Unauthorized
+from pro_tes.exceptions import BadRequest, TaskNotFound
 from pro_tes.ga4gh.tes.models import (
     BasicAuth,
     DbDocument,
@@ -57,7 +58,9 @@ class TaskRuns:
         )
         self.store_logs = self.foca_config.storeLogs["execution_trace"]
 
-    def create_task(self, **kwargs) -> Dict:
+    def create_task(  # pylint: disable=too-many-statements,too-many-branches
+        self, **kwargs
+    ) -> Dict:
         """Start task.
 
         Args:
@@ -67,13 +70,11 @@ class TaskRuns:
             Task identifier.
         """
         payload: Dict = deepcopy(request.json)
-
         db_document: DbDocument = DbDocument()
 
-        db_document.basic_auth = self._parse_basic_auth(request.authorization)
+        db_document.basic_auth = self.parse_basic_auth(request.authorization)
 
         tes_uri_list = deepcopy(payload["tes_uri"])
-        logger.warning("TES URI: %s", tes_uri_list)
         del payload["tes_uri"]
 
         db_document.task_outgoing = TesTask(**payload)
@@ -81,14 +82,10 @@ class TaskRuns:
         db_document = self._update_task_incoming(
             payload=payload, db_document=db_document, **kwargs
         )
-        url: str = (
-            f"{db_document.tes_endpoint.host.rstrip('/')}/"
-            f"{db_document.tes_endpoint.base_path.lstrip('/')}"
-        )
         logger.info(
-            "Trying to send incoming task with task identifier "
+            "Trying to forward incoming task with task identifier "
             f"'{db_document.task_incoming.id}' and worker job identifier "
-            f"'{db_document.worker_id}' to TES endpoint hosted at: {url}"
+            f"'{db_document.worker_id}'"
         )
         db_connector = DbDocumentConnector(
             collection=self.db_client,
@@ -101,13 +98,13 @@ class TaskRuns:
         except TypeError as exc:
             db_connector.update_task_state(state=TesState.SYSTEM_ERROR.value)
             raise BadRequest(
-                f"Task '{db_document.task_incoming.id}' could not be sent "
-                f"to TES endpoint hosted at: {url}. Incoming request invalid. "
-                f"Original error message: '{type(exc).__name__}: "
+                f"Task '{db_document.task_incoming.id}' could not be "
+                f"validate. Original error message: '{type(exc).__name__}: "
                 f"{exc}'"
             ) from exc
 
         for tes_uri in tes_uri_list:
+
             db_document.tes_endpoint = TesEndpoint(host=tes_uri)
             url: str = (
                 f"{db_document.tes_endpoint.host.rstrip('/')}/"
@@ -132,6 +129,24 @@ class TaskRuns:
                 )
                 continue
 
+            # fix for FTP URLs with credentials on non-Funnel services
+            is_funnel = False
+            try:
+                response = cli.get_service_info()
+                if response.name == "Funnel":
+                    is_funnel = True
+            except requests.exceptions.HTTPError:
+                pass
+            if not is_funnel:
+                if payload_marshalled.inputs is not None:
+                    for input in payload_marshalled.inputs:
+                        input.url = self.remove_basic_auth_from_uri(input.url)
+                if payload_marshalled.outputs is not None:
+                    for output in payload_marshalled.outputs:
+                        output.url = self.remove_basic_auth_from_uri(
+                            output.url
+                        )
+
             try:
                 remote_task_id = cli.create_task(payload_marshalled)
             except requests.HTTPError as exc:
@@ -155,7 +170,6 @@ class TaskRuns:
             )
             try:
                 task: Task = cli.get_task(remote_task_id)
-                logger.warning(f"{task=}")
                 task_model_converter = TaskModelConverter(task=task)
                 task_converted: TesTask = task_model_converter.convert_task()
                 db_document.task_incoming.state = task_converted.state
@@ -308,9 +322,8 @@ class TaskRuns:
                 task_id = db_document.task_incoming.logs[0].metadata[
                     "remote_task_id"
                 ]
-            logger.warning(f"DB document: {db_document}")
             logger.info(
-                "Trying cancel task with task identifier"
+                "Trying to cancel task with task identifier"
                 f" '{task_id}' and worker job"
                 f" identifier '{db_document.worker_id}' running at TES"
                 f" endpoint hosted at: {url}"
@@ -516,7 +529,8 @@ class TaskRuns:
                 logs.metadata.forwarded_to = tesNextTes_obj
         return db_document
 
-    def _parse_basic_auth(self, auth: Optional[Dict[str, str]]) -> BasicAuth:
+    @staticmethod
+    def parse_basic_auth(auth: Optional[Dict[str, str]]) -> BasicAuth:
         """Parse basic auth header.
 
         Args:
@@ -532,3 +546,17 @@ class TaskRuns:
             username=auth.get("username"),
             password=auth.get("password"),
         )
+
+    @staticmethod
+    def remove_basic_auth_from_uri(uri: str) -> str:
+        """Remove basic auth from URI, if present.
+
+        Args:
+            uri: URI.
+
+        Returns:
+            URI without basic auth.
+        """
+        elements = list(urlsplit(uri))
+        elements[1] = elements[1][elements[1].rfind("@") + 1 :]  # noqa: E203
+        return urlunsplit(elements)
