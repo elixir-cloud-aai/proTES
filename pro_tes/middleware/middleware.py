@@ -57,5 +57,5 @@ class TaskDistributionMiddleware(AbstractMiddleware):
         if len(self.tes_uris) != 0:
             request.json["tes_uri"] = self.tes_uris
         else:
-            raise Exception  # pragma pylint: disable=broad-exception-raised
+            raise Exception  # pylint: disable=broad-exception-raised
         return request, start_time
