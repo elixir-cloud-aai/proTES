@@ -2,8 +2,9 @@
 
 from copy import deepcopy
 from itertools import combinations
+import logging
 from socket import gaierror, gethostbyname
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Set, Tuple
 from urllib.parse import urlparse
 
 from flask import current_app
@@ -17,8 +18,6 @@ from pro_tes.middleware.models import (
     TesDeployment,
     TesStats,
 )
-
-import logging
 
 logger = logging.getLogger(__name__)
 
