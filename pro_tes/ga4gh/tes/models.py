@@ -19,15 +19,24 @@ from pydantic import AnyUrl, BaseModel, Field
 # pragma pylint: disable=too-few-public-methods
 
 
-class TesCancelTaskResponse(BaseModel):
+class CustomBaseModel(BaseModel):
+    """Base model that all other models derive from."""
+
+    class Config:
+        """Configuration class."""
+
+        use_enum_values = True
+
+
+class TesCancelTaskResponse(CustomBaseModel):
     pass
 
 
-class TesCreateTaskResponse(BaseModel):
+class TesCreateTaskResponse(CustomBaseModel):
     id: str = Field(..., description="Task identifier assigned by the server.")
 
 
-class TesExecutor(BaseModel):
+class TesExecutor(CustomBaseModel):
     image: str = Field(
         [""],
         description=(
@@ -104,7 +113,7 @@ class TesExecutor(BaseModel):
     )
 
 
-class TesExecutorLog(BaseModel):
+class TesExecutorLog(CustomBaseModel):
     start_time: Optional[str] = Field(
         None,
         description="Time the executor started, in RFC 3339 format.",
@@ -151,7 +160,7 @@ class TesFileType(Enum):
     DIRECTORY = "DIRECTORY"
 
 
-class TesInput(BaseModel):
+class TesInput(CustomBaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     url: Optional[str] = Field(
@@ -184,7 +193,7 @@ class TesInput(BaseModel):
     )
 
 
-class TesOutput(BaseModel):
+class TesOutput(CustomBaseModel):
     name: Optional[str] = Field(
         None, description="User-provided name of         output file"
     )
@@ -214,7 +223,7 @@ class TesOutput(BaseModel):
     type: TesFileType
 
 
-class TesOutputFileLog(BaseModel):
+class TesOutputFileLog(CustomBaseModel):
     url: str = Field(
         ...,
         description=(
@@ -239,7 +248,7 @@ class TesOutputFileLog(BaseModel):
     )
 
 
-class TesResources(BaseModel):
+class TesResources(CustomBaseModel):
     cpu_cores: Optional[int] = Field(
         None, description="Requested number of CPUs", example=4
     )
@@ -277,7 +286,7 @@ class Artifact(Enum):
     tes = "tes"
 
 
-class ServiceType(BaseModel):
+class ServiceType(CustomBaseModel):
     group: str = Field(
         ...,
         description=(
@@ -310,7 +319,7 @@ class ServiceType(BaseModel):
     )
 
 
-class Organization(BaseModel):
+class Organization(CustomBaseModel):
     name: str = Field(
         ...,
         description="Name of the organization responsible for the service",
@@ -323,7 +332,7 @@ class Organization(BaseModel):
     )
 
 
-class Service(BaseModel):
+class Service(CustomBaseModel):
     id: str = Field(
         ...,
         description=(
@@ -423,7 +432,7 @@ class TesState(Enum):
     CANCELED = "CANCELED"
 
 
-class TesNextTes(BaseModel):
+class TesNextTes(CustomBaseModel):
     """Create model instance for next TESNextTes."""
 
     url: str = Field(
@@ -442,7 +451,7 @@ class TesNextTes(BaseModel):
     forwarded_to: Optional[TesNextTes] = None
 
 
-class Metadata(BaseModel):
+class Metadata(CustomBaseModel):
     """Create model instance for metadata."""
 
     forwarded_to: Optional[TesNextTes] = Field(
@@ -451,7 +460,7 @@ class Metadata(BaseModel):
     )
 
 
-class TesTaskLog(BaseModel):
+class TesTaskLog(CustomBaseModel):
     logs: List[TesExecutorLog] = Field(
         ..., description="Logs for each executor"
     )
@@ -514,7 +523,7 @@ class TesServiceInfo(Service):
     type: Optional[TesServiceType] = None
 
 
-class TesTask(BaseModel):
+class TesTask(CustomBaseModel):
     id: Optional[str] = Field(
         None,
         description="Task identifier assigned by the server.",
@@ -615,7 +624,7 @@ class TesTask(BaseModel):
         use_enum_values = True
 
 
-class TesListTasksResponse(BaseModel):
+class TesListTasksResponse(CustomBaseModel):
     tasks: List[TesTask] = Field(
         ...,
         description=(
@@ -635,7 +644,7 @@ class TesListTasksResponse(BaseModel):
     )
 
 
-class BasicAuth(BaseModel):
+class BasicAuth(CustomBaseModel):
     """Model instance for basic authorization credentials.
 
     Args:
@@ -651,7 +660,7 @@ class BasicAuth(BaseModel):
     password: Optional[str] = None
 
 
-class TesEndpoint(BaseModel):
+class TesEndpoint(CustomBaseModel):
     """Create model instance for external TES endpoint.
 
     Args:
@@ -679,7 +688,7 @@ class TesEndpoint(BaseModel):
     base_path: str = ""
 
 
-class DbDocument(BaseModel):
+class DbDocument(CustomBaseModel):
     """Create model instance for task request database document.
 
     Args:

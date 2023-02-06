@@ -37,7 +37,6 @@ def task_distribution(input_uri: List) -> List:
     """
     foca_conf = current_app.config.foca
     tes_uri: List[str] = deepcopy(foca_conf.tes["service_list"])
-    logger.warning("TES URI: %s", tes_uri)
     access_uri_combination = get_uri_combination(input_uri, tes_uri)
 
     # get the combination of the tes ip and input ip
@@ -59,10 +58,9 @@ def task_distribution(input_uri: List) -> List:
     # access URI combination
     for index, value in enumerate(access_uri_combination.tes_deployments):
         value.stats.total_distance = distances[index]["total"]
+    logger.info(f"access_uri_combination: {access_uri_combination}")
 
-    ranked_tes_uris = rank_tes_instances(access_uri_combination)
-
-    return ranked_tes_uris
+    return rank_tes_instances(access_uri_combination)
 
 
 def get_uri_combination(
