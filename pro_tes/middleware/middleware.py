@@ -46,8 +46,6 @@ class TaskDistributionMiddleware(AbstractMiddleware):
                     self.input_uris.append(
                         request.json["inputs"][index]["url"]
                     )
-                else:
-                    continue
 
         if len(self.input_uris) != 0:
             self.tes_uris = distance.task_distribution(self.input_uris)
@@ -58,4 +56,5 @@ class TaskDistributionMiddleware(AbstractMiddleware):
             request.json["tes_uri"] = self.tes_uris
         else:
             raise Exception  # pylint: disable=broad-exception-raised
-        return request, start_time
+        request.json["start_time"] = start_time
+        return request
