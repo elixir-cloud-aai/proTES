@@ -18,6 +18,7 @@ from pro_tes.middleware.models import (
     TesDeployment,
     TesStats,
 )
+from pro_tes.ga4gh.tes.task_runs import TaskRuns
 
 logger = logging.getLogger(__name__)
 
@@ -127,6 +128,7 @@ def ip_combination(input_uri: List[str], tes_uri: List[str]) -> Dict:
 
     obj_ip_list = []
     for index, uri in enumerate(input_uri):
+        uri = TaskRuns.remove_basic_auth_from_uri(uri)
         try:
             obj_ip = gethostbyname(urlparse(uri).netloc)
         except gaierror:
