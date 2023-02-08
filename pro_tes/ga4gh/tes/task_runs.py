@@ -4,7 +4,6 @@ from copy import deepcopy
 from datetime import datetime
 import logging
 from typing import Dict, Optional, Tuple
-from urllib.parse import urlsplit, urlunsplit
 
 from bson.objectid import ObjectId
 from celery import uuid
@@ -31,6 +30,7 @@ from pro_tes.ga4gh.tes.models import (
 from pro_tes.ga4gh.tes.states import States
 from pro_tes.tasks.track_task_progress import task__track_task_progress
 from pro_tes.utils.db import DbDocumentConnector
+from pro_tes.utils.misc import remove_auth_from_url
 from pro_tes.utils.models import TaskModelConverter
 
 # pragma pylint: disable=invalid-name,redefined-builtin,unused-argument
@@ -140,12 +140,10 @@ class TaskRuns:
             if not is_funnel:
                 if payload_marshalled.inputs is not None:
                     for input in payload_marshalled.inputs:
-                        input.url = self.remove_basic_auth_from_uri(input.url)
+                        input.url = remove_auth_from_url(input.url)
                 if payload_marshalled.outputs is not None:
                     for output in payload_marshalled.outputs:
-                        output.url = self.remove_basic_auth_from_uri(
-                            output.url
-                        )
+                        output.url = remove_auth_from_url(output.url)
 
             try:
                 remote_task_id = cli.create_task(payload_marshalled)
@@ -546,17 +544,3 @@ class TaskRuns:
             username=auth.get("username"),
             password=auth.get("password"),
         )
-
-    @staticmethod
-    def remove_basic_auth_from_uri(uri: str) -> str:
-        """Remove basic auth from URI, if present.
-
-        Args:
-            uri: URI.
-
-        Returns:
-            URI without basic auth.
-        """
-        elements = list(urlsplit(uri))
-        elements[1] = elements[1][elements[1].rfind("@") + 1 :]  # noqa: E203
-        return urlunsplit(elements)
