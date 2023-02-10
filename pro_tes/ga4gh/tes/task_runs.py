@@ -71,9 +71,9 @@ class TaskRuns:
         Returns:
             Task identifier.
         """
+        start_time = datetime.now().strftime("%m-%d-%Y %H:%M:%S")
         payload: Dict = deepcopy(request.json)
         db_document: DbDocument = DbDocument()
-        start_time = datetime.now().strftime("%m-%d-%Y %H:%M:%S")
 
         db_document.basic_auth = self.parse_basic_auth(request.authorization)
 
@@ -114,7 +114,6 @@ class TaskRuns:
             ) from exc
 
         for tes_uri in tes_uri_list:
-
             db_document.tes_endpoint = TesEndpoint(host=tes_uri)
             url: str = (
                 f"{db_document.tes_endpoint.host.rstrip('/')}/"

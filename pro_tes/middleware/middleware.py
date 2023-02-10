@@ -37,7 +37,6 @@ class TaskDistributionMiddleware(AbstractMiddleware):
         Returns:
             Tuple of modified request object.
         """
-
         if "inputs" in request.json.keys():
             for index in range(len(request.json["inputs"])):
                 if "url" in request.json["inputs"][index].keys():
