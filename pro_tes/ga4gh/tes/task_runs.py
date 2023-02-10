@@ -67,12 +67,13 @@ class TaskRuns:
 
         Args:
             **kwargs: Additional keyword arguments passed along with
-                             request and start_time.
+                             request.
         Returns:
             Task identifier.
         """
         payload: Dict = deepcopy(request.json)
         db_document: DbDocument = DbDocument()
+        start_time = datetime.now().strftime("%m-%d-%Y %H:%M:%S")
 
         db_document.basic_auth = self.parse_basic_auth(request.authorization)
 
@@ -82,9 +83,7 @@ class TaskRuns:
         payload = self.task_distributor.modify_request(request=request).json
 
         tes_uri_list = deepcopy(payload["tes_uri"])
-        start_time = deepcopy(payload["start_time"])
         del payload["tes_uri"]
-        del payload["start_time"]
 
         db_document.task_incoming = TesTask(**payload)
         db_document = self._update_task_incoming(
