@@ -66,8 +66,7 @@ class TaskRuns:
         """Start task.
 
         Args:
-            **kwargs: Additional keyword arguments passed along with
-                             request.
+            **kwargs: Additional keyword arguments passed along with request.
         Returns:
             Task identifier.
         """
