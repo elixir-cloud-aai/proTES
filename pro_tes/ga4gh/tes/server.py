@@ -8,7 +8,6 @@ from foca.utils.logging import log_traffic
 
 from pro_tes.ga4gh.tes.service_info import ServiceInfo
 from pro_tes.ga4gh.tes.task_runs import TaskRuns
-from pro_tes.middleware.middleware import TaskDistributionMiddleware
 
 # pragma pylint: disable=invalid-name,unused-argument
 
@@ -42,12 +41,8 @@ def CreateTask(*args, **kwargs) -> Dict:
         *args: Variable length argument list.
         **kwargs: Arbitrary keyword arguments.
     """
-    task_distributor = TaskDistributionMiddleware()
-    requests, start_time = task_distributor.modify_request(request=request)
     task_runs = TaskRuns()
-    response = task_runs.create_task(
-        request=requests, start_time=start_time, **kwargs
-    )
+    response = task_runs.create_task(request=request, **kwargs)
     return response
 
 
