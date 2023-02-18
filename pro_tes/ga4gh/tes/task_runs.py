@@ -28,6 +28,7 @@ from pro_tes.ga4gh.tes.models import (
     TesNextTes,
 )
 from pro_tes.ga4gh.tes.states import States
+from pro_tes.middleware.middleware import TaskDistributionMiddleware
 from pro_tes.tasks.track_task_progress import task__track_task_progress
 from pro_tes.utils.db import DbDocumentConnector
 from pro_tes.utils.misc import remove_auth_from_url
@@ -57,6 +58,7 @@ class TaskRuns:
             self.foca_config.db.dbs["taskStore"].collections["tasks"].client
         )
         self.store_logs = self.foca_config.storeLogs["execution_trace"]
+        self.task_distributor = TaskDistributionMiddleware()
 
     def create_task(  # pylint: disable=too-many-statements,too-many-branches
         self, **kwargs
@@ -64,23 +66,31 @@ class TaskRuns:
         """Start task.
 
         Args:
-            **kwargs: Additional keyword arguments passed along with
-                             request and start_time.
+            **kwargs: Additional keyword arguments passed along with request.
+
         Returns:
             Task identifier.
         """
+        start_time = datetime.now().strftime("%m-%d-%Y %H:%M:%S")
         payload: Dict = deepcopy(request.json)
         db_document: DbDocument = DbDocument()
 
         db_document.basic_auth = self.parse_basic_auth(request.authorization)
 
+        db_document.task_outgoing = TesTask(**payload)
+
+        # middleware is called after the task is created in the database
+        payload = self.task_distributor.modify_request(request=request).json
+
         tes_uri_list = deepcopy(payload["tes_uri"])
         del payload["tes_uri"]
 
-        db_document.task_outgoing = TesTask(**payload)
         db_document.task_incoming = TesTask(**payload)
         db_document = self._update_task_incoming(
-            payload=payload, db_document=db_document, **kwargs
+            payload=payload,
+            db_document=db_document,
+            start_time=start_time,
+            **kwargs,
         )
         logger.info(
             "Trying to forward incoming task with task identifier "
@@ -104,7 +114,6 @@ class TaskRuns:
             ) from exc
 
         for tes_uri in tes_uri_list:
-
             db_document.tes_endpoint = TesEndpoint(host=tes_uri)
             url: str = (
                 f"{db_document.tes_endpoint.host.rstrip('/')}/"
@@ -442,11 +451,11 @@ class TaskRuns:
         return projection
 
     def _update_task_incoming(
-        self, payload: dict, db_document: DbDocument, **kwargs
+        self, payload: dict, db_document: DbDocument, start_time: str, **kwargs
     ) -> DbDocument:
         """Update the task incoming object."""
         logs = self._set_logs(
-            payloads=deepcopy(payload), start_time=kwargs["start_time"]
+            payloads=deepcopy(payload), start_time=start_time
         )
         db_document.task_incoming.logs = [TesTaskLog(**logs) for logs in logs]
         db_document.task_incoming.state = TesState.UNKNOWN
