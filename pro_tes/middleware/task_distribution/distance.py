@@ -18,6 +18,7 @@ from pro_tes.middleware.models import (
     TesDeployment,
     TesStats,
 )
+from pro_tes.utils.misc import remove_auth_from_url
 
 logger = logging.getLogger(__name__)
 
@@ -127,16 +128,17 @@ def ip_combination(input_uri: List[str], tes_uri: List[str]) -> Dict:
 
     obj_ip_list = []
     for index, uri in enumerate(input_uri):
+        uri_no_auth = remove_auth_from_url(uri)
         try:
-            obj_ip = gethostbyname(urlparse(uri).netloc)
+            obj_ip = gethostbyname(urlparse(uri_no_auth).netloc)
         except gaierror:
             break
         obj_ip_list.append(obj_ip)
 
     for index, uri in enumerate(tes_uri):
+        uri_no_auth = remove_auth_from_url(uri)
         try:
-            tes_domain = urlparse(uri).netloc
-            tes_ip = gethostbyname(tes_domain)
+            tes_ip = gethostbyname(urlparse(uri_no_auth).netloc)
         except KeyError:
             continue
         except gaierror:
