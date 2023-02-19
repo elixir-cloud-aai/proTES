@@ -45,14 +45,11 @@ def task__track_task_progress(  # pylint: disable=too-many-arguments
             but *not* the base path defined in the TES API specification;
             e.g., specify https://my.tes.com/api if the actual API is hosted at
             https://my.tes.com/api/ga4gh/tes/v1.
-        remote_base_path: Override the default path suffix defined in the tes
+        remote_base_path: Override the default path suffix defined in the TES
             API specification, i.e., `/ga4gh/tes/v1`.
-        remote_task_id: task run identifier on remote tes service.
-        user: User name for basic authentication.
+        remote_task_id: task run identifier on remote TES service.
+        user: User-name for basic authentication.
         password: Password for basic authentication.
-
-    Returns:
-        Task identifier.
     """
     foca_config: Config = current_app.config.foca
     controller_config: Dict = foca_config.controllers["post_task"]

@@ -14,7 +14,16 @@ class AbstractMiddleware(metaclass=abc.ABCMeta):
 
     @abc.abstractmethod
     def modify_request(self, request):
-        """Modify the request before it is sent to the TES instance."""
+        """Modify the incoming task request.
+
+        Abstract method.
+
+        Args:
+            request: The incoming request object.
+
+        Returns:
+            The modified request object.
+        """
 
 
 class TaskDistributionMiddleware(AbstractMiddleware):
@@ -22,6 +31,7 @@ class TaskDistributionMiddleware(AbstractMiddleware):
 
     Attributes:
         tes_uri: TES instance best suited for TES task.
+        input_uris: A list of input URIs from the incoming request.
     """
 
     def __init__(self) -> None:
@@ -30,13 +40,19 @@ class TaskDistributionMiddleware(AbstractMiddleware):
         self.input_uris: List[str] = []
 
     def modify_request(self, request):
-        """Add ranked list of TES instances to request body.
+        """Modify the incoming task request.
+
+        Abstract method
 
         Args:
             request: Incoming request object.
 
         Returns:
-            Tuple of modified request object.
+            The modified request object.
+
+        Raises:
+            pro_tes.exceptions.NoTesInstancesAvailable: If no valid TES
+                instances are available.
         """
         if "inputs" in request.json.keys():
             for index in range(len(request.json["inputs"])):

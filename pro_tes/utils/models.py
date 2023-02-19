@@ -20,7 +20,7 @@ from pro_tes.ga4gh.tes.models import (
 
 
 class TaskModelConverter:
-    """Convert py-tes to proTES to proTES TES task model.
+    """Convert py-tes to proTES TES task model.
 
     Convert :class:`tes.models.Task` to
     :class:`pro_tes.ga4gh.tes.models.TesTask`
@@ -37,7 +37,7 @@ class TaskModelConverter:
         self.task: Task = task
 
     def convert_task(self) -> TesTask:
-        """Convert py-tes to proTES TES task to proTES TES task.
+        """Convert py-tes to proTES TES task.
 
         Returns:
             Instance of :class:`pro_tes.ga4gh.tes.models.TesTask`
@@ -66,7 +66,7 @@ class TaskModelConverter:
         )
 
     def convert_state(self) -> TesState:
-        """Convert py-tes to proTES TES task state to proTES TES task state.
+        """Convert py-tes to proTES TES task state.
 
         Returns:
             Instance of :class:`pro_tes.ga4gh.tes.models.TesState`
