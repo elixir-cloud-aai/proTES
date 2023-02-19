@@ -666,8 +666,8 @@ class TesEndpoint(CustomBaseModel):
     Args:
         host: Host at which the TES API is served that is processing this
             request; note that this should include the path information but
-            *not* the base path path defined in the TES API specification;
-            e.g., specify https://my.tes.com/api if the actual API is hosted at
+            *not* the base path defined in the TES API specification; e.g.,
+            specify https://my.tes.com/api if the actual API is hosted a
             https://my.tes.com/api/ga4gh/tes/v1.
         base_path: Override the default path suffix defined in the TES API
             specification, i.e., `/ga4gh/tes/v1`.
@@ -676,8 +676,8 @@ class TesEndpoint(CustomBaseModel):
     Attributes:
         host: Host at which the TES API is served that is processing this
             request; note that this should include the path information but
-            *not* the base path path defined in the TES API specification;
-            e.g., specify https://my.tes.com/api if the actual API is hosted at
+            *not* the base path defined in the TES API specification; e.g.,
+            specify https://my.tes.com/api if the actual API is hosted at
             https://my.tes.com/api/ga4gh/tes/v1.
         base_path: Override the default path suffix defined in the TES API
             specification, i.e., `/ga4gh/tes/v1`.
