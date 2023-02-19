@@ -36,7 +36,7 @@ def task_distribution(input_uri: List) -> List:
         A list of ranked TES instance.
     """
     foca_conf = current_app.config.foca
-    tes_uri: List[str] = deepcopy(foca_conf.tes["service_list"])
+    tes_uri: List[str] = foca_conf.tes["service_list"]
     access_uri_combination = get_uri_combination(input_uri, tes_uri)
 
     # get the combination of the tes ip and input ip
@@ -100,12 +100,10 @@ def get_uri_combination(
                 },
         }
     """
-    tes_deployment_list = []
-    for uri in tes_uri:
-        temp_obj = TesDeployment(
-            tes_uri=uri, stats=TesStats(total_distance=None)
-        )
-        tes_deployment_list.append(temp_obj)
+    tes_deployment_list = [
+        TesDeployment(tes_uri=uri, stats=TesStats(total_distance=None))
+        for uri in tes_uri
+    ]
 
     task_param = TaskParams(input_uris=input_uri)
     access_uri_combination = AccessUriCombination(
@@ -139,9 +137,7 @@ def ip_combination(input_uri: List[str], tes_uri: List[str]) -> Dict:
         uri_no_auth = remove_auth_from_url(uri)
         try:
             tes_ip = gethostbyname(urlparse(uri_no_auth).netloc)
-        except KeyError:
-            continue
-        except gaierror:
+        except (KeyError, gaierror):
             continue
         for count, obj_ip in enumerate(obj_ip_list):
             ips[(index, count)] = (tes_ip, obj_ip)
@@ -258,16 +254,14 @@ def rank_tes_instances(
     Returns:
         A list of tes uri in increasing order of total distance.
     """
-    combination = []
-    for value in access_uri_combination.tes_deployments:
-        combination.append(value.dict())
+    combination = [
+        value.dict() for value in access_uri_combination.tes_deployments
+    ]
 
     # sorting the TES uri in decreasing order of total distance
     ranked_combination = sorted(
         combination, key=lambda x: x["stats"]["total_distance"]
     )
 
-    ranked_tes_uri = []
-    for value in ranked_combination:
-        ranked_tes_uri.append(str(value["tes_uri"]))
+    ranked_tes_uri = [str(value["tes_uri"]) for value in ranked_combination]
     return ranked_tes_uri
