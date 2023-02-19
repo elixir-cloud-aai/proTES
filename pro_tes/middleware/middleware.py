@@ -3,6 +3,7 @@
 import abc
 from typing import List
 
+from pro_tes.exceptions import NoTesInstancesAvailable
 from pro_tes.middleware.task_distribution import distance, random
 
 # pragma pylint: disable=too-few-public-methods
@@ -44,13 +45,13 @@ class TaskDistributionMiddleware(AbstractMiddleware):
                         request.json["inputs"][index]["url"]
                     )
 
-        if len(self.input_uris) != 0:
+        if self.input_uris:
             self.tes_uris = distance.task_distribution(self.input_uris)
         else:
             self.tes_uris = random.task_distribution()
 
-        if len(self.tes_uris) != 0:
+        if self.tes_uris:
             request.json["tes_uri"] = self.tes_uris
         else:
-            raise Exception  # pylint: disable=broad-exception-raised
+            raise NoTesInstancesAvailable
         return request
