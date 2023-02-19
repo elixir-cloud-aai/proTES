@@ -26,14 +26,12 @@ logger = logging.getLogger(__name__)
 def task_distribution(input_uri: List) -> List:
     """Task distributor.
 
-    Distributes task by selecting the TES instance having minimum
-    distance between the input files and TES Instance.
-
     Args:
         input_uri: List of inputs of a TES task request
 
     Returns:
-        A list of ranked TES instance.
+        A list of ranked TES instances, ordered by the minimum distance
+        between the input files and each TES instance.
     """
     foca_conf = current_app.config.foca
     tes_uri: List[str] = foca_conf.tes["service_list"]
@@ -66,12 +64,17 @@ def task_distribution(input_uri: List) -> List:
 def get_uri_combination(
     input_uri: List, tes_uri: List
 ) -> AccessUriCombination:
-    """Create a combination of input uris and tes uri.
+    """Create a combination of input URIs and TES URIs.
 
     Args:
-        input_uri: List of input uris of TES request.
+        input_uri: List of input URIs of TES request.
         tes_uri: List of TES instance.
+
     Returns:
+        An AccessUriCombination object, which is a combination of:
+            :class:`pro_tes.middleware.models.AccessUriCombination`:
+
+    Examples:
         A AccessUriCombination object of the form like:
         {
             "task_params": {
@@ -116,11 +119,21 @@ def ip_combination(input_uri: List[str], tes_uri: List[str]) -> Dict:
     """Create a pair of TES IP and Input IP.
 
     Args:
-        input_uri: List of input uris of TES request.
-        tes_uri: List of TES instance.
+        input_uri: A list of input URIs for a TES task request.
+        tes_uri: A list of TES instances to choose from.
 
     Returns:
-        A dictionary of combination of tes ip with all the input ips.
+        A dictionary where the keys are tuples representing the combination
+        of TES instance and input URI, and the values are tuples containing
+        the IP addresses of the TES instance and input URI.
+
+    Example:
+        {
+            (0, 0): ('10.0.0.1', '192.168.0.1'),
+            (0, 1): ('10.0.0.1', '192.168.0.2'),
+            (1, 0): ('10.0.0.2', '192.168.0.1'),
+            (1, 1): ('10.0.0.2', '192.168.0.2')
+        }
     """
     ips = {}
 
@@ -147,19 +160,23 @@ def ip_combination(input_uri: List[str], tes_uri: List[str]) -> Dict:
 def ip_distance(
     *args: str,
 ) -> Dict[str, Dict]:
-    """Compute ip distance between ip pairs.
+    """Compute IP distance between IP pairs.
 
-    :param *args: IP addresses of the form '8.8.8.8' without schema and
-            suffixes.
+    Args:
+        *args: IP addresses of the form '8.8.8.8' without schema and
+        suffixes.
 
-    :return: A dictionary with a key for each IP address, pointing to a
-            dictionary containing city, region and country information for the
-            IP address, as well as a key "distances" pointing to a dictionary
-            indicating the distances, in kilometers, between all pairs of IPs,
-            with the tuple of IPs as the keys. IPs that cannot be located are
-            skipped from the resulting dictionary.
 
-    :raises ValueError: No args were passed.
+    Returns:
+        A dictionary with a key for each IP address, pointing to a
+        dictionary containing city, region and country information for the
+        IP address, as well as a key "distances" pointing to a dictionary
+        indicating the distances, in kilometers, between all pairs of IPs,
+        with the tuple of IPs as the keys. IPs that cannot be located are
+        skipped from the resulting dictionary.
+
+    Raises:
+         ValueError: No args were passed.
     """
     if not args:
         raise ValueError("Expected at least one URI or IP address.")
@@ -195,16 +212,19 @@ def ip_distance(
 
 
 def calculate_distance(
-    ips_unique: Dict[Set[str], List[Tuple[int, str]]], tes_uri: List[str]
+    ips_unique: Dict[Set[str], List[Tuple[int, str]]],
+    tes_uri: List[str],
 ) -> Dict[Set[str], float]:
     """Calculate distances between all IPs.
 
     Args:
-        ips_unique: A dictionary of unique ips.
+        ips_unique: A dictionary of unique Ips.
         tes_uri: List of TES instance.
 
     Returns:
-        A dictionary of distances between all ips.
+        A dictionary of distances between all IP addresses.
+        The keys are sets of IP addresses, and the values are the distances
+        between them as floats.
     """
     distances_unique: Dict[Set[str], float] = {}
     ips_all = frozenset().union(*list(ips_unique.keys()))  # type: ignore
@@ -246,13 +266,13 @@ def calculate_distance(
 def rank_tes_instances(
     access_uri_combination: AccessUriCombination,
 ) -> List[str]:
-    """Rank the tes instance based on the total distance.
+    """Rank TES instances in increasing order of total distance.
 
     Args:
         access_uri_combination: Combination of task_params and tes_deployments.
 
     Returns:
-        A list of tes uri in increasing order of total distance.
+        A list of TES URI in increasing order of total distance.
     """
     combination = [
         value.dict() for value in access_uri_combination.tes_deployments

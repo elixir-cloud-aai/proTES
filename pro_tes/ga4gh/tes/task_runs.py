@@ -387,7 +387,7 @@ class TaskRuns:
         """Sanitize request for use with py-tes.
 
         Args:
-            payloads: Request payload.
+            payload: Request payload.
 
         Returns:
             Sanitized request payload.
@@ -417,7 +417,7 @@ class TaskRuns:
         return payload
 
     def _set_projection(self, view: str) -> Dict:
-        """Set database projectoin for selected view.
+        """Set database projection for selected view.
 
         Args:
             view: View path parameter.
@@ -453,7 +453,17 @@ class TaskRuns:
     def _update_task(
         self, payload: dict, db_document: DbDocument, start_time: str, **kwargs
     ) -> DbDocument:
-        """Update the task object."""
+        """Update the task object.
+
+        Args:
+            payload: A dictionary containing the payload for the update.
+            db_document: The document in the database to be updated.
+            start_time: The starting time of the incoming TES request.
+            **kwargs: Additional keyword arguments passed along with request.
+
+        Returns:
+            DbDocument: The updated database document.
+        """
         logs = self._set_logs(
             payloads=deepcopy(payload), start_time=start_time
         )
@@ -467,7 +477,15 @@ class TaskRuns:
         return db_document
 
     def _set_logs(self, payloads: dict, start_time: str) -> Dict:
-        """Set up the logs for the request."""
+        """Create or update `TesTask.logs` and set start time.
+
+        Args:
+            payload: A dictionary containing the payload for the update.
+            start_time: The starting time of the incoming TES request.
+
+        Returns:
+            Task logs with start time set.
+        """
         if "logs" not in payloads.keys():
             logs = [
                 {
@@ -491,7 +509,16 @@ class TaskRuns:
         tes_uri: str,
         remote_task_id: str,
     ) -> DbDocument:
-        """Update the document in the database."""
+        """Set end time, task metadata in `TesTask.logs`, and update document.
+
+        Args:
+            db_connector: The database connector.
+            tes_uri: The TES URI where the task if forwarded.
+            remote_task_id: Task identifier at the remote TES instance.
+
+        Returns:
+            The updated database document.
+        """
         time_now = datetime.now().strftime("%m-%d-%Y %H:%M:%S")
         tes_endpoint_dict = {"host": tes_uri, "base_path": ""}
         db_document = db_connector.upsert_fields_in_root_object(
@@ -529,7 +556,18 @@ class TaskRuns:
     def _update_task_metadata(
         self, db_document: DbDocument, tes_uri: str, remote_task_id: str
     ) -> DbDocument:
-        """Update the task metadata."""
+        """Update the task metadata.
+
+        Set TES endpoint and remote task identifier in `TesTask.logs.metadata`.
+
+        Args:
+            db_document: The document in the database to be updated.
+            tes_uri: The TES URI where the task if forwarded.
+            remote_task_id: Task identifier at the remote TES instance.
+
+        Returns:
+            The updated database document.
+        """
         for logs in db_document.task.logs:
             tesNextTes_obj = TesNextTes(id=remote_task_id, url=tes_uri)
             if logs.metadata.forwarded_to is None:
