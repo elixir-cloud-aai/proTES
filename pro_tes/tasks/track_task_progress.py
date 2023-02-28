@@ -19,20 +19,16 @@ from pro_tes.utils.models import TaskModelConverter
 logger = logging.getLogger(__name__)
 
 
-# pylint: disable-msg=too-many-locals
-# pylint: disable=unsubscriptable-object
 @celery.task(
     name="tasks.track_run_progress",
     bind=True,
     ignore_result=True,
     track_started=True,
 )
-def task__track_task_progress(  # pylint: disable=too-many-arguments
-    self,  # pylint: disable=unused-argument
+def task__track_task_progress(
+    self,
     worker_id: str,
-    remote_host: str,
-    remote_base_path: str,
-    remote_task_id: str,
+    tes_instances: List[str],
     user: str,
     password: str,
 ) -> None:
@@ -40,19 +36,9 @@ def task__track_task_progress(  # pylint: disable=too-many-arguments
 
     Args:
         worker_id: Worker identifier.
-        remote_host: Host at which the TES API is served that is processing
-            this request; note that this should include the path information
-            but *not* the base path defined in the TES API specification;
-            e.g., specify https://my.tes.com/api if the actual API is hosted at
-            https://my.tes.com/api/ga4gh/tes/v1.
-        remote_base_path: Override the default path suffix defined in the tes
-            API specification, i.e., `/ga4gh/tes/v1`.
-        remote_task_id: task run identifier on remote tes service.
+        tes_instances: List of TES instances, ranked in order of preference.
         user: User name for basic authentication.
         password: Password for basic authentication.
-
-    Returns:
-        Task identifier.
     """
     foca_config: Config = current_app.config.foca
     controller_config: Dict = foca_config.controllers["post_task"]
@@ -69,23 +55,39 @@ def task__track_task_progress(  # pylint: disable=too-many-arguments
         worker_id=worker_id,
     )
 
-    # update state: INITIALIZING
-    db_client.update_task_state(state=TesState.INITIALIZING.value)
+    # initialize task submission status
+    num_submissions = 0
+    total_instances = len(tes_instances)
 
-    url = f"{remote_host.strip('/')}/{remote_base_path.strip('/')}"
+    # try submitting the task to the TES instances in order of preference
+    for tes_instance in tes_instances:
+        # update state: QUEUED
+        db_client.update_task_state(state=TesState.QUEUED.value)
+        num_submissions += 1
 
-    # fetch task log and upsert database document
-    try:
-        cli = tes.HTTPClient(
-            url,
-            timeout=5,
-            user=user,
-            password=password,
-        )
-        response = cli.get_task(task_id=remote_task_id)
-    except Exception:
-        db_client.update_task_state(state=TesState.SYSTEM_ERROR.value)
-        raise
+        url = f"{tes_instance.strip('/')}/{controller_config['route']}"
+        payload = {"task_id": str(db_client.document_id)}
+
+        try:
+            cli = tes.HTTPClient(
+                url,
+                timeout=5,
+                user=user,
+                password=password,
+            )
+            response = cli.post_task(payload)
+        except Exception as exc:  # pylint: disable=broad-except
+            logger.warning(exc, exc_info=True)
+            if num_submissions < total_instances:
+                # try submitting the task to the next TES instance
+                continue
+            else:
+                # update state: SYSTEM_ERROR
+                db_client.update_task_state(state=TesState.SYSTEM_ERROR.value)
+                raise
+        else:
+            # task submission successful
+            break
 
     # track task progress
     task_state: TesState = TesState.UNKNOWN
@@ -94,23 +96,12 @@ def task__track_task_progress(  # pylint: disable=too-many-arguments
         sleep(controller_config["polling"]["wait"])
         try:
             response = cli.get_task(
-                task_id=remote_task_id,
+                task_id=response.id,
             )
         except Exception as exc:  # pylint: disable=broad-except
             if attempt <= controller_config["polling"]["attempts"]:
-                attempt += 1
-                logger.warning(exc, exc_info=True)
-                continue
-            db_client.update_task_state(state=TesState.SYSTEM_ERROR.value)
-            raise
-        if response.state != task_state:
-            task_state = response.state
-            db_client.update_task_state(state=str(task_state))
+                attempt
 
-    task_model_converter = TaskModelConverter(task=response)
-    task_converted: TesTask = task_model_converter.convert_task()
-
-    document = db_client.get_document()
 
     # updating task_incoming after task is finished
     document.task_incoming.state = task_converted.state
