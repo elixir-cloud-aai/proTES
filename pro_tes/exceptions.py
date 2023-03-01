@@ -29,6 +29,14 @@ class NoTesInstancesAvailable(ValueError):
     """Raised when no TES instances are available."""
 
 
+class TesUriError(ValueError):
+    """Raised when TES URI cannot be parsed."""
+
+
+class InputUriError(ValueError):
+    """Raised when input URI cannot be parsed."""
+
+
 exceptions = {
     Exception: {
         "message": "An unexpected error occurred.",
@@ -77,5 +85,13 @@ exceptions = {
     NoTesInstancesAvailable: {
         "message": "No valid TES instances available.",
         "code": "500",
+    },
+    TesUriError: {
+        "message": "TES URI cannot be parsed",
+        "code": "500",
+    },
+    InputUriError: {
+        "message": "Input URI cannot be parsed.",
+        "code": "400",
     },
 }
