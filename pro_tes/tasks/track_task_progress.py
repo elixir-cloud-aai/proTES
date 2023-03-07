@@ -112,13 +112,13 @@ def task__track_task_progress(  # pylint: disable=too-many-arguments
 
     document = db_client.get_document()
 
-    # updating task_incoming after task is finished
-    document.task_incoming.state = task_converted.state
+    # updating task after task is finished
+    document.task.state = task_converted.state
     for index, logs in enumerate(task_converted.logs):
-        document.task_incoming.logs[index].logs = logs.logs
-        document.task_incoming.logs[index].outputs = logs.outputs
+        document.task.logs[index].logs = logs.logs
+        document.task.logs[index].outputs = logs.outputs
 
     # updating the database
     db_client.upsert_fields_in_root_object(
-        root="task_incoming", **document.task_incoming.dict()
+        root="task", **document.task.dict()
     )

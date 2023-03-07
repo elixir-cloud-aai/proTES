@@ -82,7 +82,7 @@ class DbDocumentConnector:
             raise ValueError(f"Unknown state: {state}") from exc
         self.collection.find_one_and_update(
             {"worker_id": self.worker_id},
-            {"$set": {"task_incoming.state": state}},
+            {"$set": {"task.state": state}},
         )
         logger.info(f"[{self.worker_id}] {state}")
 
