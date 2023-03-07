@@ -692,24 +692,24 @@ class DbDocument(CustomBaseModel):
     """Create model instance for task request database document.
 
     Args:
-        task_incoming: Information about incoming task.
-        task_outgoing: Information about outgoing task.
+        task: Information about task.
+        task_original: Information about original task.
         user_id: Identifier of resource owner.
         worker_id: Identifier of worker task.
         basic_auth: Basic authentication credentials.
         tes_endpoint: External TES endpoint.
 
     Attributes:
-        task_incoming: Information about incoming task.
-        task_outgoing: Information about outgoing task.
+        task: Information about task.
+        task_original: Information about original task.
         user_id: Identifier of resource owner.
         worker_id: Identifier of worker task.
         basic_auth: Basic authentication credentials.
         tes_endpoint: External TES endpoint.
     """
 
-    task_incoming: TesTask = TesTask()
-    task_outgoing: TesTask = TesTask(executors=[])
+    task: TesTask = TesTask()
+    task_original: TesTask = TesTask(executors=[])
     user_id: Optional[str] = None
     worker_id: str = ""
     basic_auth: BasicAuth = BasicAuth()
