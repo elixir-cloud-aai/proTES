@@ -127,9 +127,7 @@ class TaskRuns:
                     password=db_document.basic_auth.password,
                 )
             except ValueError as exc:
-                db_connector.update_task_state(
-                    state=TesState.SYSTEM_ERROR.value
-                )
+
                 logger.info(
                     f"Task '{db_document.task_incoming.id}' could not "
                     f"be sentto TES endpoint hosted at: {url}. Invalid TES"
@@ -157,9 +155,7 @@ class TaskRuns:
             try:
                 remote_task_id = cli.create_task(payload_marshalled)
             except requests.HTTPError as exc:
-                db_connector.update_task_state(
-                    state=TesState.SYSTEM_ERROR.value
-                )
+
                 logger.info(
                     f"Task '{db_document.task_incoming.id}' "
                     "could not be sent to TES endpoint hosted "
@@ -212,6 +208,11 @@ class TaskRuns:
                 },
             )
             return {"id": db_document.task_incoming.id}
+
+        # set TES state to SYSTEM_ERROR as task submission failed on all the available TES instances.
+        db_connector.update_task_state(
+            state=TesState.SYSTEM_ERROR.value
+        )
 
     def list_tasks(self, **kwargs) -> Dict:
         """Return list of tasks.
