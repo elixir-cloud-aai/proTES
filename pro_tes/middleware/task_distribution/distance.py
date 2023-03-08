@@ -12,6 +12,7 @@ from geopy.distance import geodesic
 from ip2geotools.databases.noncommercial import DbIpCity
 from ip2geotools.errors import InvalidRequestError
 
+from pro_tes.exceptions import InputUriError, TesUriError
 from pro_tes.middleware.models import (
     AccessUriCombination,
     TaskParams,
@@ -142,16 +143,16 @@ def ip_combination(input_uri: List[str], tes_uri: List[str]) -> Dict:
         uri_no_auth = remove_auth_from_url(uri)
         try:
             obj_ip = gethostbyname(urlparse(uri_no_auth).netloc)
-        except gaierror:
-            break
+        except gaierror as exc:
+            raise InputUriError from exc
         obj_ip_list.append(obj_ip)
 
     for index, uri in enumerate(tes_uri):
         uri_no_auth = remove_auth_from_url(uri)
         try:
             tes_ip = gethostbyname(urlparse(uri_no_auth).netloc)
-        except (KeyError, gaierror):
-            continue
+        except gaierror as exc:
+            raise TesUriError from exc
         for count, obj_ip in enumerate(obj_ip_list):
             ips[(index, count)] = (tes_ip, obj_ip)
     return ips
