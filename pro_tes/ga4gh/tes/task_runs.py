@@ -209,7 +209,7 @@ class TaskRuns:
             )
             return {"id": db_document.task_incoming.id}
 
-        # set TES state to SYSTEM_ERROR as task submission failed on all the available TES instances.
+        # No suitable TES instance found. Task state set to 'SYSTEM_ERROR'.
         db_connector.update_task_state(
             state=TesState.SYSTEM_ERROR.value
         )
