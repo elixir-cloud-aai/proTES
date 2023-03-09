@@ -14,6 +14,8 @@ from werkzeug.exceptions import (
     NotFound,
 )
 
+# pylint: disable="too-few-public-methods"
+
 
 class TaskNotFound(NotFound):
     """Raised when task with given task identifier was not found."""
@@ -21,6 +23,18 @@ class TaskNotFound(NotFound):
 
 class IdsUnavailableProblem(PyMongoError):
     """Raised when task identifier is unavailable."""
+
+
+class NoTesInstancesAvailable(ValueError):
+    """Raised when no TES instances are available."""
+
+
+class TesUriError(ValueError):
+    """Raised when TES URI cannot be parsed."""
+
+
+class InputUriError(ValueError):
+    """Raised when input URI cannot be parsed."""
 
 
 exceptions = {
@@ -67,5 +81,17 @@ exceptions = {
     IdsUnavailableProblem: {
         "message": "No/few unique task identifiers available.",
         "code": "500",
+    },
+    NoTesInstancesAvailable: {
+        "message": "No valid TES instances available.",
+        "code": "500",
+    },
+    TesUriError: {
+        "message": "TES URI cannot be parsed",
+        "code": "500",
+    },
+    InputUriError: {
+        "message": "Input URI cannot be parsed.",
+        "code": "400",
     },
 }

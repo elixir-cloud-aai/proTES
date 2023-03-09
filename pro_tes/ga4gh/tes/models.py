@@ -666,8 +666,8 @@ class TesEndpoint(CustomBaseModel):
     Args:
         host: Host at which the TES API is served that is processing this
             request; note that this should include the path information but
-            *not* the base path path defined in the TES API specification;
-            e.g., specify https://my.tes.com/api if the actual API is hosted at
+            *not* the base path defined in the TES API specification; e.g.,
+            specify https://my.tes.com/api if the actual API is hosted a
             https://my.tes.com/api/ga4gh/tes/v1.
         base_path: Override the default path suffix defined in the TES API
             specification, i.e., `/ga4gh/tes/v1`.
@@ -676,8 +676,8 @@ class TesEndpoint(CustomBaseModel):
     Attributes:
         host: Host at which the TES API is served that is processing this
             request; note that this should include the path information but
-            *not* the base path path defined in the TES API specification;
-            e.g., specify https://my.tes.com/api if the actual API is hosted at
+            *not* the base path defined in the TES API specification; e.g.,
+            specify https://my.tes.com/api if the actual API is hosted at
             https://my.tes.com/api/ga4gh/tes/v1.
         base_path: Override the default path suffix defined in the TES API
             specification, i.e., `/ga4gh/tes/v1`.
@@ -692,24 +692,24 @@ class DbDocument(CustomBaseModel):
     """Create model instance for task request database document.
 
     Args:
-        task_incoming: Information about incoming task.
-        task_outgoing: Information about outgoing task.
+        task: Information about task.
+        task_original: Information about original task.
         user_id: Identifier of resource owner.
         worker_id: Identifier of worker task.
         basic_auth: Basic authentication credentials.
         tes_endpoint: External TES endpoint.
 
     Attributes:
-        task_incoming: Information about incoming task.
-        task_outgoing: Information about outgoing task.
+        task: Information about task.
+        task_original: Information about original task.
         user_id: Identifier of resource owner.
         worker_id: Identifier of worker task.
         basic_auth: Basic authentication credentials.
         tes_endpoint: External TES endpoint.
     """
 
-    task_incoming: TesTask = TesTask()
-    task_outgoing: TesTask = TesTask(executors=[])
+    task: TesTask = TesTask()
+    task_original: TesTask = TesTask(executors=[])
     user_id: Optional[str] = None
     worker_id: str = ""
     basic_auth: BasicAuth = BasicAuth()
