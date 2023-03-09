@@ -209,9 +209,12 @@ class TaskRuns:
             )
             return {"id": db_document.task.id}
 
-        # No suitable TES instance found. Task state set to 'SYSTEM_ERROR'.
         db_connector.update_task_state(
             state=TesState.SYSTEM_ERROR.value
+        )
+        logger.error(
+            "No suitable TES instance found. Task state set to "
+            "'SYSTEM_ERROR'."
         )
 
     def list_tasks(self, **kwargs) -> Dict:
