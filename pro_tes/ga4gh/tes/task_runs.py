@@ -240,6 +240,13 @@ class TaskRuns:
         view = kwargs.get("view", "BASIC")
         projection = self._set_projection(view=view)
 
+        name_prefix = kwargs.get("name_prefix")
+
+        if name_prefix is not None:
+            filter_dict["task_original.name"] = {
+                "$regex": f"^{name_prefix}"
+            }
+
         cursor = (
             self.db_client.find(filter=filter_dict, projection=projection)
             .sort("_id", -1)
