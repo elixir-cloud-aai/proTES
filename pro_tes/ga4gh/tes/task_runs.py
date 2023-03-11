@@ -240,7 +240,7 @@ class TaskRuns:
         view = kwargs.get("view", "BASIC")
         projection = self._set_projection(view=view)
 
-        name_prefix = kwargs.get("name_prefix")
+        name_prefix: str = kwargs.get("name_prefix")
 
         if name_prefix is not None:
             filter_dict["task_original.name"] = {
