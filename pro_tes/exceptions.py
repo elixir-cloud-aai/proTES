@@ -37,6 +37,10 @@ class InputUriError(ValueError):
     """Raised when input URI cannot be parsed."""
 
 
+class IPDistanceCalculationError(ValueError):
+    """Raised when IP distance cannot be calculated."""
+
+
 exceptions = {
     Exception: {
         "message": "An unexpected error occurred.",
@@ -94,4 +98,8 @@ exceptions = {
         "message": "Input URI cannot be parsed.",
         "code": "400",
     },
+    IPDistanceCalculationError: {
+        "message": "IP distance calculation failed.",
+        "code": "500",
+    }
 }

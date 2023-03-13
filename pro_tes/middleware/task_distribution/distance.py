@@ -12,7 +12,12 @@ from geopy.distance import geodesic
 from ip2geotools.databases.noncommercial import DbIpCity
 from ip2geotools.errors import InvalidRequestError
 
-from pro_tes.exceptions import InputUriError, TesUriError
+from pro_tes.exceptions import (
+    InputUriError,
+    TesUriError,
+    IPDistanceCalculationError
+)
+
 from pro_tes.middleware.models import (
     AccessUriCombination,
     TaskParams,
@@ -231,8 +236,8 @@ def calculate_distance(
     ips_all = frozenset().union(*list(ips_unique.keys()))  # type: ignore
     try:
         distances_full = ip_distance(*ips_all)
-    except ValueError:
-        pass
+    except ValueError as exc:
+        raise IPDistanceCalculationError from exc
 
     for ip_tuple in ips_unique.keys():
         if len(set(ip_tuple)) == 1:
@@ -242,8 +247,10 @@ def calculate_distance(
                 distances_unique[ip_tuple] = distances_full["distances"][
                     ip_tuple
                 ]
-            except KeyError:
-                pass
+            except KeyError as exc:
+                raise KeyError(
+                     f"Distances not found for IP addresses: {ip_tuple}"
+                ) from exc
 
     # Reshape distances keys for logging
     keys = list(distances_full["distances"].keys())
@@ -256,10 +263,7 @@ def calculate_distance(
     distances = [deepcopy({}) for i in range(len(tes_uri))]
     for ip_set, combination in ips_unique.items():  # type: ignore
         for combo in combination:
-            try:
-                distances[combo[0]][combo[1]] = distances_unique[ip_set]
-            except KeyError:
-                pass
+            distances[combo[0]][combo[1]] = distances_unique[ip_set]
 
     return distances
 
