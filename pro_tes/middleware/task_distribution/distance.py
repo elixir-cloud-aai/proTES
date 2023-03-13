@@ -249,7 +249,7 @@ def calculate_distance(
                 ]
             except KeyError as exc:
                 raise KeyError(
-                     f"Distance not found for IP addresses: {ip_tuple}"
+                     f"Distances not found for IP addresses: {ip_tuple}"
                 ) from exc
 
     # Reshape distances keys for logging
