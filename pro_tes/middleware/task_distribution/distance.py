@@ -17,13 +17,13 @@ from pro_tes.exceptions import (
     TesUriError,
     IPDistanceCalculationError
 )
-
 from pro_tes.middleware.models import (
     AccessUriCombination,
     TaskParams,
     TesDeployment,
     TesStats,
 )
+from pro_tes.middleware.task_distribution import random
 from pro_tes.utils.misc import remove_auth_from_url
 
 logger = logging.getLogger(__name__)
@@ -44,7 +44,11 @@ def task_distribution(input_uri: List) -> List:
     access_uri_combination = get_uri_combination(input_uri, tes_uri)
 
     # get the combination of the tes ip and input ip
-    ips = ip_combination(input_uri=input_uri, tes_uri=tes_uri)
+    try:
+        ips = ip_combination(input_uri=input_uri, tes_uri=tes_uri)
+    except (InputUriError, TesUriError):
+        return random.task_distribution()
+
     ips_unique: Dict[Set[str], List[Tuple[int, str]]] = {
         v: [] for v in ips.values()  # type: ignore
     }
@@ -52,7 +56,10 @@ def task_distribution(input_uri: List) -> List:
         ips_unique[value].append(key)
 
     # Calculate distances between all IPs
-    distances = calculate_distance(ips_unique, tes_uri)
+    try:
+        distances = calculate_distance(ips_unique, tes_uri)
+    except (IPDistanceCalculationError, KeyError):
+        return random.task_distribution()
 
     # Add distance totals
     for combination in distances:
