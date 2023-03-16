@@ -41,12 +41,12 @@ def task_distribution(input_uri: List) -> List:
     Raises:
         ValueError: If no input URIs are available.
     """
+    if not input_uri:
+        raise ValueError("No input URIs available.")
+
     foca_conf = current_app.config.foca
     tes_uri: List[str] = foca_conf.tes["service_list"]
     access_uri_combination = get_uri_combination(input_uri, tes_uri)
-
-    if not input_uri:
-        raise ValueError("No input URIs available.")
 
     # get the combination of the tes ip and input ip
     ips = ip_combination(input_uri=input_uri, tes_uri=tes_uri)
