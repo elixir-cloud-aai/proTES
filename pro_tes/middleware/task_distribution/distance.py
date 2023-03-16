@@ -37,18 +37,19 @@ def task_distribution(input_uri: List) -> List:
     Returns:
         A list of ranked TES instances, ordered by the minimum distance
         between the input files and each TES instance.
+
+    Raises:
+        ValueError: If no input URIs are available.
     """
     foca_conf = current_app.config.foca
     tes_uri: List[str] = foca_conf.tes["service_list"]
     access_uri_combination = get_uri_combination(input_uri, tes_uri)
 
+    if not input_uri:
+        raise ValueError("No input URIs available.")
+
     # get the combination of the tes ip and input ip
-    try:
-        ips = ip_combination(input_uri=input_uri, tes_uri=tes_uri)
-    except InputUriError as exc:
-        raise InputUriError from exc
-    except TesUriError as exc:
-        raise TesUriError from exc
+    ips = ip_combination(input_uri=input_uri, tes_uri=tes_uri)
 
     ips_unique: Dict[Set[str], List[Tuple[int, str]]] = {
         v: [] for v in ips.values()  # type: ignore
@@ -57,12 +58,7 @@ def task_distribution(input_uri: List) -> List:
         ips_unique[value].append(key)
 
     # Calculate distances between all IPs
-    try:
-        distances = calculate_distance(ips_unique, tes_uri)
-    except IPDistanceCalculationError as exc:
-        raise IPDistanceCalculationError from exc
-    except KeyError as exc:
-        raise KeyError from exc
+    distances = calculate_distance(ips_unique, tes_uri)
 
     # Add distance totals
     for combination in distances:

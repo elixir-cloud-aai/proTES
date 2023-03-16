@@ -66,17 +66,15 @@ class TaskDistributionMiddleware(AbstractMiddleware):
                         request.json["inputs"][index]["url"]
                     )
 
-        if self.input_uris:
-            try:
-                self.tes_uris = distance.task_distribution(self.input_uris)
-            except (
-                TesUriError,
-                InputUriError,
-                IPDistanceCalculationError,
-                KeyError,
-            ):
-                self.tes_uris = random.task_distribution()
-        else:
+        try:
+            self.tes_uris = distance.task_distribution(self.input_uris)
+        except (
+            TesUriError,
+            InputUriError,
+            IPDistanceCalculationError,
+            KeyError,
+            ValueError
+        ):
             self.tes_uris = random.task_distribution()
 
         if self.tes_uris:
