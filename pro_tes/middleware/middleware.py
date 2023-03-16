@@ -3,7 +3,12 @@
 import abc
 from typing import List
 
-from pro_tes.exceptions import NoTesInstancesAvailable
+from pro_tes.exceptions import (
+    NoTesInstancesAvailable,
+    TesUriError,
+    InputUriError,
+    IPDistanceCalculationError,
+)
 from pro_tes.middleware.task_distribution import distance, random
 
 # pragma pylint: disable=too-few-public-methods
@@ -62,7 +67,15 @@ class TaskDistributionMiddleware(AbstractMiddleware):
                     )
 
         if self.input_uris:
-            self.tes_uris = distance.task_distribution(self.input_uris)
+            try:
+                self.tes_uris = distance.task_distribution(self.input_uris)
+            except (
+                TesUriError,
+                InputUriError,
+                IPDistanceCalculationError,
+                KeyError,
+            ):
+                self.tes_uris = random.task_distribution()
         else:
             self.tes_uris = random.task_distribution()
 
