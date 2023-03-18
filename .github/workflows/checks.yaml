@@ -49,6 +49,9 @@ jobs:
       - name: Run integration tests
         shell: bash
         run: pytest tests/test_integration
+      - name: Run unit tests
+        shell: bash
+        run: pytest tests/unitTest/pro_tes/middleware
       - name: Tear down app
         run: docker-compose down
   publish:
