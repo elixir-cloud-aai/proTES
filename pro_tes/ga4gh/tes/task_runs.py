@@ -3,7 +3,7 @@
 from copy import deepcopy
 from datetime import datetime
 import logging
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional, Tuple, Sequence, List
 
 from bson.objectid import ObjectId
 from celery import uuid
@@ -137,6 +137,31 @@ class TaskRuns:
                 continue
 
             # fix for FTP URLs with credentials on non-Funnel services
+            def strip_none_items(_seq: Sequence) -> List:
+                """Remove empty items from Sequence.
+
+                Args:
+                    _seq: Sequence of items.
+
+                Returns:
+                    List of none empty items.
+                """
+                return [item for item in _seq if item is not None]
+
+            def remove_auth(_list: List) -> List:
+                """Forward the list to 'remove_auth_from_url'.
+
+                Args:
+                    _list: List
+
+                Returns:
+                    List of items without basic authentication information.
+                """
+                return [remove_auth_from_url(item.url)
+                        for item in _list
+                        if item.url is not None
+                        ]
+
             is_funnel = False
             try:
                 response = cli.get_service_info()
@@ -146,11 +171,12 @@ class TaskRuns:
                 pass
             if not is_funnel:
                 if payload_marshalled.inputs is not None:
-                    for input in payload_marshalled.inputs:
-                        input.url = remove_auth_from_url(input.url)
+                    inputs = strip_none_items(payload_marshalled.inputs)
+                    payload_marshalled.inputs = remove_auth(inputs)
+
                 if payload_marshalled.outputs is not None:
-                    for output in payload_marshalled.outputs:
-                        output.url = remove_auth_from_url(output.url)
+                    outputs = strip_none_items(payload_marshalled.outputs)
+                    payload_marshalled.outputs = remove_auth(outputs)
 
             try:
                 remote_task_id = cli.create_task(payload_marshalled)
