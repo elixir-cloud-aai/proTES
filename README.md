@@ -126,7 +126,7 @@ thread in our [Q&A forum][contact-qa], or send us an [email][contact-email].
 [badge-chat]: <https://img.shields.io/static/v1?label=chat&message=Slack&color=ff6994>
 [badge-ci]: <https://github.com/elixir-cloud-aai/proTES/actions/workflows/checks.yaml/badge.svg>
 [badge-license]: <https://img.shields.io/badge/license-Apache%202.0-blue.svg>
-[badge-url-chat]: <https://join.slack.com/t/elixir-cloud/shared_invite/enQtNzA3NTQ5Mzg2NjQ3LTZjZGI1OGQ5ZTRiOTRkY2ExMGUxNmQyODAxMDdjM2EyZDQ1YWM0ZGFjOTJhNzg5NjE0YmJiZTZhZDVhOWE4MWM>
+[badge-url-chat]: <https://join.slack.com/t/elixir-cloud/shared_invite/zt-1r9z32xg5-GgRguOCqsgEHtB~dN2wfZg>
 [badge-url-ci]: <https://github.com/elixir-cloud-aai/proTES/actions/workflows/checks.yaml>
 [badge-url-license]: <http://www.apache.org/licenses/LICENSE-2.0>
 [contact-email]: <mailto:cloud-service@elixir-europe.org>
