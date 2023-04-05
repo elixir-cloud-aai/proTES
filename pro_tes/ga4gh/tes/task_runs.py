@@ -124,7 +124,7 @@ class TaskRuns:
                     url,
                     timeout=5,
                     user=db_document.basic_auth.username,
-                    password=db_document.basic_auth.password
+                    password=db_document.basic_auth.password,
                 )
             except ValueError as exc:
 
