@@ -159,7 +159,7 @@ class TaskRuns:
                 """
                 return [remove_auth_from_url(item.url)
                         for item in _list
-                        if item.url is not None
+                        if getattr(item, 'url', None) is not None
                         ]
 
             is_funnel = False
