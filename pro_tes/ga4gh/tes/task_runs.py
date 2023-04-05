@@ -124,7 +124,7 @@ class TaskRuns:
                     url,
                     timeout=5,
                     user=db_document.basic_auth.username,
-                    password=db_document.basic_auth.password,
+                    password=db_document.basic_auth.password
                 )
             except ValueError as exc:
 
@@ -159,7 +159,7 @@ class TaskRuns:
                 """
                 return [remove_auth_from_url(item.url)
                         for item in _list
-                        if item.url is not None
+                        if hasattr(item, 'url') and item.url is not None
                         ]
 
             is_funnel = False
