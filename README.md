@@ -136,6 +136,7 @@ thread in our [Q&A forum][contact-qa], or send us an [email][contact-email].
 [docs-contributing]: CONTRIBUTING.md
 [docs-deploy]: deployment/README.md
 [docs-license]: LICENSE
+[GA4GH TES OpenAPI specification]:<https://github.com/ga4gh/task-execution-schemas>
 [res-connexion]: <https://github.com/zalando/connexion>
 [res-docker]: <https://www.docker.com/>
 [res-docker-compose]: <https://docs.docker.com/compose/>
