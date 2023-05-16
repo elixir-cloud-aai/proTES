@@ -22,6 +22,21 @@ proTES is part of [ELIXIR Cloud & AAI][res-elixir-cloud-aai], a multinational
 effort at establishing and implementing FAIR data sharing and promoting
 reproducible data analyses and responsible data handling in the life sciences.
 
+![proTES-overview][image-protes-overview]
+* The TES task are passed through this proTES gateway, major purpose of this gateway 
+  is to inject different middleware logic into TES request.
+* The continuously incoming TES requests are forwarded to the TES instances after appropriate
+middleware logic is applied. Meanwhile, the state of the submitted task is asynchronously 
+tracked using RabbitMQ and Celery workers. This approach eliminates the need to wait for the
+task to complete, allowing us to continue working on other tasks while the previous one is
+still executing on the main server.
+* At the current state there are 2 kinds of the task distribution middleware available in proTES:
+  * Random distributor : This distributor randomly selects the TES instance from the list of 
+  available TES instances and forwards the task to that instance.
+  * Distance based distributor : This distributor selects the TES instance based on the distance
+  between the TES instance and the TES task input location. The distance is calculated using the IP address
+  of the TES instance and input location.
+
 ## Installation
 
 For production-grade [Kubernetes][res-kubernetes]-based deployment, see
@@ -137,6 +152,7 @@ thread in our [Q&A forum][contact-qa], or send us an [email][contact-email].
 [docs-deploy]: deployment/README.md
 [docs-license]: LICENSE
 [GA4GH TES OpenAPI specification]:<https://github.com/ga4gh/task-execution-schemas>
+[image-protes-overview]: <images/overview.svg>
 [res-connexion]: <https://github.com/zalando/connexion>
 [res-docker]: <https://www.docker.com/>
 [res-docker-compose]: <https://docs.docker.com/compose/>
