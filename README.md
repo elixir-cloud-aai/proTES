@@ -22,7 +22,9 @@ proTES is part of [ELIXIR Cloud & AAI][res-elixir-cloud-aai], a multinational
 effort at establishing and implementing FAIR data sharing and promoting
 reproducible data analyses and responsible data handling in the life sciences.
 
+
 ![proTES-overview][image-protes-overview]
+*ProTES Gateway: Enhancing Task Execution Service (TES) with Middleware Logic*
 * The proTES gateway serves as a crucial component in the Task Execution Service (TES) infrastructure.
   Its primary purpose is to inject various middleware logic into TES requests, enabling advanced functionality
   and improving task distribution efficiency.
