@@ -23,19 +23,29 @@ effort at establishing and implementing FAIR data sharing and promoting
 reproducible data analyses and responsible data handling in the life sciences.
 
 ![proTES-overview][image-protes-overview]
-* The TES task are passed through this proTES gateway, major purpose of this gateway 
-  is to inject different middleware logic into TES request.
-* The continuously incoming TES requests are forwarded to the TES instances after appropriate
-middleware logic is applied. Meanwhile, the state of the submitted task is asynchronously 
-tracked using RabbitMQ and Celery workers. This approach eliminates the need to wait for the
-task to complete, allowing us to continue working on other tasks while the previous one is
-still executing on the main server.
-* At the current state there are 2 kinds of the task distribution middleware available in proTES:
-  * Random distributor : This distributor randomly selects the TES instance from the list of 
-  available TES instances and forwards the task to that instance.
-  * Distance based distributor : This distributor selects the TES instance based on the distance
-  between the TES instance and the TES task input location. The distance is calculated using the IP address
-  of the TES instance and input location.
+* The proTES gateway serves as a crucial component in the Task Execution Service (TES) infrastructure.
+  Its primary purpose is to inject various middleware logic into TES requests, enabling advanced functionality
+  and improving task distribution efficiency.
+* When TES requests are received, the proTES applies the appropriate middleware logic before forwarding 
+  the requests to the corresponding TES instances. This middleware logic can include additional processing,
+  validation, or customization steps tailored to specific requirements.
+* An essential feature of the proTES is its ability to track the state of submitted tasks asynchronously 
+  using RabbitMQ and Celery workers. This asynchronous tracking mechanism eliminates the need to wait for 
+  task completion before proceeding with other tasks, effectively allowing concurrent task execution on the 
+  main server.
+* Currently, the proTES offers two types of task distribution middleware:
+  * Random Distributor: This distributor randomly selects a TES instance from the available list of instances
+    and forwards the task to that chosen instance. This approach ensures a balanced distribution of tasks across
+    the TES infrastructure, preventing any single instance from being overloaded.
+  * Distance-Based Distributor: This distributor employs a distance-based selection strategy to choose
+    the most suitable TES instance for a given task. The selection process considers the geographical proximity
+    between the TES instance and the task's input location. The distance calculation relies on the IP address of
+    the TES instance and the input location. By leveraging this approach, tasks can be assigned to TES instances 
+    that are closer to the input location, optimizing network latency and potentially improving overall task 
+    execution performance.
+* The proTES plays a pivotal role in augmenting the capabilities of the TES system, offering flexible middleware
+  injection and efficient task distribution strategies. By seamlessly integrating with RabbitMQ, Celery workers, 
+  and the TES infrastructure, it provides a robust and scalable solution for managing and executing tasks efficiently.
 
 ## Installation
 
