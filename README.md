@@ -25,10 +25,10 @@ reproducible data analyses and responsible data handling in the life sciences.
 
 ![proTES-overview][image-protes-overview]
 *proTES Gateway: Enhancing [Task Execution Service (TES)][res-ga4gh-tes] with Middleware Logic*
-* The proTES gateway may serve as a crucial component in federated compute networks based on the [GA4GH Cloud]
-  [res-ga4gh-cloud] ecosystem.
-  Its primary purpose is to provide centralized features to a federated network of independently operated  [GA4GH][] TES
-  instances. As such, it can serve, for example, as a compatibility layer, a load balancer workload distribution layer,
+* The proTES gateway may serve as a crucial component in federated compute networks based on the 
+  [GA4GH Cloud][res-ga4gh-cloud] ecosystem. Its primary purpose is to provide centralized features to a federated 
+  network of independently operated [GA4GH][res-ga4gh] TES instances. As such, it can serve, for example,
+  as a compatibility layer, a load balancer workload distribution layer,
   a public entry point to an enclave of independent compute nodes, or a means of collecting telemetry.
 * When TES requests are received, proTES applies a configured middlewares before forwarding the requests to appropriate
   TES instances in the network. A plugin system makes it easy to write and inject middlewares tailored to specific 
