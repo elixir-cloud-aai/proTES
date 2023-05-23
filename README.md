@@ -176,7 +176,7 @@ thread in our [Q&A forum][contact-qa], or send us an [email][contact-email].
 [docs-license]: LICENSE
 [GA4GH TES OpenAPI specification]:<https://github.com/ga4gh/task-execution-schemas>
 [image-protes-overview]: <images/overview.svg>
-[res-celery]: <https://docs.celeryq.dev/en/stable/index.html>
+[res-celery]: <http://www.celeryproject.org/>
 [res-connexion]: <https://github.com/zalando/connexion>
 [res-docker]: <https://www.docker.com/>
 [res-docker-compose]: <https://docs.docker.com/compose/>
@@ -184,6 +184,7 @@ thread in our [Q&A forum][contact-qa], or send us an [email][contact-email].
 [res-flask]: <http://flask.pocoo.org/>
 [res-foca]: <https://github.com/elixir-cloud-aai/foca>
 [res-ga4gh]: <https://www.ga4gh.org/>
+[res-ga4gh-cloud]: <https://www.ga4gh.org/work_stream/cloud/>
 [res-ga4gh-tes]: <https://github.com/ga4gh/task-execution-schemas>
 [res-git]: <https://git-scm.com/>
 [res-helm]: <https://helm.sh/>
