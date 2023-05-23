@@ -24,9 +24,10 @@ reproducible data analyses and responsible data handling in the life sciences.
 
 
 ![proTES-overview][image-protes-overview]
-*ProTES Gateway: Enhancing Task Execution Service (TES) with Middleware Logic*
-* The proTES gateway may serve as a crucial component in federated compute networks based on the GA4GH Cloud ecosystem.
-  Its primary purpose is to provide centralized features to a federated network of independently operated  GA4GH TES 
+*proTES Gateway: Enhancing [Task Execution Service (TES)][res-ga4gh-tes] with Middleware Logic*
+* The proTES gateway may serve as a crucial component in federated compute networks based on the [GA4GH Cloud]
+  [res-ga4gh-cloud] ecosystem.
+  Its primary purpose is to provide centralized features to a federated network of independently operated  [GA4GH][] TES
   instances. As such, it can serve, for example, as a compatibility layer, a load balancer workload distribution layer,
   a public entry point to an enclave of independent compute nodes, or a means of collecting telemetry.
 * When TES requests are received, proTES applies a configured middlewares before forwarding the requests to appropriate
@@ -40,16 +41,17 @@ reproducible data analyses and responsible data handling in the life sciences.
   * **Bringing compute to the data**: The `pro_tes.middleware.task_distribution.distance` plugin selects TES endpoints 
     to relay incoming requests to in such a way that the distance the (input) data of a task has to travel across the 
     network of TES endpoints is minimized.  
-* proTES supports OAuth2-based authorization out of the box (bearer authentication) and stores information about 
-  incoming and outgoing tasks in a NoSQL database (MongoDB). Based on our FOCA microservice archetype, it is highly 
-  configurable in a declarative (YAML-based!) manner. Forwarded tasks are tracked asynchronously via a RabbitMQ broker 
-  and Celery workers that can be easily scaled up. Both a Helm chart and a Docker Compose configuration are provided for
-  easy deployment in native cloud-based production and development environments, respectively.
+* proTES supports [OAuth2][res-oAuth2]-based authorization out of the box (bearer authentication) and stores information
+  about incoming and outgoing tasks in a NoSQL database ([MongoDB][res-mongoDB]). Based on our FOCA microservice 
+  archetype, it is highly configurable in a declarative (YAML-based!) manner. Forwarded tasks are tracked asynchronously
+  via a [RabbitMQ][res-rabbitMQ] broker and [Celery][res-celery] workers that can be easily scaled up. Both a Helm chart
+  and a Docker Compose configuration are provided for easy deployment in native cloud-based production and development 
+  environments, respectively.
 
 
-proTES is a robust and scalable solution that may play a pivotal role in augmenting the capabilities of your GA4GH Cloud
-ecosystem, offering flexible middleware injection for effectively federating atomic, containerized workloads across on 
-premise, hybrid and multi-cloud environments.
+proTES is a robust and scalable solution that may play a pivotal role in augmenting the capabilities of your 
+[GA4GH Cloud][res-ga4gh-cloud] ecosystem, offering flexible middleware injection for effectively federating atomic, 
+containerized workloads across on premise, hybrid and multi-cloud environments.
 
 
 ## Installation
@@ -168,13 +170,18 @@ thread in our [Q&A forum][contact-qa], or send us an [email][contact-email].
 [docs-license]: LICENSE
 [GA4GH TES OpenAPI specification]:<https://github.com/ga4gh/task-execution-schemas>
 [image-protes-overview]: <images/overview.svg>
+[res-celery]: <http://www.celeryproject.org/>
 [res-connexion]: <https://github.com/zalando/connexion>
 [res-docker]: <https://www.docker.com/>
 [res-docker-compose]: <https://docs.docker.com/compose/>
 [res-elixir-cloud-aai]: <https://elixir-cloud.dcc.sib.swiss/>
 [res-flask]: <http://flask.pocoo.org/>
 [res-ga4gh]: <https://www.ga4gh.org/>
+[res-ga4gh-cloud]: <https://www.ga4gh.org/work_stream/cloud/>
 [res-ga4gh-tes]: <https://github.com/ga4gh/task-execution-schemas>
 [res-git]: <https://git-scm.com/>
 [res-kubernetes]: <https://kubernetes.io/>
+[res-mongoDB]: <https://www.mongodb.com/>
+[res-oAuth2]: <https://oauth.net/2/>
+[res-rabbitMQ]: <https://www.rabbitmq.com/>
 [res-sem-ver]: <https://semver.org/>
