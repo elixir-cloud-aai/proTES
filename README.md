@@ -25,29 +25,32 @@ reproducible data analyses and responsible data handling in the life sciences.
 
 ![proTES-overview][image-protes-overview]
 *ProTES Gateway: Enhancing Task Execution Service (TES) with Middleware Logic*
-* The proTES gateway serves as a crucial component in the Task Execution Service (TES) infrastructure.
-  Its primary purpose is to inject various middleware logic into TES requests, enabling advanced functionality
-  and improving task distribution efficiency.
-* When TES requests are received, the proTES applies the appropriate middleware logic before forwarding 
-  the requests to the corresponding TES instances. This middleware logic can include additional processing,
-  validation, or customization steps tailored to specific requirements.
-* An essential feature of the proTES is its ability to track the state of submitted tasks asynchronously 
-  using RabbitMQ and Celery workers. This asynchronous tracking mechanism eliminates the need to wait for 
-  task completion before proceeding with other tasks, effectively allowing concurrent task execution on the 
-  main server.
-* Currently, the proTES offers two types of task distribution middleware:
-  * Random Distributor: This distributor randomly selects a TES instance from the available list of instances
-    and forwards the task to that chosen instance. This approach ensures a balanced distribution of tasks across
-    the TES infrastructure, preventing any single instance from being overloaded.
-  * Distance-Based Distributor: This distributor employs a distance-based selection strategy to choose
-    the most suitable TES instance for a given task. The selection process considers the geographical proximity
-    between the TES instance and the task's input location. The distance calculation relies on the IP address of
-    the TES instance and the input location. By leveraging this approach, tasks can be assigned to TES instances 
-    that are closer to the input location, optimizing network latency and potentially improving overall task 
-    execution performance.
-* The proTES plays a pivotal role in augmenting the capabilities of the TES system, offering flexible middleware
-  injection and efficient task distribution strategies. By seamlessly integrating with RabbitMQ, Celery workers, 
-  and the TES infrastructure, it provides a robust and scalable solution for managing and executing tasks efficiently.
+* The proTES gateway may serve as a crucial component in federated compute networks based on the GA4GH Cloud ecosystem.
+  Its primary purpose is to provide centralized features to a federated network of independently operated  GA4GH TES 
+  instances. As such, it can serve, for example, as a compatibility layer, a load balancer workload distribution layer,
+  a public entry point to an enclave of independent compute nodes, or a means of collecting telemetry.
+* When TES requests are received, proTES applies a configured middlewares before forwarding the requests to appropriate
+  TES instances in the network. A plugin system makes it easy to write and inject middlewares tailored to specific 
+  requirements, such as for access control, request/response processing or validation, or the selection of suitable 
+  endpoints considering data use restrictions and client preferences.
+* Currently, there are two plugins shipped with proTES that serve as proof-of-concept examples for different task 
+  distribution scenarios:
+  * **Load balancing**: The `pro_tes.middleware.task_distribution.random` plugin evenly (actually: randomly!) 
+    distributes workloads across a network of TES endpoints
+  * **Bringing compute to the data**: The `pro_tes.middleware.task_distribution.distance` plugin selects TES endpoints 
+    to relay incoming requests to in such a way that the distance the (input) data of a task has to travel across the 
+    network of TES endpoints is minimized.  
+* proTES supports OAuth2-based authorization out of the box (bearer authentication) and stores information about 
+  incoming and outgoing tasks in a NoSQL database (MongoDB). Based on our FOCA microservice archetype, it is highly 
+  configurable in a declarative (YAML-based!) manner. Forwarded tasks are tracked asynchronously via a RabbitMQ broker 
+  and Celery workers that can be easily scaled up. Both a Helm chart and a Docker Compose configuration are provided for
+  easy deployment in native cloud-based production and development environments, respectively.
+
+
+proTES is a robust and scalable solution that may play a pivotal role in augmenting the capabilities of your GA4GH Cloud
+ecosystem, offering flexible middleware injection for effectively federating atomic, containerized workloads across on 
+premise, hybrid and multi-cloud environments.
+
 
 ## Installation
 
