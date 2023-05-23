@@ -6,7 +6,7 @@
 
 ## Synopsis
 
-proTES is a robust and scalable Global Alliance for Genomics and Health
+proTES is a robust and scalable [Global Alliance for Genomics and Health
 (GA4GH)][res-ga4gh] [Task Execution Service (TES) API][res-ga4gh-tes] gateway
 that may play a pivotal role in augmenting the capabilities of your GA4GH Cloud
 ecosystem by offering flexible middleware injection for effectively federating
