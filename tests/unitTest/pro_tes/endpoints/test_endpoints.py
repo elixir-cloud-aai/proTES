@@ -25,6 +25,7 @@ from tests.unitTest.mock_data import (
     MOCK_TASK_BASIC1,
     MOCK_TASK_FULL1,
     MOCK_TASK_CANCEL,
+    STORE_LOGS_CONFIG
 )
 
 
@@ -36,25 +37,17 @@ class TestEndpoints(unittest.TestCase):
             db=MongoConfig(**MONGO_CONFIG),
             controllers=CONTROLLER_CONFIG,
             tes=TES_CONFIG,
-            serviceInfo=SERVICE_INFO_CONFIG
+            serviceInfo=SERVICE_INFO_CONFIG,
+            storeLogs=STORE_LOGS_CONFIG
         )
         self.app.config.foca.db.dbs['taskStore'].collections[
             'tasks'
         ].client = mongomock.MongoClient().db.collection
 
     def test_create_task(self):
-        app = Flask(__name__)
-        app.config.foca = Config(
-            db=MongoConfig(**MONGO_CONFIG),
-            controllers=CONTROLLER_CONFIG,
-            tes=TES_CONFIG
-        )
-        app.config.foca.db.dbs['taskStore'].collections[
-            'tasks'
-        ].client = mongomock.MongoClient().db.collection
         data = deepcopy(TASK_PAYLOAD_200)
 
-        with app.test_request_context(json=data):
+        with self.app.test_request_context(json=data):
             res = CreateTask.__wrapped__()
             assert res['id']
 
@@ -136,11 +129,11 @@ class TestEndpoints(unittest.TestCase):
             )
         with self.app.app_context():
             res = GetTask.__wrapped__(
-                id=MOCK_TASK_MINIMAL1['task_log']['id'],
+                id=MOCK_TASK_MINIMAL1['task']['id'],
                 view='MINIMAL'
             )
-        assert res['id'] == MOCK_TASK_MINIMAL1['task_log']['id']
-        assert res['state'] == MOCK_TASK_MINIMAL1['task_log']['state']
+        assert res['id'] == MOCK_TASK_MINIMAL1['task']['id']
+        assert res['state'] == MOCK_TASK_MINIMAL1['task']['state']
 
     def test_get_task_by_id_basic(self):
         self.setup()
@@ -153,12 +146,12 @@ class TestEndpoints(unittest.TestCase):
             )
         with self.app.app_context():
             res = GetTask.__wrapped__(
-                id=MOCK_TASK_BASIC1['task_log']['id'],
+                id=MOCK_TASK_BASIC1['task']['id'],
                 view='BASIC'
             )
-        assert res['id'] == MOCK_TASK_BASIC1['task_log']['id']
-        assert res['state'] == MOCK_TASK_BASIC1['task_log']['state']
-        assert res['executors'] == MOCK_TASK_BASIC1['task_log']['executors']
+        assert res['id'] == MOCK_TASK_BASIC1['task']['id']
+        assert res['state'] == MOCK_TASK_BASIC1['task']['state']
+        assert res['executors'] == MOCK_TASK_BASIC1['task']['executors']
 
     def test_get_task_by_id_full(self):
         self.setup()
@@ -171,13 +164,13 @@ class TestEndpoints(unittest.TestCase):
             )
         with self.app.app_context():
             res = GetTask.__wrapped__(
-                id=MOCK_TASK_FULL1['task_log']['id'],
+                id=MOCK_TASK_FULL1['task']['id'],
                 view='FULL'
             )
-        assert res['id'] == MOCK_TASK_FULL1['task_log']['id']
-        assert res['state'] == MOCK_TASK_FULL1['task_log']['state']
-        assert res['executors'] == MOCK_TASK_FULL1['task_log']['executors']
-        assert res['logs'] == MOCK_TASK_FULL1['task_log']['logs']
+        assert res['id'] == MOCK_TASK_FULL1['task']['id']
+        assert res['state'] == MOCK_TASK_FULL1['task']['state']
+        assert res['executors'] == MOCK_TASK_FULL1['task']['executors']
+        assert res['logs'] == MOCK_TASK_FULL1['task']['logs']
 
     def test_cancel_task(self):
         self.setup()
@@ -188,7 +181,7 @@ class TestEndpoints(unittest.TestCase):
         )
         with self.app.app_context():
             res = CancelTask.__wrapped__(
-                id=MOCK_TASK_CANCEL['task_log']['id'],
+                id=MOCK_TASK_CANCEL['task']['id'],
             )
         assert res == {}
 

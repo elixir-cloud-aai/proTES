@@ -85,6 +85,10 @@ MONGO_CONFIG = {
     },
 }
 
+STORE_LOGS_CONFIG = {
+    "execution_trace": True
+}
+
 MOCK_HEADERS = {
     'Accept': 'application/json',
     'Content-Type': 'application/json'
@@ -103,29 +107,28 @@ TASK_PAYLOAD_200 = {
 }
 
 MOCK_TASK_MINIMAL1 = {
-    'task_log': {
+    'task': {
         "id": "task-53ef00fd",
         "state": "COMPLETE"
     }
-
 }
 
 MOCK_TASK_MINIMAL2 = {
-    'task_log': {
+    'task': {
         "id": "task-27e61564",
         "state": "COMPLETE"
     }
 }
 
 MOCK_TASK_MINIMAL3 = {
-    'task_log': {
+    'task': {
         "id": "task-c2cfdc1b",
         "state": "CANCELED"
     }
 }
 
 MOCK_TASK_BASIC1 = {
-    'task_log': {
+    'task': {
         "executors": [
             {
                 "command": [
@@ -141,7 +144,7 @@ MOCK_TASK_BASIC1 = {
 }
 
 MOCK_TASK_BASIC2 = {
-    'task_log': {
+    'task': {
         "executors": [
             {
                 "command": [
@@ -157,7 +160,7 @@ MOCK_TASK_BASIC2 = {
 }
 
 MOCK_TASK_FULL1 = {
-    "task_log": {
+    "task": {
         "creation_time": "2022-08-25T06:36:21Z",
         "executors": [
             {
@@ -191,7 +194,7 @@ MOCK_TASK_FULL1 = {
 }
 
 MOCK_TASK_FULL2 = {
-    "task_log": {
+    "task": {
         "creation_time": "2022-08-25T05:50:23Z",
         "executors": [
             {
@@ -226,7 +229,7 @@ MOCK_TASK_FULL2 = {
 
 MOCK_TASK_CANCEL = {
     "worker_id": "a0604c66-acb4-4674-ae1b-db585826241c",
-    "task_log": {
+    "task": {
         "executors": [
             {
                 "image": "alpine",
