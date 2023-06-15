@@ -1,6 +1,7 @@
 """Middleware to inject into TES requests."""
 
 import abc
+import requests
 from typing import List
 
 from pro_tes.exceptions import (
@@ -18,16 +19,18 @@ class AbstractMiddleware(metaclass=abc.ABCMeta):
     """Abstract class to implement different middleware."""
 
     @abc.abstractmethod
-    def modify_request(self, request):
-        """Modify the incoming task request.
+    def set_request(
+        self,
+        request: requests.Request,
+        *args,
+        **kwargs
+    ) -> requests.Request:
+        """Set the incoming request object.
 
         Abstract method.
 
         Args:
             request: The incoming request object.
-
-        Returns:
-            The modified request object.
         """
 
 
@@ -44,7 +47,7 @@ class TaskDistributionMiddleware(AbstractMiddleware):
         self.tes_uris: List[str] = []
         self.input_uris: List[str] = []
 
-    def modify_request(self, request):
+    def set_request(self, request: requests.Request, *args, **kwargs):
         """Modify the incoming task request.
 
         Abstract method

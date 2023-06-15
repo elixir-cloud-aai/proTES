@@ -28,7 +28,7 @@ from pro_tes.ga4gh.tes.models import (
     TesNextTes,
 )
 from pro_tes.ga4gh.tes.states import States
-from pro_tes.middleware.middleware import TaskDistributionMiddleware
+from pro_tes.middleware.middleware_pipeline import create_middleware_pipeline
 from pro_tes.tasks.track_task_progress import task__track_task_progress
 from pro_tes.utils.db import DbDocumentConnector
 from pro_tes.utils.misc import remove_auth_from_url
@@ -58,7 +58,6 @@ class TaskRuns:
             self.foca_config.db.dbs["taskStore"].collections["tasks"].client
         )
         self.store_logs = self.foca_config.storeLogs["execution_trace"]
-        self.task_distributor = TaskDistributionMiddleware()
 
     def create_task(  # pylint: disable=too-many-statements,too-many-branches
         self, **kwargs
@@ -80,7 +79,8 @@ class TaskRuns:
         db_document.task_original = TesTask(**payload)
 
         # middleware is called after the task is created in the database
-        payload = self.task_distributor.modify_request(request=request).json
+        pipeline = create_middleware_pipeline()
+        payload = pipeline.process_request(request=request).json
 
         tes_uri_list = deepcopy(payload["tes_uri"])
         del payload["tes_uri"]

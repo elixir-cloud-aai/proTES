@@ -140,3 +140,7 @@ tes:
 
 storeLogs:
   execution_trace: True
+
+middlewares :
+  mutate_destination:
+    - 'pro_tes.middleware.middleware.TaskDistributionMiddleware'
