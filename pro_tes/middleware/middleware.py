@@ -1,8 +1,8 @@
 """Middleware to inject into TES requests."""
 
 import abc
-import requests
 from typing import List
+import requests
 
 from pro_tes.exceptions import (
     NoTesInstancesAvailable,
@@ -31,10 +31,12 @@ class AbstractMiddleware(metaclass=abc.ABCMeta):
 
         Args:
             request: The incoming request object.
+            *args: Variable length argument list.
+            **kwargs: Arbitrary keyword arguments.
         """
 
 
-class TaskDistributionMiddleware(AbstractMiddleware):
+class DistanceTaskDistribution(AbstractMiddleware):
     """Inject task distribution logic.
 
     Attributes:
@@ -69,19 +71,84 @@ class TaskDistributionMiddleware(AbstractMiddleware):
                         request.json["inputs"][index]["url"]
                     )
 
-        try:
-            self.tes_uris = distance.task_distribution(self.input_uris)
-        except (
-            TesUriError,
-            InputUriError,
-            IPDistanceCalculationError,
-            KeyError,
-            ValueError
-        ):
-            self.tes_uris = random.task_distribution()
+        self.tes_uris = self._set_url(self.input_uris)
 
         if self.tes_uris:
             request.json["tes_uri"] = self.tes_uris
         else:
             raise NoTesInstancesAvailable
         return request
+
+    def _set_url(self, input_uris: List[str]) -> List[str]:
+        """Set the TES URI.
+
+        Args:
+            input_uris: A list of input URIs from the incoming request.
+
+        Returns:
+             List of TES URIs.
+        """
+        try:
+            tes_uris = distance.task_distribution(input_uris)
+        except (
+            TesUriError,
+            InputUriError,
+            IPDistanceCalculationError,
+            KeyError,
+            ValueError
+        ) as exc:
+            raise NoTesInstancesAvailable from exc
+        return tes_uris
+
+
+class RandomTaskDistribution(AbstractMiddleware):
+    """Inject task distribution logic.
+
+    Attributes:
+        tes_uri: TES instance best suited for TES task.
+        input_uris: A list of input URIs from the incoming request.
+    """
+
+    def __init__(self) -> None:
+        """Construct object instance."""
+        self.tes_uris: List[str] = []
+        self.input_uris: List[str] = []
+
+    def set_request(self, request: requests.Request, *args, **kwargs):
+        """Modify the incoming task request.
+
+        Abstract method
+
+        Args:
+            request: Incoming request object.
+
+        Returns:
+            The modified request object.
+
+        Raises:
+            pro_tes.exceptions.NoTesInstancesAvailable: If no valid TES
+                instances are available.
+        """
+
+        self.tes_uris = self._set_url()
+
+        if self.tes_uris:
+            request.json["tes_uri"] = self.tes_uris
+        else:
+            raise NoTesInstancesAvailable
+        return request
+
+    def _set_url(self) -> List[str]:
+        """Set the TES URI.
+
+        Args:
+            input_uris: A list of input URIs from the incoming request.
+
+        Returns:
+             List of TES URIs.
+        """
+        try:
+            tes_uris = random.task_distribution()
+        except Exception as exc:
+            raise NoTesInstancesAvailable from exc
+        return tes_uris
