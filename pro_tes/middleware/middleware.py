@@ -129,7 +129,6 @@ class RandomTaskDistribution(AbstractMiddleware):
             pro_tes.exceptions.NoTesInstancesAvailable: If no valid TES
                 instances are available.
         """
-
         self.tes_uris = self._set_url()
 
         if self.tes_uris:

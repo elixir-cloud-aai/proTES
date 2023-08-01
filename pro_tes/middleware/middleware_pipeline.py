@@ -11,6 +11,7 @@ class MiddlewarePipeline:
     """Middleware pipeline."""
 
     def __init__(self, middlewares=None):
+        """Construct object instance."""
         self.middlewares = middlewares or []
         logger.info(f"middleware: {self.middlewares}")
 
@@ -29,7 +30,6 @@ class MiddlewarePipeline:
         Returns:
             The modified request object.
         """
-
         for main_middleware, fallback_middlewares in self.middlewares:
             try:
                 # Process the main middleware
@@ -69,7 +69,6 @@ def load_middleware_instance(middleware_path):
     Returns:
         Middleware instance.
     """
-
     module_path, class_name = middleware_path.rsplit('.', 1)
     module = importlib.import_module(module_path)
     middleware_class = getattr(module, class_name)
