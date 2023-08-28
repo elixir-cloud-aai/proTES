@@ -144,4 +144,4 @@ storeLogs:
 middlewares:
   mutate_destination:
     - - 'pro_tes.middleware.middleware.DistanceTaskDistribution'
-      - - 'pro_tes.middleware.middleware.RandomTaskDistribution'
+      - 'pro_tes.middleware.middleware.RandomTaskDistribution'

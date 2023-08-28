@@ -30,32 +30,37 @@ class MiddlewarePipeline:
         Returns:
             The modified request object.
         """
-        for main_middleware, fallback_middlewares in self.middlewares:
-            try:
-                # Process the main middleware
-                request = main_middleware.set_request(request, *args, **kwargs)
-            except Exception as main_exception:  # pylint: disable=W0718
-                logger.exception("Error occurred in main middleware: %s",
-                                 main_exception)
-                # Main middleware failed, process the fallback middlewares
-                for fallback_middleware in fallback_middlewares:
+        for middleware in self.middlewares:
+            if isinstance(middleware, list):
+                inner_success = False
+                for m in middleware:
                     try:
-                        request = fallback_middleware.set_request(
+                        request = m.set_request(
                             request,
                             *args,
                             **kwargs
                         )
-                        break  # Exit the fallback loop if a fallback succeeded
-                    except Exception \
-                            as fallback_exception:  # pylint: disable=W0718
+                        inner_success = True
+                        break
+                    except Exception as exc:  # pylint: disable=W0703
                         logger.exception(
-                            "Error occurred in fallback middleware: %s",
-                            fallback_exception)
-                        # Fallback middleware also failed, continue to the next
-                        # fallback
+                            "Error occurred in inner middleware: %s",
+                            exc
+                        )
+                if not inner_success:
+                    raise Exception("inner middleware failed")
             else:
-                continue
-
+                try:
+                    request = middleware.set_request(
+                        request,
+                        *args,
+                        **kwargs
+                    )
+                except Exception as exc:  # pylint: disable=W0703
+                    logger.exception(
+                        "Error occurred in middleware: %s",
+                        exc
+                    )
         return request
 
 
@@ -84,37 +89,33 @@ def load_middlewares_from_config(config: dict) -> list:
     Returns:
         List of middleware objects in the form:
         [
-                [
-                    MainMiddleware1(),
-                    [
-                        FallbackMiddleware1(),
-                        FallbackMiddleware2(),
-                        FallbackMiddleware3()
-                    ]
-                ],
+            mw1(),
             [
-                MainMiddleware2(),
-                [
-                    FallbackMiddleware4(),
-                    FallbackMiddleware5(),
-                    FallbackMiddleware6()
-                ]
+                mw2(),
+                mw2_fb1(),
+                mw2_fb2()
             ]
+            mw3(),
         ].
     """
-    middlewares = []
 
-    for middleware_group_list in config.values():
-        for middleware_group in middleware_group_list:
-            main_middleware_path, fallback_middleware_paths = middleware_group
-            main_middleware = load_middleware_instance(main_middleware_path)
+    middleware_list = []
 
-            fallback_middlewares = [load_middleware_instance(path) for path in
-                                    fallback_middleware_paths]
+    for key in config:
+        if isinstance(config[key], list):
+            middleware_list.extend(config[key])
 
-            middlewares.append([main_middleware, fallback_middlewares])
+    new_middleware_list = []
 
-    return middlewares
+    for item in middleware_list:
+        if isinstance(item, list):
+            new_sublist = [load_middleware_instance(subitem) for subitem in
+                           item]
+            new_middleware_list.append(new_sublist)
+        else:
+            new_middleware_list.append(load_middleware_instance(item))
+
+    return new_middleware_list
 
 
 def create_middleware_pipeline() -> MiddlewarePipeline:
