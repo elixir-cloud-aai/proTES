@@ -26,6 +26,7 @@ class MiddlewarePipeline:
             request through the middleware pipeline, applying each
             middlewares logic in sequence.
     """
+
     def __init__(self, middlewares=None):
         """
         Initialize a MiddlewarePipeline instance.
@@ -110,6 +111,7 @@ class MiddlewarePipeline:
 
 class MiddlewareLoader:
     """A class for loading middleware instances based on configuration."""
+
     def __init__(self):
         """Initialize a MiddlewareLoader instance."""
         self.middleware_list = []
