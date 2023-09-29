@@ -28,10 +28,7 @@ from pro_tes.ga4gh.tes.models import (
     TesNextTes,
 )
 from pro_tes.ga4gh.tes.states import States
-from pro_tes.middleware.middleware_pipeline import (
-    MiddlewarePipeline,
-    MiddlewareLoader
-)
+from pro_tes.middleware.middleware_pipeline import MiddlewarePipeline
 from pro_tes.tasks.track_task_progress import task__track_task_progress
 from pro_tes.utils.db import DbDocumentConnector
 from pro_tes.utils.misc import remove_auth_from_url
@@ -82,7 +79,11 @@ class TaskRuns:
         db_document.task_original = TesTask(**payload)
 
         # middleware is called after the task is created in the database
-        pipeline = self.create_middleware_pipeline()
+        middlewares = MiddlewarePipeline().load_middlewares_from_config(
+            config=current_app.config.foca.middlewares
+        )
+        pipeline = MiddlewarePipeline(middlewares)
+        logger.info(f"Created middleware pipeline: {pipeline}")
         payload = pipeline.process_request(request=request).json
 
         tes_uri_list = deepcopy(payload["tes_uri"])
@@ -631,20 +632,3 @@ class TaskRuns:
             username=auth.get("username"),
             password=auth.get("password"),
         )
-
-    @staticmethod
-    def create_middleware_pipeline() -> MiddlewarePipeline:
-        """Create middleware pipeline.
-
-        Returns: A `MiddlewarePipeline` object that can be used to execute the
-            configured middleware on incoming task requests using the
-            `process_request` method.
-        """
-        middleware_config = current_app.config.foca.middlewares
-        middlewares = MiddlewareLoader().load_middlewares_from_config(
-            middleware_config
-        )
-        logger.info(f"Loaded middlewares: {middlewares}")
-        pipeline = MiddlewarePipeline(middlewares)
-        logger.info(f"Created middleware pipeline: {pipeline}")
-        return pipeline

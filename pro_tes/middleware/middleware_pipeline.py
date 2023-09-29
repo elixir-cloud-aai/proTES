@@ -1,7 +1,7 @@
 """Set up the middleware pipeline."""
 import importlib
 import logging
-from typing import Type
+from typing import Type, List
 import requests
 
 from pro_tes.exceptions import InvalidMiddleware
@@ -12,38 +12,28 @@ logger = logging.getLogger(__name__)
 
 class MiddlewarePipeline:
     """
-    Middleware Pipeline.
-
-    A class for managing and processing incoming requests through a sequence of
-    middleware components.
-
-    Methods:
-        __init__(self, middlewares=None): Initializes a MiddlewarePipeline
-            instance, optionally with an initial list of middleware components.
-        add_middleware(self, middleware): Adds a middleware component to the
-            pipeline.
-        process_request(self, request, *args, **kwargs): Processes an incoming
-            request through the middleware pipeline, applying each
-            middlewares logic in sequence.
+    Manages and processes incoming requests with middleware components.
     """
 
-    def __init__(self, middlewares=None):
+    def __init__(self, middlewares: List[AbstractMiddleware] = None):
         """
         Initialize a MiddlewarePipeline instance.
 
         Args:
             middlewares (list, optional): A list of middleware components to
-            initialize the pipeline. Defaults to an empty list if not provided.
+                initialize the pipeline. Defaults to an empty list if not
+                provided.
 
         Attributes:
             middlewares (list): A list that holds the middleware components
-            in the pipeline.
+                in the pipeline.
         """
         self.middlewares = middlewares or []
+        self.middleware_list = []
         logger.info(f"middleware: {self.middlewares}")
 
-    def add_middleware(self, middleware) -> None:
-        """Add a middleware to the pipeline."""
+    def add_middleware(self, middleware: List[AbstractMiddleware]) -> None:
+        """Adds a middleware to the pipeline."""
         self.middlewares.append(middleware)
 
     def process_request(
@@ -66,11 +56,11 @@ class MiddlewarePipeline:
 
         Returns:
             requests.Request object tha is the modified request object after
-            processing by all middleware components.
+                processing by all middleware components.
 
         Raises:
             ValueError: If a list of middleware components is provided,and all
-            of them fail to process the request, this exception is raised.
+                of them fail to process the request, this exception is raised.
         """
         for middleware in self.middlewares:
             logger.info(
@@ -108,35 +98,6 @@ class MiddlewarePipeline:
                     )
         return request
 
-
-class MiddlewareLoader:
-    """A class for loading middleware instances based on configuration."""
-
-    def __init__(self):
-        """Initialize a MiddlewareLoader instance."""
-        self.middleware_list = []
-
-    def load_middleware_instance(
-            self,
-            middleware_path: str
-    ) -> Type[AbstractMiddleware]:
-        """Load a middleware instance.
-
-        Args:
-            middleware_path: Middleware path in the form:
-                "module.submodule.MiddlewareClass".
-
-        Returns:
-            Middleware instance.
-        """
-        module_path, class_name = middleware_path.rsplit('.', 1)
-        module = importlib.import_module(module_path)
-        middleware_class = getattr(module, class_name)
-        if not issubclass(middleware_class, AbstractMiddleware):
-            raise InvalidMiddleware
-
-        return middleware_class()
-
     def load_middlewares_from_config(self, config: dict) -> list:
         """Load all middlewares from config.
 
@@ -171,3 +132,24 @@ class MiddlewareLoader:
                 new_middleware_list.append(self.load_middleware_instance(item))
 
         return new_middleware_list
+
+    def load_middleware_instance(
+            self,
+            middleware_path: str
+    ) -> AbstractMiddleware:
+        """Load a middleware instance.
+
+        Args:
+            middleware_path: Middleware path in the form:
+                "module.submodule.MiddlewareClass".
+
+        Returns:
+            Middleware instance.
+        """
+        module_path, class_name = middleware_path.rsplit('.', 1)
+        module = importlib.import_module(module_path)
+        middleware_class = getattr(module, class_name)
+        if not issubclass(middleware_class, AbstractMiddleware):
+            raise InvalidMiddleware
+
+        return middleware_class()
