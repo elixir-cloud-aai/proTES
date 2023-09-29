@@ -1,7 +1,7 @@
 """Set up the middleware pipeline."""
 import importlib
 import logging
-from typing import Type, List
+from typing import List
 import requests
 
 from pro_tes.exceptions import InvalidMiddleware
@@ -11,9 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 class MiddlewarePipeline:
-    """
-    Manages and processes incoming requests with middleware components.
-    """
+    """Manages and processes incoming requests with middleware components."""
 
     def __init__(self, middlewares: List[AbstractMiddleware] = None):
         """
@@ -33,7 +31,7 @@ class MiddlewarePipeline:
         logger.info(f"middleware: {self.middlewares}")
 
     def add_middleware(self, middleware: List[AbstractMiddleware]) -> None:
-        """Adds a middleware to the pipeline."""
+        """Add a middleware to the pipeline."""
         self.middlewares.append(middleware)
 
     def process_request(
