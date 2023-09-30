@@ -1,9 +1,9 @@
 """Middleware to inject into TES requests."""
 
-import abc
 from typing import List
 import requests
 
+from pro_tes.middleware_handler.abstract_middleware import AbstractMiddleware
 from pro_tes.exceptions import (
     NoTesInstancesAvailable,
     TesUriError,
@@ -13,27 +13,6 @@ from pro_tes.exceptions import (
 from pro_tes.middleware.task_distribution import distance, random
 
 # pragma pylint: disable=too-few-public-methods
-
-
-class AbstractMiddleware(metaclass=abc.ABCMeta):
-    """Abstract class to implement different middleware."""
-
-    @abc.abstractmethod
-    def set_request(
-        self,
-        request: requests.Request,
-        *args,
-        **kwargs
-    ) -> requests.Request:
-        """Set the incoming request object.
-
-        Abstract method.
-
-        Args:
-            request: The incoming request object.
-            *args: Variable length argument list.
-            **kwargs: Arbitrary keyword arguments.
-        """
 
 
 class DistanceTaskDistribution(AbstractMiddleware):
