@@ -2,11 +2,11 @@
 
 from pydantic import AnyUrl, HttpUrl
 
-from pro_tes.middleware.models import (
+from pro_tes.plugins.middlewares.task_distribution.models import (
     AccessUriCombination,
     TaskParams,
     TesDeployment,
-    TesStats
+    TesStats,
 )
 
 INDEX_CONFIG_TASKS = {"keys": [("task_id", 1), ("worker_id", 1)]}
@@ -59,8 +59,10 @@ CONTROLLER_CONFIG = {
 }
 
 SERVICE_INFO_CONFIG = {
-    "doc": "Proxy TES for distributing tasks across a list \
-     of service TES instances",
+    "doc": (
+        "Proxy TES for distributing tasks across a list      of service TES"
+        " instances"
+    ),
     "name": "proTES",
     "storage": ["file:///path/to/local/storage"],
 }
@@ -205,12 +207,7 @@ ips_all = frozenset(
     }
 )
 
-invalid_ips = frozenset(
-    {
-        "300.0.0.1",
-        "192.168.1."
-    }
-)
+invalid_ips = frozenset({"300.0.0.1", "192.168.1."})
 
 expected_access_uri_combination = AccessUriCombination(
     task_params=TaskParams(

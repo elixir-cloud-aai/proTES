@@ -142,6 +142,5 @@ storeLogs:
   execution_trace: True
 
 middlewares:
-  mutate_destination:
-    - - 'pro_tes.middleware.middleware.DistanceTaskDistribution'
-      - 'pro_tes.middleware.middleware.RandomTaskDistribution'
+  - - "pro_tes.plugins.middlewares.task_distribution.distance.TaskDistributionDistance"
+    - "pro_tes.plugins.middlewares.task_distribution.random.RandomTaskDistribution"

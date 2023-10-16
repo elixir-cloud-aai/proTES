@@ -17,7 +17,11 @@ import requests
 import tes
 from tes.models import Task
 
-from pro_tes.exceptions import BadRequest, TaskNotFound
+from pro_tes.exceptions import (
+    BadRequest,
+    NoTesInstancesAvailable,
+    TaskNotFound,
+)
 from pro_tes.ga4gh.tes.models import (
     BasicAuth,
     DbDocument,
@@ -28,7 +32,7 @@ from pro_tes.ga4gh.tes.models import (
     TesNextTes,
 )
 from pro_tes.ga4gh.tes.states import States
-from pro_tes.middleware.middleware_pipeline import MiddlewarePipeline
+from pro_tes.middleware.middleware_handler import MiddlewareHandler
 from pro_tes.tasks.track_task_progress import task__track_task_progress
 from pro_tes.utils.db import DbDocumentConnector
 from pro_tes.utils.misc import remove_auth_from_url
@@ -61,7 +65,7 @@ class TaskRuns:
 
     def create_task(  # pylint: disable=too-many-statements,too-many-branches
         self, **kwargs
-    ) -> Dict:
+    ) -> dict:
         """Start task.
 
         Args:
@@ -70,26 +74,30 @@ class TaskRuns:
         Returns:
             Task identifier.
         """
+        # create task document
         start_time = datetime.now().strftime("%m-%d-%Y %H:%M:%S")
-        payload: Dict = deepcopy(request.json)
         db_document: DbDocument = DbDocument()
-
         db_document.basic_auth = self.parse_basic_auth(request.authorization)
+        assert request.json is not None
+        payload_original: dict = deepcopy(request.json)
+        db_document.task_original = TesTask(**payload_original)
 
-        db_document.task_original = TesTask(**payload)
-
-        # middleware is called after the task is created in the database
-        middlewares = MiddlewarePipeline().load_middlewares_from_config(
-            config=current_app.config.foca.middlewares
+        # apply middlewares
+        mw_handler = MiddlewareHandler()
+        mw_handler.set_middlewares(
+            paths=current_app.config.foca.middlewares
         )
-        pipeline = MiddlewarePipeline(middlewares)
-        logger.info(f"Created middleware pipeline: {pipeline}")
-        payload = pipeline.process_request(request=request).json
+        logger.info(f"Applying middlewares: {mw_handler.middlewares")
+        request_modified = mw_handler.apply_middlewares(request=request)
 
-        tes_uri_list = deepcopy(payload["tes_uri"])
-        del payload["tes_uri"]
-
+        # update task document
+        assert request_modified.json is not None
+        payload: dict = request_modified.json
+        tes_uris = deepcopy(payload["tes_uris"])
+        del payload["tes_uris"]
         db_document.task = TesTask(**payload)
+
+        # create database document 
         db_document = self._update_task(
             payload=payload,
             db_document=db_document,
@@ -117,7 +125,7 @@ class TaskRuns:
                 f"{exc}'"
             ) from exc
 
-        for tes_uri in tes_uri_list:
+        for tes_uri in tes_uris:
             db_document.tes_endpoint = TesEndpoint(host=tes_uri)
             url: str = (
                 f"{db_document.tes_endpoint.host.rstrip('/')}/"
@@ -131,7 +139,6 @@ class TaskRuns:
                     password=db_document.basic_auth.password,
                 )
             except ValueError as exc:
-
                 logger.info(
                     f"Task '{db_document.task.id}' could not "
                     f"be sentto TES endpoint hosted at: {url}. Invalid TES"
@@ -161,10 +168,11 @@ class TaskRuns:
                 Returns:
                     List of items without basic authentication information.
                 """
-                return [remove_auth_from_url(item.url)
-                        for item in _list
-                        if getattr(item, 'url', None) is not None
-                        ]
+                return [
+                    remove_auth_from_url(item.url)
+                    for item in _list
+                    if getattr(item, "url", None) is not None
+                ]
 
             is_funnel = False
             try:
@@ -185,7 +193,6 @@ class TaskRuns:
             try:
                 remote_task_id = cli.create_task(payload_marshalled)
             except requests.HTTPError as exc:
-
                 logger.info(
                     f"Task '{db_document.task.id}' "
                     "could not be sent to TES endpoint hosted "
@@ -239,12 +246,9 @@ class TaskRuns:
             )
             return {"id": db_document.task.id}
 
-        db_connector.update_task_state(
-            state=TesState.SYSTEM_ERROR.value
-        )
-        logger.error(
-            "No suitable TES instance found. Task state set to "
-            "'SYSTEM_ERROR'."
+        db_connector.update_task_state(state=TesState.SYSTEM_ERROR.value)
+        raise NoTesInstancesAvailable(
+            "No suitable TES instance found. Task state set to 'SYSTEM_ERROR'."
         )
 
     def list_tasks(self, **kwargs) -> Dict:
@@ -273,9 +277,7 @@ class TaskRuns:
         name_prefix: str = kwargs.get("name_prefix")
 
         if name_prefix is not None:
-            filter_dict["task_original.name"] = {
-                "$regex": f"^{name_prefix}"
-            }
+            filter_dict["task_original.name"] = {"$regex": f"^{name_prefix}"}
 
         cursor = (
             self.db_client.find(filter=filter_dict, projection=projection)
@@ -363,13 +365,9 @@ class TaskRuns:
                 f"{db_document.tes_endpoint.base_path.strip('/')}"
             )
             if self.store_logs:
-                task_id = db_document.task.logs[
-                    0
-                ].metadata.forwarded_to.id
+                task_id = db_document.task.logs[0].metadata.forwarded_to.id
             else:
-                task_id = db_document.task.logs[0].metadata[
-                    "remote_task_id"
-                ]
+                task_id = db_document.task.logs[0].metadata["remote_task_id"]
             logger.info(
                 "Trying to cancel task with task identifier"
                 f" '{task_id}' and worker job"
@@ -589,9 +587,7 @@ class TaskRuns:
             root="task",
             **db_document.dict()["task"],
         )
-        logger.info(
-            f"Task '{db_document.task}' inserted to database "
-        )
+        logger.info(f"Task '{db_document.task}' inserted to database ")
         return db_document
 
     def _update_task_metadata(

@@ -9,13 +9,13 @@ import pytest
 
 import pro_tes
 from pro_tes.exceptions import InputUriError, TesUriError
-from pro_tes.middleware.task_distribution.distance import (
+from pro_tes.plugins.middlewares.task_distribution.distance import (
     calculate_distance,
     get_uri_combination,
     ip_combination,
-    ip_distance,
+    _get_distances,
     rank_tes_instances,
-    task_distribution
+    task_distribution,
 )
 from tests.unitTest.pro_tes.middleware.mock_data import (
     CONTROLLER_CONFIG,
@@ -114,12 +114,12 @@ class TestDistanceBasedTaskDistribution(unittest.TestCase):
         """
         self.setUp()
         with self.app.app_context():
-            result = ip_distance(*self.ips_all)
+            result = _get_distances(*self.ips_all)
             assert result == ip_distances_res
 
     def test_ip_distance_invalid_ip(self):
         """Test ip_distance with invalid IP."""
-        ip_distance(*invalid_ips)
+        _get_distances(*invalid_ips)
 
     def test_ip_distance_empty_ips(self):
         """Test ip_distance with empty IP.
@@ -128,7 +128,7 @@ class TestDistanceBasedTaskDistribution(unittest.TestCase):
          addresses as arguments raises a ValueError exception.
         """
         with pytest.raises(ValueError):
-            ip_distance()
+            _get_distances()
 
     def test_calculate_distance(self) -> None:
         """Test calculate_distance.
@@ -140,8 +140,8 @@ class TestDistanceBasedTaskDistribution(unittest.TestCase):
         self.setUp()
         with self.app.app_context():
             with patch.object(
-                    pro_tes.middleware.task_distribution.distance,
-                    "ip_distance",
+                pro_tes.middleware.task_distribution.distance,
+                "ip_distance",
             ) as ip_distance_mock:
                 ip_distance_mock.return_value = ip_distances_res
                 result = calculate_distance(self.ips_unique, self.tes_uri)
@@ -155,8 +155,8 @@ class TestDistanceBasedTaskDistribution(unittest.TestCase):
         """
         with pytest.raises(KeyError):
             with patch.object(
-                    pro_tes.middleware.task_distribution.distance,
-                    "ip_distance",
+                pro_tes.middleware.task_distribution.distance,
+                "ip_distance",
             ) as ip_distance_mock:
                 ip_distance_mock.return_value = invalid_ip_distances_res
                 calculate_distance(self.ips_unique, self.tes_uri)
@@ -165,8 +165,8 @@ class TestDistanceBasedTaskDistribution(unittest.TestCase):
         """Test calculate_distance function with invalid IPs."""
         with pytest.raises(ValueError):
             with patch.object(
-                    pro_tes.middleware.task_distribution.distance,
-                    "ip_distance",
+                pro_tes.middleware.task_distribution.distance,
+                "ip_distance",
             ) as ip_distance_mock:
                 ip_distance_mock.side_effect = ValueError
                 calculate_distance(invalid_ips_unique, self.tes_uri)
@@ -204,8 +204,8 @@ class TestDistanceBasedTaskDistribution(unittest.TestCase):
 
         with self.app.app_context():
             with patch.object(
-                    pro_tes.middleware.task_distribution.distance,
-                    "get_uri_combination",
+                pro_tes.middleware.task_distribution.distance,
+                "get_uri_combination",
             ) as get_uri_combination_mock, patch.object(
                 pro_tes.middleware.task_distribution.distance,
                 "calculate_distance",

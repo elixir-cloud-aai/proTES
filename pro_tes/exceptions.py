@@ -41,8 +41,12 @@ class IPDistanceCalculationError(ValueError):
     """Raised when IP distance cannot be calculated."""
 
 
-class InvalidMiddleware(ValueError):
-    """Raised when the middleware does not follow the AbstractMiddleware."""
+class MiddlewareException(ValueError):
+    """Raised when a middleware could not be applied."""
+
+
+class InvalidMiddleware(MiddlewareException):
+    """Raised when a middleware is invalid."""
 
 
 exceptions = {
@@ -106,8 +110,12 @@ exceptions = {
         "message": "IP distance calculation failed.",
         "code": "500",
     },
+    MiddlewareException: {
+        "message": "Middleware could not be applied.",
+        "code": "500",
+    },
     InvalidMiddleware: {
-        "message": "Middleware doesn't follow the abstract class",
+        "message": "Middleware is invalid.",
         "code": "500",
     },
 }
