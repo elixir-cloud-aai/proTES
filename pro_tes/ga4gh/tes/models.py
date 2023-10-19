@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
-from typing import Dict, List, Optional
+from typing import Optional
 
 # pragma pylint: disable=no-name-in-module
 from pydantic import AnyUrl, BaseModel, Field
@@ -48,7 +48,7 @@ class TesExecutor(CustomBaseModel):
         ),
         example="ubuntu:20.04",
     )
-    command: List[str] = Field(
+    command: list[str] = Field(
         [""],
         description=(
             "A sequence of program arguments to execute, where the            "
@@ -101,7 +101,7 @@ class TesExecutor(CustomBaseModel):
         ),
         example="/tmp/stderr.log",
     )
-    env: Optional[Dict[str, str]] = Field(
+    env: Optional[dict[str, str]] = Field(
         None,
         description=(
             "Enviromental variables to set within the container.            "
@@ -268,7 +268,7 @@ class TesResources(CustomBaseModel):
     disk_gb: Optional[float] = Field(
         None, description="Requested disk size in gigabytes (GB)", example=40
     )
-    zones: Optional[List[str]] = Field(
+    zones: Optional[list[str]] = Field(
         None,
         description=(
             "Request that the task be run in these compute zones. How         "
@@ -461,7 +461,7 @@ class Metadata(CustomBaseModel):
 
 
 class TesTaskLog(CustomBaseModel):
-    logs: List[TesExecutorLog] = Field(
+    logs: list[TesExecutorLog] = Field(
         ..., description="Logs for each executor"
     )
     metadata: Optional[Metadata] = Field(
@@ -481,14 +481,14 @@ class TesTaskLog(CustomBaseModel):
         description="When the task ended, in RFC 3339 format.",
         example="2020-10-02T11:00:00-05:00",
     )
-    outputs: List[TesOutputFileLog] = Field(
+    outputs: list[TesOutputFileLog] = Field(
         ...,
         description=(
             "Information about all output files. Directory outputs are        "
             "    \nflattened into separate items."
         ),
     )
-    system_logs: Optional[List[str]] = Field(
+    system_logs: Optional[list[str]] = Field(
         None,
         description=(
             "System logs are any logs the system decides are relevant,        "
@@ -509,7 +509,7 @@ class TesServiceType(ServiceType):
 
 
 class TesServiceInfo(Service):
-    storage: Optional[List[str]] = Field(
+    storage: Optional[list[str]] = Field(
         None,
         description=(
             "Lists some, but not necessarily all, storage locations           "
@@ -538,7 +538,7 @@ class TesTask(CustomBaseModel):
             " documentation purposes."
         ),
     )
-    inputs: Optional[List[TesInput]] = Field(
+    inputs: Optional[list[TesInput]] = Field(
         None,
         description=(
             "Input files that will be used by the task. Inputs will be        "
@@ -547,7 +547,7 @@ class TesTask(CustomBaseModel):
         ),
         example=[{"url": "s3://my-object-store/file1", "path": "/data/file1"}],
     )
-    outputs: Optional[List[TesOutput]] = Field(
+    outputs: Optional[list[TesOutput]] = Field(
         None,
         description=(
             "Output files.\nOutputs will be uploaded from the executor        "
@@ -562,7 +562,7 @@ class TesTask(CustomBaseModel):
         ],
     )
     resources: Optional[TesResources] = None
-    executors: List[TesExecutor] = Field(
+    executors: list[TesExecutor] = Field(
         [TesExecutor],
         description=(
             "An array of executors to be run. Each of the executors           "
@@ -574,7 +574,7 @@ class TesTask(CustomBaseModel):
             " message.\n\nExecution stops on the first error."
         ),
     )
-    volumes: Optional[List[str]] = Field(
+    volumes: Optional[list[str]] = Field(
         None,
         description=(
             "Volumes are directories which may be used to share data          "
@@ -590,7 +590,7 @@ class TesTask(CustomBaseModel):
         ),
         example=["/vol/A/"],
     )
-    tags: Optional[Dict[str, str]] = Field(
+    tags: Optional[dict[str, str]] = Field(
         None,
         description=(
             "A key-value map of arbitrary tags. These can be used to          "
@@ -601,7 +601,7 @@ class TesTask(CustomBaseModel):
         ),
         example={"WORKFLOW_ID": "cwl-01234", "PROJECT_GROUP": "alice-lab"},
     )
-    logs: Optional[List[TesTaskLog]] = Field(
+    logs: Optional[list[TesTaskLog]] = Field(
         None,
         description=(
             "Task logging information.\nNormally, this will contain           "
@@ -625,7 +625,7 @@ class TesTask(CustomBaseModel):
 
 
 class TesListTasksResponse(CustomBaseModel):
-    tasks: List[TesTask] = Field(
+    tasks: list[TesTask] = Field(
         ...,
         description=(
             "List of tasks. These tasks will be based on the original         "

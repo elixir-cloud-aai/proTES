@@ -3,19 +3,19 @@
 from copy import deepcopy
 from datetime import datetime
 import logging
-from typing import Dict, Optional, Tuple, Sequence, List
+from typing import Optional, Sequence
 
-from bson.objectid import ObjectId
+from bson.objectid import ObjectId  # type: ignore
 from celery import uuid
 from dateutil.parser import parse as parse_time
 from flask import current_app, request
-from foca.models.config import Config
-from foca.utils.misc import generate_id
-from pymongo.collection import Collection
-from pymongo.errors import DuplicateKeyError, PyMongoError
+from foca.models.config import Config  # type: ignore
+from foca.utils.misc import generate_id  # type: ignore
+from pymongo.collection import Collection  # type: ignore
+from pymongo.errors import DuplicateKeyError, PyMongoError  # type: ignore
 import requests
-import tes
-from tes.models import Task
+import tes  # type: ignore
+from tes.models import Task  # type: ignore
 
 from pro_tes.exceptions import (
     BadRequest,
@@ -35,7 +35,7 @@ from pro_tes.ga4gh.tes.states import States
 from pro_tes.middleware.middleware_handler import MiddlewareHandler
 from pro_tes.tasks.track_task_progress import task__track_task_progress
 from pro_tes.utils.db import DbDocumentConnector
-from pro_tes.utils.misc import remove_auth_from_url
+from pro_tes.utils.misc import strip_auth
 from pro_tes.utils.models import TaskModelConverter
 
 # pragma pylint: disable=invalid-name,redefined-builtin,unused-argument
@@ -84,20 +84,18 @@ class TaskRuns:
 
         # apply middlewares
         mw_handler = MiddlewareHandler()
-        mw_handler.set_middlewares(
-            paths=current_app.config.foca.middlewares
-        )
-        logger.info(f"Applying middlewares: {mw_handler.middlewares")
+        mw_handler.set_middlewares(paths=current_app.config.foca.middlewares)
+        logger.info(f"Applying middlewares: {mw_handler.middlewares}")
         request_modified = mw_handler.apply_middlewares(request=request)
 
         # update task document
         assert request_modified.json is not None
         payload: dict = request_modified.json
-        tes_uris = deepcopy(payload["tes_uris"])
-        del payload["tes_uris"]
+        tes_urls = deepcopy(payload["tes_urls"])
+        del payload["tes_urls"]
         db_document.task = TesTask(**payload)
 
-        # create database document 
+        # create database document
         db_document = self._update_task(
             payload=payload,
             db_document=db_document,
@@ -125,8 +123,8 @@ class TaskRuns:
                 f"{exc}'"
             ) from exc
 
-        for tes_uri in tes_uris:
-            db_document.tes_endpoint = TesEndpoint(host=tes_uri)
+        for tes_url in tes_urls:
+            db_document.tes_endpoint = TesEndpoint(host=tes_url)
             url: str = (
                 f"{db_document.tes_endpoint.host.rstrip('/')}/"
                 f"{db_document.tes_endpoint.base_path.lstrip('/')}"
@@ -141,14 +139,14 @@ class TaskRuns:
             except ValueError as exc:
                 logger.info(
                     f"Task '{db_document.task.id}' could not "
-                    f"be sentto TES endpoint hosted at: {url}. Invalid TES"
+                    f"be sent to TES endpoint hosted at: {url}. Invalid TES"
                     " endpoint URL. Original error message: "
                     f"'{type(exc).__name__}: {exc}'"
                 )
                 continue
 
             # fix for FTP URLs with credentials on non-Funnel services
-            def strip_none_items(_seq: Sequence) -> List:
+            def strip_none_items(_seq: Sequence) -> list:
                 """Remove empty items from Sequence.
 
                 Args:
@@ -159,7 +157,7 @@ class TaskRuns:
                 """
                 return [item for item in _seq if item is not None]
 
-            def remove_auth(_list: List) -> List:
+            def remove_auth(_list: list) -> list:
                 """Forward the list to 'remove_auth_from_url'.
 
                 Args:
@@ -169,7 +167,7 @@ class TaskRuns:
                     List of items without basic authentication information.
                 """
                 return [
-                    remove_auth_from_url(item.url)
+                    strip_auth(item.url)
                     for item in _list
                     if getattr(item, "url", None) is not None
                 ]
@@ -230,7 +228,7 @@ class TaskRuns:
             # update task_logs, tes_endpoint and task in db
             db_document = self._update_doc_in_db(
                 db_connector=db_connector,
-                tes_uri=tes_uri,
+                tes_url=tes_url,
                 remote_task_id=remote_task_id,
             )
             task__track_task_progress.apply_async(
@@ -251,7 +249,7 @@ class TaskRuns:
             "No suitable TES instance found. Task state set to 'SYSTEM_ERROR'."
         )
 
-    def list_tasks(self, **kwargs) -> Dict:
+    def list_tasks(self, **kwargs) -> dict:
         """Return list of tasks.
 
         Args:
@@ -306,7 +304,7 @@ class TaskRuns:
 
         return {"next_page_token": next_page_token, "tasks": tasks_lists}
 
-    def get_task(self, id=str, **kwargs) -> Dict:
+    def get_task(self, id=str, **kwargs) -> dict:
         """Return detailed information about a task.
 
         Args:
@@ -330,7 +328,7 @@ class TaskRuns:
             raise TaskNotFound
         return document["task"]
 
-    def cancel_task(self, id: str, **kwargs) -> Dict:
+    def cancel_task(self, id: str, **kwargs) -> dict:
         """Cancel task.
 
         Args:
@@ -394,7 +392,7 @@ class TaskRuns:
     def _write_doc_to_db(
         self,
         document: DbDocument,
-    ) -> Tuple[str, str]:
+    ) -> tuple[str, str]:
         """Create database entry for task.
 
         Args:
@@ -422,7 +420,7 @@ class TaskRuns:
             return document.task.id, document.worker_id
         raise DuplicateKeyError("Could not insert document into database.")
 
-    def _sanitize_request(self, payload: dict) -> Dict:
+    def _sanitize_request(self, payload: dict) -> dict:
         """Sanitize request for use with py-tes.
 
         Args:
@@ -455,7 +453,7 @@ class TaskRuns:
             ]
         return payload
 
-    def _set_projection(self, view: str) -> Dict:
+    def _set_projection(self, view: str) -> dict:
         """Set database projection for selected view.
 
         Args:
@@ -515,7 +513,7 @@ class TaskRuns:
         db_document.worker_id = worker_id
         return db_document
 
-    def _set_logs(self, payloads: dict, start_time: str) -> Dict:
+    def _set_logs(self, payloads: dict, start_time: str) -> dict:
         """Create or update `TesTask.logs` and set start time.
 
         Args:
@@ -545,21 +543,21 @@ class TaskRuns:
     def _update_doc_in_db(
         self,
         db_connector,
-        tes_uri: str,
+        tes_url: str,
         remote_task_id: str,
     ) -> DbDocument:
         """Set end time, task metadata in `TesTask.logs`, and update document.
 
         Args:
             db_connector: The database connector.
-            tes_uri: The TES URI where the task if forwarded.
+            tes_url: The TES URL where the task if forwarded.
             remote_task_id: Task identifier at the remote TES instance.
 
         Returns:
             The updated database document.
         """
         time_now = datetime.now().strftime("%m-%d-%Y %H:%M:%S")
-        tes_endpoint_dict = {"host": tes_uri, "base_path": ""}
+        tes_endpoint_dict = {"host": tes_url, "base_path": ""}
         db_document = db_connector.upsert_fields_in_root_object(
             root="tes_endpoint",
             **tes_endpoint_dict,
@@ -576,7 +574,7 @@ class TaskRuns:
         if self.store_logs:
             db_document = self._update_task_metadata(
                 db_document=db_document,
-                tes_uri=tes_uri,
+                tes_url=tes_url,
                 remote_task_id=remote_task_id,
             )
         else:
@@ -591,7 +589,7 @@ class TaskRuns:
         return db_document
 
     def _update_task_metadata(
-        self, db_document: DbDocument, tes_uri: str, remote_task_id: str
+        self, db_document: DbDocument, tes_url: str, remote_task_id: str
     ) -> DbDocument:
         """Update the task metadata.
 
@@ -599,20 +597,20 @@ class TaskRuns:
 
         Args:
             db_document: The document in the database to be updated.
-            tes_uri: The TES URI where the task if forwarded.
+            tes_url: The TES URL where the task if forwarded.
             remote_task_id: Task identifier at the remote TES instance.
 
         Returns:
             The updated database document.
         """
         for logs in db_document.task.logs:
-            tesNextTes_obj = TesNextTes(id=remote_task_id, url=tes_uri)
+            tesNextTes_obj = TesNextTes(id=remote_task_id, url=tes_url)
             if logs.metadata.forwarded_to is None:
                 logs.metadata.forwarded_to = tesNextTes_obj
         return db_document
 
     @staticmethod
-    def parse_basic_auth(auth: Optional[Dict[str, str]]) -> BasicAuth:
+    def parse_basic_auth(auth: Optional[dict[str, str]]) -> BasicAuth:
         """Parse basic auth header.
 
         Args:

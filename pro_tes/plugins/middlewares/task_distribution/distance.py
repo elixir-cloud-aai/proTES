@@ -1,81 +1,76 @@
 """Module for distance-based task distribution logic."""
 
-from copy import deepcopy
-from itertools import combinations
 import logging
 from socket import gaierror, gethostbyname
 from typing import Optional
 from urllib.parse import urlparse
 
 import flask
-from geopy.distance import geodesic
-from ip2geotools.databases.noncommercial import DbIpCity
-from ip2geotools.errors import InvalidRequestError
+from geopy.distance import geodesic  # type: ignore
+from ip2geotools.errors import InvalidRequestError  # type: ignore
+from ip2geotools.databases.noncommercial import DbIpCity  # type: ignore
+from ip2geotools.models import IpLocation  # type: ignore
 from pydantic import (  # pragma pylint: disable=no-name-in-module
     AnyUrl,
     BaseModel,
     HttpUrl,
 )
 
-from pro_tes.exceptions import (
-    InputUriError,
-    IPDistanceCalculationError,
-    MiddlewareException,
-    TesUriError,
-)
+from pro_tes.exceptions import MiddlewareException
 from pro_tes.plugins.middlewares.task_distribution.base import (
     TaskDistributionBaseClass,
 )
-from pro_tes.utils.misc import remove_auth_from_url
+from pro_tes.utils.misc import strip_auth
 
 logger = logging.getLogger(__name__)
 
 # pragma pylint: disable=too-few-public-methods
 
 
-class TaskParams(BaseModel):
-    """Combination of task parameters.
-
-    Attributes:
-        input_uris: The URIs of a task's inputs.
-    """
-
-    input_uris: list[AnyUrl]
-
-
 class TesStats(BaseModel):
-    """Combination of TES statistics.
+    """TES statistics.
 
     Attributes:
-        total distance: The tota geodesic IP distance between the a TES
-            instance and all of a task's inputs.
+        total distance: The total geodesic IP distance between the TES instance
+            and the task's inputs.
     """
 
     total_distance: Optional[float] = None
 
 
-class TesDeployment(BaseModel):
-    """Combination of a TES instance's URI and its statistics.
+class TesInstance(BaseModel):
+    """TES instance information.
 
     Attributes:
-        uri: The URI of a TES instance.
-        stats: An instance of `TesStats`.
+        location: TES instance IP location.
+        stats: TES instance statistics.
     """
 
-    uri: HttpUrl
+    location: Optional[IpLocation] = None
     stats: TesStats
 
 
-class AccessUriCombination(BaseModel):
-    """Combination of input_uri of the TES task and the TES instances.
+class TaskInput(BaseModel):
+    """Task input information.
 
-    Attributs:
-        task_param: A `TaskParams` object.
-        tes_deployments: A list of `TesDeployment` objects.
+    Attributes:
+        location: Input IP location.
     """
 
-    task_params: TaskParams
-    tes_deployments: list[TesDeployment]
+    location: Optional[IpLocation] = None
+
+
+class TaskSummary(BaseModel):
+    """Summary of TES instances and corresponding statistics.
+
+    Attributs:
+        inputs: A dictionary of task input URIs and corresponding information.
+        tes_instances: A dictionary of TES instance URIs and corresponding
+            information.
+    """
+
+    inputs: dict[AnyUrl, TaskInput]
+    tes_instances: dict[HttpUrl, TesInstance]
 
 
 class TaskDistributionDistance(TaskDistributionBaseClass):
@@ -87,239 +82,190 @@ class TaskDistributionDistance(TaskDistributionBaseClass):
     instance and the inputs.
 
     Attributes:
-        tes_uris: TES instance best suited for TES task.
+        tes_urls: TES instance best suited for TES task.
         input_uris: A list of input URIs from the incoming request.
+        tes_summary: Summary of TES instances and corresponding statistics.
     """
 
     def __init__(self) -> None:
         """Class constructor."""
         super().__init__()
-        self.input_uris: list[str] = []
+        self.task_summary: TaskSummary
 
-    def _set_tes_uris(
+    def _set_tes_urls(
         self,
-        tes_uris: list[str],
+        tes_urls: list[HttpUrl],
         request: flask.Request,
     ) -> None:
         """Set TES URIs.
 
         Args:
-            tes_uris: List of TES URIs.
+            tes_urls: List of TES URIs.
             request: Request object to be modified.
         """
-        self.tes_uris = tes_uris
-        self._set_input_uris(request=request)
-        combinations = self._get_uri_combinations()
-        ip_combos = self._get_ip_combinations()
+        self._set_tes_instances(tes_urls=tes_urls)
+        self._set_task_inputs(request=request)
+        self._set_locations()
+        self._set_distances()
+        self.tes_urls = self._rank_tes_instances()
 
-        # ips_unique: dict[set[str], list[tuple[int, str]]] = {
-        #     value: [] for value in ip_combos.values()
-        # }
-        # for key, value in ip_combos.items():
-        #     ips_unique[value].append(key)
+    def _set_tes_instances(self, tes_urls: list[HttpUrl]) -> None:
+        """Set TES instances.
 
-        # # Calculate distances between all IPs
-        # distances = self._get_distances(ips_unique)
+        Args:
+            tes_urls: List of TES URLs.
+        """
+        for url in list(set(tes_urls)):
+            self.task_summary.tes_instances[url] = TesInstance()
 
-        # # Add total distance corresponding to TES uri's in
-        # # access URI combination
-        # for index, value in enumerate(combinations.tes_deployments):
-        #     value.stats.total_distance = distances[index]["total"]
-        # logger.info(f"access_uri_combination: {combinations}")
-
-        self.tes_uris = self._rank_tes_instances(combinations)
-
-    def _set_input_uris(self, request: flask.Request) -> None:
-        """Set input URIs.
+    def _set_task_inputs(self, request: flask.Request) -> None:
+        """Set task inputs.
 
         Args:
             request: Request object to be modified.
 
         Raises:
-            MiddlewareException: If not input URIs are available in the request
-                payload.
+            MiddlewareException: If request has no JSON payload or if no input
+                URIs are available.
         """
-        assert request.json is not None
-        if "inputs" in request.json.keys():
-            for index in range(len(request.json["inputs"])):
-                if "url" in request.json["inputs"][index].keys():
-                    self.input_uris.append(
-                        request.json["inputs"][index]["url"]
-                    )
-        if not self.input_uris:
-            raise MiddlewareException("No input URIs available.")
-
-    def _get_uri_combinations(self) -> AccessUriCombination:
-        """Create all combinations of input and TES URIs.
-
-        Returns:
-            An `AccessUriCombination` object.
-        """
-        tes_deployment_list = [
-            TesDeployment(uri=uri, stats=TesStats(total_distance=None))
-            for uri in self.tes_uris
-        ]
-        task_param = TaskParams(input_uris=self.input_uris)
-        access_uri_combination = AccessUriCombination(
-            task_params=task_param, tes_deployments=tes_deployment_list
-        )
-        return access_uri_combination
-
-    def _get_ip_combinations(self) -> dict[tuple[int, int], tuple[str, str]]:
-        """Create combinations of TES and input IP addresses.
-
-        Returns:
-            A dictionary where the keys are tuples representing the combination
-            of TES instance and input URI, and the values are tuples containing
-            the IP addresses of the TES instance and input URI.
-
-        Example:
+        if request.json is None:
+            raise MiddlewareException("Request has no JSON payload.")
+        input_uris = list(
             {
-                (0, 0): ('10.0.0.1', '192.168.0.1'),
-                (0, 1): ('10.0.0.1', '192.168.0.2'),
-                (1, 0): ('10.0.0.2', '192.168.0.1'),
-                (1, 1): ('10.0.0.2', '192.168.0.2')
+                input_value.get("url")
+                for input_value in request.json.get("inputs", [])
+                if input_value.get("url") is not None
             }
-        """
-        ips = {}
-
-        obj_ip_list = []
-        for index, uri in enumerate(self.input_uris):
-            uri_no_auth = remove_auth_from_url(uri)
-            try:
-                obj_ip = gethostbyname(urlparse(uri_no_auth).netloc)
-            except gaierror as exc:
-                raise InputUriError from exc
-            obj_ip_list.append(obj_ip)
-
-        for index, uri in enumerate(self.tes_uris):
-            uri_no_auth = remove_auth_from_url(uri)
-            try:
-                tes_ip = gethostbyname(urlparse(uri_no_auth).netloc)
-            except gaierror as exc:
-                raise TesUriError from exc
-            for count, obj_ip in enumerate(obj_ip_list):
-                ips[(index, count)] = (tes_ip, obj_ip)
-        return ips
-
-    def _get_distances(
-        self,
-        ips_unique: dict[set[str], list[tuple[int, str]]],
-    ) -> dict[set[str], float]:
-        """Calculate distances between all IPs.
-
-        Args:
-            ips_unique: A dictionary of unique Ips.
-
-        Returns:
-            A dictionary of distances between all IP addresses.
-            The keys are sets of IP addresses, and the values are the distances
-            between them as floats.
-        """
-        distances_unique: dict[set[str], float] = {}
-        ips_all = frozenset().union(*list(ips_unique.keys()))  # type: ignore
-        try:
-            distances_full = self._get_distances_helper(*ips_all)
-        except ValueError as exc:
-            raise IPDistanceCalculationError from exc
-
-        for ip_tuple in ips_unique.keys():
-            if len(set(ip_tuple)) == 1:
-                distances_unique[ip_tuple] = 0
-            else:
-                try:
-                    distances_unique[ip_tuple] = distances_full["distances"][
-                        ip_tuple
-                    ]
-                except KeyError as exc:
-                    raise KeyError(
-                        f"Distances not found for IP addresses: {ip_tuple}"
-                    ) from exc
-
-        # Reshape distances keys for logging
-        keys = list(distances_full["distances"].keys())
-        keys = ["|".join([str(i) for i in t]) for t in keys]
-        distances_full["distances"] = dict(
-            zip(keys, list(distances_full["distances"].values()))
         )
+        if not input_uris:
+            raise MiddlewareException("No input URIs available.")
+        for uri in list(set(input_uris)):
+            self.task_summary.inputs[uri] = TaskInput()
 
-        # Map distances back to each combination
-        distances = [deepcopy({}) for i in range(len(self.tes_uris))]
-        for ip_set, combination in ips_unique.items():  # type: ignore
-            for combo in combination:
-                distances[combo[0]][combo[1]] = distances_unique[ip_set]
+    def _set_locations(self) -> None:
+        """Set IP locations for TES instances and task inputs."""
+        tes_urls = list(self.task_summary.tes_instances.keys())
+        input_uris = list(self.task_summary.inputs.keys())
+        uris_unique: list[AnyUrl] = list(set(tes_urls + input_uris))
+        ips: dict[AnyUrl, str] = self._get_ips(*uris_unique)
+        locations = self._get_ip_locations(*ips.values())
+        for url in tes_urls:
+            self.task_summary.tes_instances[url].location = locations[ips[url]]
+        for uri in input_uris:
+            self.task_summary.inputs[uri].location = locations[ips[uri]]
 
-        for combination in distances:
-            combination["total"] = sum(combination.values())
-
-        return distances
-
-    def _get_distances_helper(
-        self,
-        *args: str,
-    ) -> dict[str, dict]:
-        """Compute IP distance across IP pairs.
-
-        Args:
-            *args: IP addresses of the form '8.8.8.8' without schema and
-            suffixes.
-
-        Returns:
-            A dictionary with a key for each IP address, pointing to a
-            dictionary containing city, region and country information for the
-            IP address, as well as a key "distances" pointing to a dictionary
-            indicating the distances, in kilometers, between all pairs of IPs,
-            with the tuple of IPs as the keys. IPs that cannot be located are
-            skipped from the resulting dictionary.
+    def _set_distances(self) -> None:
+        """Set distances between TES instances and task inputs.
 
         Raises:
-             ValueError: No args were passed.
+            MiddlewareException: If an IP location is not available for a TES
+                instance or input object.
         """
-        if not args:
-            raise ValueError("Expected at least one URI or IP address.")
+        locations_inputs: list[IpLocation] = []
+        for uri, obj in self.task_summary.inputs.items():
+            if obj.location is None:
+                raise MiddlewareException(
+                    f"IP location not available for input at URI: {uri}"
+                )
+            locations_inputs.append(obj.location)
+        for url, instance in self.task_summary.tes_instances.items():
+            if instance.location is None:
+                raise MiddlewareException(
+                    f"IP location not available for TES instance at URL: {url}"
+                )
+            distances = self._get_distances(
+                node=instance.location,
+                leaves=locations_inputs,
+            )
+            instance.stats = TesStats(total_distance=sum(distances))
 
-        # Locate IPs
-        ip_locs = {}
-        for ips in args:
-            try:
-                ip_locs[ips] = DbIpCity.get(ips, api_key="free")
-            except InvalidRequestError:
-                pass
-
-        # Compute distances
-        dist = {}
-        for keys in combinations(ip_locs.keys(), r=2):
-            dist[(keys[0], keys[1])] = geodesic(
-                (ip_locs[keys[0]].latitude, ip_locs[keys[0]].longitude),
-                (ip_locs[keys[1]].latitude, ip_locs[keys[1]].longitude),
-            ).km
-            dist[(keys[1], keys[0])] = dist[(keys[0], keys[1])]
-
-        # Prepare results
-        res = {}
-        for key, value in ip_locs.items():
-            res[key] = {
-                "city": value.city,
-                "region": value.region,
-                "country": value.country,
-            }
-        res["distances"] = dist
-
-        return res
-
-    @staticmethod
-    def _rank_tes_instances(
-        combinations: AccessUriCombination,
-    ) -> list[str]:
+    def _rank_tes_instances(self) -> list[HttpUrl]:
         """Rank TES instances by physical proximity to the task's inputs.
-
-        Args:
-            access_uri_combination: An `AccessUriCombination` object.
 
         Returns:
             A list of TES URIs ranked by total distance to the task's inputs,
                 in ascending order.
+
+        Raises:
+            MiddlewareException: If total distance is not available for a TES
+                instance.
         """
-        combos = [value.dict() for value in combinations.tes_deployments]
-        ranked = sorted(combos, key=lambda x: x["stats"]["total_distance"])
-        return [str(value["tes_uri"]) for value in ranked]
+        distances: dict[HttpUrl, float] = {}
+        for url, instance in self.task_summary.tes_instances.items():
+            if instance.stats.total_distance is None:
+                raise MiddlewareException(
+                    "Total distance not available for TES instance at URL:"
+                    f" {url}"
+                )
+            distances[url] = instance.stats.total_distance
+        return list(
+            dict(sorted(distances.items(), key=lambda item: item[1])).keys()
+        )
+
+    @staticmethod
+    def _get_ips(*args: AnyUrl) -> dict[AnyUrl, str]:
+        """Get IP addresses for one or more URIs.
+
+        Args:
+            *args: URIs.
+
+        Returns:
+            Dictionary of URIs and their IP addresses.
+
+        Raises:
+            MiddlewareException: If IP address cannot be determined for a URI.
+        """
+        ips: dict[AnyUrl, str] = {}
+        for uri in args:
+            try:
+                ips[uri] = gethostbyname(urlparse(strip_auth(uri)).netloc)
+            except gaierror as exc:
+                raise MiddlewareException(
+                    f"Could not determine IP address for URI: {uri}"
+                ) from exc
+        return ips
+
+    @staticmethod
+    def _get_ip_locations(*args: str) -> dict[str, IpLocation]:
+        """Get locations of IP addresses.
+
+        Args:
+            *args: IP addresses.
+
+        Returns:
+            Dictionary of unique IP addresses and their locations.
+
+        Raises:
+            MiddlewareException: If location cannot be determined for an IP.
+        """
+        locations: dict[str, IpLocation] = {}
+        for ip_addr in args:
+            try:
+                locations[ip_addr] = DbIpCity.get(ip_addr)
+            except InvalidRequestError as exc:
+                raise MiddlewareException(
+                    f"Could not determine location for IP: {ip_addr}"
+                ) from exc
+        return locations
+
+    @staticmethod
+    def _get_distances(
+        node: IpLocation,
+        leaves: list[IpLocation],
+    ) -> list[float]:
+        """Get distances between a node and a list of leaves.
+
+        Args:
+            node: Node location.
+            leaves: List of leaf locations.
+
+        Returns:
+            List of distances between the node and the leaves, in kilometers.
+        """
+        return [
+            geodesic(
+                (node.latitude, node.longitude),
+                (leaf.latitude, leaf.longitude),
+            ).km
+            for leaf in leaves
+        ]

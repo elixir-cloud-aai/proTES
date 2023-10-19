@@ -77,13 +77,13 @@ TES_CONFIG = {
     ]
 }
 
-mock_input_uri = [
+mock_input_url = [
     "ftp://vm4466.kaj.pouta.csc.fi/upload/foivos/test.txt",
 ]
 
-invalid_input_uri = ["ftp://invalid.input.uri"]
+invalid_input_url = ["ftp://invalid.input.uri"]
 
-mock_tes_uri = [
+mock_tes_url = [
     "https://csc-tesk-noauth.rahtiapp.fi",
     "https://funnel.cloud.e-infra.cz/",
     "https://tesk-eu.hypatia-comp.athenarc.gr",
@@ -91,7 +91,7 @@ mock_tes_uri = [
     "https://vm4816.kaj.pouta.csc.fi/",
 ]
 
-invalid_tes_uri = ["https://invalid.tes.uri"]
+invalid_tes_url = ["https://invalid.tes.uri"]
 
 expected_ips = {
     (0, 0): ("193.167.189.101", "128.214.255.155"),
@@ -209,9 +209,9 @@ ips_all = frozenset(
 
 invalid_ips = frozenset({"300.0.0.1", "192.168.1."})
 
-expected_access_uri_combination = AccessUriCombination(
+expected_access_url_combination = AccessUriCombination(
     task_params=TaskParams(
-        input_uris=[
+        input_urls=[
             AnyUrl(
                 "ftp://vm4466.kaj.pouta.csc.fi/upload/foivos/test.txt",
                 scheme="ftp",
@@ -224,7 +224,7 @@ expected_access_uri_combination = AccessUriCombination(
     ),
     tes_deployments=[
         TesDeployment(
-            tes_uri=HttpUrl(
+            tes_url=HttpUrl(
                 "https://csc-tesk-noauth.rahtiapp.fi",
                 scheme="https",
                 host="csc-tesk-noauth.rahtiapp.fi",
@@ -234,7 +234,7 @@ expected_access_uri_combination = AccessUriCombination(
             stats=TesStats(total_distance=None),
         ),
         TesDeployment(
-            tes_uri=HttpUrl(
+            tes_url=HttpUrl(
                 "https://funnel.cloud.e-infra.cz/",
                 scheme="https",
                 host="funnel.cloud.e-infra.cz",
@@ -245,7 +245,7 @@ expected_access_uri_combination = AccessUriCombination(
             stats=TesStats(total_distance=None),
         ),
         TesDeployment(
-            tes_uri=HttpUrl(
+            tes_url=HttpUrl(
                 "https://tesk-eu.hypatia-comp.athenarc.gr",
                 scheme="https",
                 host="tesk-eu.hypatia-comp.athenarc.gr",
@@ -255,7 +255,7 @@ expected_access_uri_combination = AccessUriCombination(
             stats=TesStats(total_distance=None),
         ),
         TesDeployment(
-            tes_uri=HttpUrl(
+            tes_url=HttpUrl(
                 "https://tesk-na.cloud.e-infra.cz",
                 scheme="https",
                 host="tesk-na.cloud.e-infra.cz",
@@ -265,7 +265,7 @@ expected_access_uri_combination = AccessUriCombination(
             stats=TesStats(total_distance=None),
         ),
         TesDeployment(
-            tes_uri=HttpUrl(
+            tes_url=HttpUrl(
                 "https://vm4816.kaj.pouta.csc.fi/",
                 scheme="https",
                 host="vm4816.kaj.pouta.csc.fi",
@@ -278,9 +278,9 @@ expected_access_uri_combination = AccessUriCombination(
     ],
 )
 
-final_access_uri_combination = AccessUriCombination(
+final_access_url_combination = AccessUriCombination(
     task_params=TaskParams(
-        input_uris=[
+        input_urls=[
             AnyUrl(
                 "ftp://vm4466.kaj.pouta.csc.fi/upload/foivos/test.txt",
                 scheme="ftp",
@@ -293,7 +293,7 @@ final_access_uri_combination = AccessUriCombination(
     ),
     tes_deployments=[
         TesDeployment(
-            tes_uri=HttpUrl(
+            tes_url=HttpUrl(
                 "https://csc-tesk-noauth.rahtiapp.fi",
                 scheme="https",
                 host="csc-tesk-noauth.rahtiapp.fi",
@@ -303,7 +303,7 @@ final_access_uri_combination = AccessUriCombination(
             stats=TesStats(total_distance=16.398441097721292),
         ),
         TesDeployment(
-            tes_uri=HttpUrl(
+            tes_url=HttpUrl(
                 "https://funnel.cloud.e-infra.cz/",
                 scheme="https",
                 host="funnel.cloud.e-infra.cz",
@@ -314,7 +314,7 @@ final_access_uri_combination = AccessUriCombination(
             stats=TesStats(total_distance=1332.2498833186016),
         ),
         TesDeployment(
-            tes_uri=HttpUrl(
+            tes_url=HttpUrl(
                 "https://tesk-eu.hypatia-comp.athenarc.gr",
                 scheme="https",
                 host="tesk-eu.hypatia-comp.athenarc.gr",
@@ -324,7 +324,7 @@ final_access_uri_combination = AccessUriCombination(
             stats=TesStats(total_distance=2468.0798992845093),
         ),
         TesDeployment(
-            tes_uri=HttpUrl(
+            tes_url=HttpUrl(
                 "https://tesk-na.cloud.e-infra.cz",
                 scheme="https",
                 host="tesk-na.cloud.e-infra.cz",
@@ -334,7 +334,7 @@ final_access_uri_combination = AccessUriCombination(
             stats=TesStats(total_distance=1332.2498833186016),
         ),
         TesDeployment(
-            tes_uri=HttpUrl(
+            tes_url=HttpUrl(
                 "https://vm4816.kaj.pouta.csc.fi/",
                 scheme="https",
                 host="vm4816.kaj.pouta.csc.fi",

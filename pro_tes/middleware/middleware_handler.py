@@ -104,7 +104,7 @@ class MiddlewareHandler:
                     raise MiddlewareException(
                         f"Error occurred in middleware class '{middleware}':"
                         f" {exc}"
-                    )
+                    ) from exc
         return request
 
     @staticmethod
@@ -123,19 +123,21 @@ class MiddlewareHandler:
         """
         try:
             module_path, class_name = import_path.rsplit(".", 1)
-        except ValueError:
-            raise InvalidMiddleware("Invalid middleware string.")
+        except ValueError as exc:
+            raise InvalidMiddleware("Invalid middleware string.") from exc
         try:
             module = importlib.import_module(module_path)
-        except ImportError:
-            raise InvalidMiddleware(f"Could not import module: {module_path}.")
+        except ImportError as exc:
+            raise InvalidMiddleware(
+                f"Could not import module: {module_path}."
+            ) from exc
         try:
             middleware_class = getattr(module, class_name)
-        except AttributeError:
+        except AttributeError as exc:
             raise InvalidMiddleware(
                 f"Module {module_path} does not contain a class called "
                 f"{class_name}."
-            )
+            ) from exc
         if not issubclass(middleware_class, AbstractMiddleware):
             raise InvalidMiddleware(
                 "Middleware class does not inherit from "

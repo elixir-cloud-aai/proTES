@@ -1,10 +1,9 @@
 """Controllers for GA4GH TES API endpoints."""
 
 import logging
-from typing import Dict
 
-from connexion import request
-from foca.utils.logging import log_traffic
+from connexion import request  # type: ignore
+from foca.utils.logging import log_traffic  # type: ignore
 
 from pro_tes.ga4gh.tes.service_info import ServiceInfo
 from pro_tes.ga4gh.tes.task_runs import TaskRuns
@@ -19,7 +18,7 @@ logger = logging.getLogger(__name__)
 @log_traffic
 def CancelTask(
     id, *args, **kwargs  # pylint: disable=redefined-builtin
-) -> Dict:
+) -> dict:
     """Cancel unfinished task.
 
     Args:
@@ -34,7 +33,7 @@ def CancelTask(
 
 # POST /tasks
 @log_traffic
-def CreateTask(*args, **kwargs) -> Dict:
+def CreateTask(*args, **kwargs) -> dict:
     """Create task.
 
     Args:
@@ -48,7 +47,7 @@ def CreateTask(*args, **kwargs) -> Dict:
 
 # GET /tasks/service-info
 @log_traffic
-def GetServiceInfo(*args, **kwargs) -> Dict:
+def GetServiceInfo(*args, **kwargs) -> dict:
     """Get service info.
 
     Args:
@@ -62,7 +61,7 @@ def GetServiceInfo(*args, **kwargs) -> Dict:
 
 # GET /tasks/{id}
 @log_traffic
-def GetTask(id, *args, **kwargs) -> Dict:  # pylint: disable=redefined-builtin
+def GetTask(id, *args, **kwargs) -> dict:  # pylint: disable=redefined-builtin
     """Get info for individual task.
 
     Args:
@@ -77,7 +76,7 @@ def GetTask(id, *args, **kwargs) -> Dict:  # pylint: disable=redefined-builtin
 
 # GET /tasks
 @log_traffic
-def ListTasks(*args, **kwargs) -> Dict:
+def ListTasks(*args, **kwargs) -> dict:
     """List all available tasks.
 
     Args:

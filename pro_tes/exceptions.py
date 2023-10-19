@@ -1,13 +1,13 @@
 """proTES exceptions."""
 
-from connexion.exceptions import (
+from connexion.exceptions import (  # type: ignore
     BadRequestProblem,
     ExtraParameterProblem,
     Forbidden,
     Unauthorized,
 )
 from pydantic import ValidationError
-from pymongo.errors import PyMongoError
+from pymongo.errors import PyMongoError  # type: ignore
 from werkzeug.exceptions import (
     BadRequest,
     InternalServerError,
@@ -27,18 +27,6 @@ class IdsUnavailableProblem(PyMongoError):
 
 class NoTesInstancesAvailable(ValueError):
     """Raised when no TES instances are available."""
-
-
-class TesUriError(ValueError):
-    """Raised when TES URI cannot be parsed."""
-
-
-class InputUriError(ValueError):
-    """Raised when input URI cannot be parsed."""
-
-
-class IPDistanceCalculationError(ValueError):
-    """Raised when IP distance cannot be calculated."""
 
 
 class MiddlewareException(ValueError):
@@ -96,18 +84,6 @@ exceptions = {
     },
     NoTesInstancesAvailable: {
         "message": "No valid TES instances available.",
-        "code": "500",
-    },
-    TesUriError: {
-        "message": "TES URI cannot be parsed",
-        "code": "500",
-    },
-    InputUriError: {
-        "message": "Input URI cannot be parsed.",
-        "code": "400",
-    },
-    IPDistanceCalculationError: {
-        "message": "IP distance calculation failed.",
         "code": "500",
     },
     MiddlewareException: {

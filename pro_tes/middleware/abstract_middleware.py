@@ -4,6 +4,8 @@ import abc
 
 import flask
 
+# pragma pylint: disable=too-few-public-methods
+
 
 class AbstractMiddleware(metaclass=abc.ABCMeta):
     """Abstract class for middlewares."""

@@ -1,7 +1,10 @@
 """Random task distribution middleware."""
 
-import flask
 import random
+
+import flask
+
+from pydantic import HttpUrl  # pragma pylint: disable=no-name-in-module
 
 from pro_tes.plugins.middlewares.task_distribution.base import (
     TaskDistributionBaseClass,
@@ -16,16 +19,16 @@ class TaskDistributionRandom(TaskDistributionBaseClass):
     Randomly huffles the available TES instances.
     """
 
-    def _set_tes_uris(
+    def _set_tes_urls(
         self,
-        tes_uris: list[str],
+        tes_urls: list[HttpUrl],
         request: flask.Request,
     ) -> None:
         """Set TES URIs.
 
         Args:
-            tes_uris: List of TES URIs.
+            tes_urls: List of TES URIs.
             request: Request object to be modified.
         """
-        self.tes_uris = tes_uris
-        random.shuffle(self.tes_uris)
+        self.tes_urls = list(set(tes_urls))
+        random.shuffle(self.tes_urls)
