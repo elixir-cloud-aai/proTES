@@ -1,9 +1,9 @@
 """Class to convert py-tes to proTES TES task model."""
 
 from datetime import datetime
-from typing import List, Optional
+from typing import Optional
 
-from tes.models import TaskLog, Task
+from tes.models import TaskLog, Task  # type: ignore
 
 from pro_tes.ga4gh.tes.models import (
     TesExecutor,
@@ -77,7 +77,7 @@ class TaskModelConverter:
             state = TesState(self.task.state)
         return state
 
-    def convert_inputs(self) -> Optional[List[TesInput]]:
+    def convert_inputs(self) -> Optional[list[TesInput]]:
         """Convert py-tes to proTES TES task inputs.
 
         Returns:
@@ -99,7 +99,7 @@ class TaskModelConverter:
             ]
         return inputs
 
-    def convert_outputs(self) -> Optional[List[TesOutput]]:
+    def convert_outputs(self) -> Optional[list[TesOutput]]:
         """Convert py-tes to proTES TES task outputs.
 
         Returns:
@@ -138,7 +138,7 @@ class TaskModelConverter:
             )
         return resources
 
-    def convert_executors(self) -> List[TesExecutor]:
+    def convert_executors(self) -> list[TesExecutor]:
         """Convert py-tes to proTES TES task executors.
 
         Returns:
@@ -161,7 +161,7 @@ class TaskModelConverter:
             ]
         return executors
 
-    def convert_logs(self) -> Optional[List[TesTaskLog]]:
+    def convert_logs(self) -> Optional[list[TesTaskLog]]:
         """Convert py-tes to proTES TES task logs.
 
         Returns:
@@ -191,7 +191,7 @@ class TaskModelConverter:
         return logs
 
     @staticmethod
-    def convert_executor_logs(log: TaskLog) -> List[TesExecutorLog]:
+    def convert_executor_logs(log: TaskLog) -> list[TesExecutorLog]:
         """Convert py-tes to proTES TES task executor logs.
 
         Args:
@@ -220,7 +220,7 @@ class TaskModelConverter:
         return executor_logs
 
     @staticmethod
-    def convert_output_file_logs(log: TaskLog) -> List[TesOutputFileLog]:
+    def convert_output_file_logs(log: TaskLog) -> list[TesOutputFileLog]:
         """Convert py-tes to proTES TES task output file logs.
 
         Args:

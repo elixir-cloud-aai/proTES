@@ -1,11 +1,10 @@
 """Controller for the `/service-info route."""
 
 import logging
-from typing import Dict
 
-from bson.objectid import ObjectId
+from bson.objectid import ObjectId  # type: ignore
 from flask import current_app
-from pymongo.collection import Collection
+from pymongo.collection import Collection  # type: ignore
 
 from pro_tes.exceptions import NotFound
 
@@ -31,7 +30,7 @@ class ServiceInfo:
         )
         self.object_id: str = "000000000000000000000000"
 
-    def get_service_info(self) -> Dict:
+    def get_service_info(self) -> dict:
         """Get latest service info from database.
 
         Returns:
@@ -48,7 +47,7 @@ class ServiceInfo:
             raise NotFound
         return service_info
 
-    def set_service_info(self, data: Dict) -> None:
+    def set_service_info(self, data: dict) -> None:
         """Create or update service info.
 
         Arguments:

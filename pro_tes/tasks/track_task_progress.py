@@ -2,13 +2,12 @@
 
 import logging
 from time import sleep
-from typing import Dict
 
-from foca.database.register_mongodb import _create_mongo_client
-from foca.models.config import Config
+from foca.database.register_mongodb import _create_mongo_client  # type: ignore
+from foca.models.config import Config  # type: ignore
 from flask import Flask
 from flask import current_app
-import tes
+import tes  # type: ignore
 
 from pro_tes.ga4gh.tes.models import TesState, TesTask
 from pro_tes.utils.db import DbDocumentConnector
@@ -52,7 +51,7 @@ def task__track_task_progress(  # pylint: disable=too-many-arguments
         password: Password for basic authentication.
     """
     foca_config: Config = current_app.config.foca
-    controller_config: Dict = foca_config.controllers["post_task"]
+    controller_config: dict = foca_config.controllers["post_task"]
 
     # create database client
     collection = _create_mongo_client(
@@ -116,6 +115,4 @@ def task__track_task_progress(  # pylint: disable=too-many-arguments
         document.task.logs[index].outputs = logs.outputs
 
     # updating the database
-    db_client.upsert_fields_in_root_object(
-        root="task", **document.task.dict()
-    )
+    db_client.upsert_fields_in_root_object(root="task", **document.task.dict())

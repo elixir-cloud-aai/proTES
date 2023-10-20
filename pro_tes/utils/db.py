@@ -2,8 +2,8 @@
 
 import logging
 from typing import Mapping, Optional
-from pymongo.collection import ReturnDocument
-from pymongo import collection as Collection
+from pymongo.collection import ReturnDocument  # type: ignore
+from pymongo import collection as Collection  # type: ignore
 
 from pro_tes.ga4gh.tes.models import DbDocument, TesState
 
