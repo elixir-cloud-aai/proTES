@@ -47,7 +47,12 @@ class TesInstance(BaseModel):
     """
 
     location: Optional[IpLocation] = None
-    stats: TesStats
+    stats: TesStats = TesStats()
+
+    class Config:
+        """Model configuration."""
+
+        arbitrary_types_allowed = True
 
 
 class TaskInput(BaseModel):
@@ -59,6 +64,11 @@ class TaskInput(BaseModel):
 
     location: Optional[IpLocation] = None
 
+    class Config:
+        """Model configuration."""
+
+        arbitrary_types_allowed = True
+
 
 class TaskSummary(BaseModel):
     """Summary of TES instances and corresponding statistics.
@@ -69,8 +79,8 @@ class TaskSummary(BaseModel):
             information.
     """
 
-    inputs: dict[AnyUrl, TaskInput]
-    tes_instances: dict[HttpUrl, TesInstance]
+    inputs: dict[AnyUrl, TaskInput] = {}
+    tes_instances: dict[HttpUrl, TesInstance] = {}
 
 
 class TaskDistributionDistance(TaskDistributionBaseClass):
@@ -90,7 +100,7 @@ class TaskDistributionDistance(TaskDistributionBaseClass):
     def __init__(self) -> None:
         """Class constructor."""
         super().__init__()
-        self.task_summary: TaskSummary
+        self.task_summary: TaskSummary = TaskSummary()
 
     def _set_tes_urls(
         self,

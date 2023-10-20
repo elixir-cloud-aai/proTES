@@ -22,9 +22,7 @@ class MiddlewareHandler:
 
     def __init__(self) -> None:
         """Class constructor."""
-        self.middlewares: list[
-            Union[type[AbstractMiddleware], list[type[AbstractMiddleware]]]
-        ]
+        self.middlewares: list[list[type[AbstractMiddleware]]] = []
 
     def set_middlewares(self, paths: list[Union[str, list[str]]]) -> None:
         """Import and set middlewares from paths.
@@ -47,7 +45,7 @@ class MiddlewareHandler:
                     [self._import_middleware_class(path) for path in item]
                 )
             else:
-                self.middlewares.append(self._import_middleware_class(item))
+                self.middlewares.append([self._import_middleware_class(item)])
 
     def apply_middlewares(
         self,
@@ -77,34 +75,22 @@ class MiddlewareHandler:
                 in a list of alternatives) could not be applied.
         """
         for middleware in self.middlewares:
-            logger.debug(f"Applying middleware: {middleware}")
-            if isinstance(middleware, list):
-                for mw_class in middleware:
-                    instance = mw_class()
-                    try:
-                        request = instance.apply_middleware(
-                            request, *args, **kwargs
-                        )
-                    except Exception as exc:  # pylint: disable=W0703
-                        logger.exception(
-                            f"Error occurred in middleware class '{mw_class}':"
-                            f" {exc}"
-                        )
-                        continue
-                    break
-                else:
-                    raise MiddlewareException()
-            else:
-                instance = middleware()
+            for mw_class in middleware:
+                logger.info(f"Applying middleware: {mw_class}")
+                instance = mw_class()
                 try:
                     request = instance.apply_middleware(
                         request, *args, **kwargs
                     )
                 except Exception as exc:  # pylint: disable=W0703
-                    raise MiddlewareException(
-                        f"Error occurred in middleware class '{middleware}':"
+                    logger.warning(
+                        f"Error occurred in middleware class '{mw_class}':"
                         f" {exc}"
-                    ) from exc
+                    )
+                    continue
+                break
+            else:
+                raise MiddlewareException("No middleware could be applied.")
         return request
 
     @staticmethod

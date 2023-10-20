@@ -467,7 +467,7 @@ class TesTaskLog(CustomBaseModel):
     metadata: Optional[Metadata] = Field(
         None,
         description=(
-            "Arbitrary logging metadataincluded by the implementation."
+            "Arbitrary logging metadata included by the implementation."
         ),
         example={"host": "worker-001", "slurmm_id": 123456},
     )

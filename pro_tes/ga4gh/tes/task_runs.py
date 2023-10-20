@@ -85,7 +85,7 @@ class TaskRuns:
         # apply middlewares
         mw_handler = MiddlewareHandler()
         mw_handler.set_middlewares(paths=current_app.config.foca.middlewares)
-        logger.info(f"Applying middlewares: {mw_handler.middlewares}")
+        logger.debug(f"Middlewares registered: {mw_handler.middlewares}")
         request_modified = mw_handler.apply_middlewares(request=request)
 
         # update task document
@@ -102,27 +102,33 @@ class TaskRuns:
             start_time=start_time,
             **kwargs,
         )
-        logger.info(
-            "Trying to forward task with task identifier "
-            f"'{db_document.task.id}' and worker job identifier "
-            f"'{db_document.worker_id}'"
-        )
         db_connector = DbDocumentConnector(
             collection=self.db_client,
             worker_id=db_document.worker_id,
         )
-        payload = self._sanitize_request(payload=payload)
+        logger.info(
+            "Created task record with task identifier"
+            f" '{db_document.task.id}' and worker job identifier"
+            f" '{db_document.worker_id}'"
+        )
 
+        # validate request
+        payload = self._sanitize_request(payload=payload)
         try:
             payload_marshalled = tes.Task(**payload)
         except TypeError as exc:
             db_connector.update_task_state(state=TesState.SYSTEM_ERROR.value)
             raise BadRequest(
                 f"Task '{db_document.task.id}' could not be "
-                f"validate. Original error message: '{type(exc).__name__}: "
+                f"validated. Original error message: '{type(exc).__name__}: "
                 f"{exc}'"
             ) from exc
 
+        # relay request
+        logger.info(
+            "Attempting to forward the task request to any of the known TES"
+            f" instances, in the following order: {tes_urls}"
+        )
         for tes_url in tes_urls:
             db_document.tes_endpoint = TesEndpoint(host=tes_url)
             url: str = (
@@ -137,7 +143,7 @@ class TaskRuns:
                     password=db_document.basic_auth.password,
                 )
             except ValueError as exc:
-                logger.info(
+                logger.warning(
                     f"Task '{db_document.task.id}' could not "
                     f"be sent to TES endpoint hosted at: {url}. Invalid TES"
                     " endpoint URL. Original error message: "
@@ -191,20 +197,17 @@ class TaskRuns:
             try:
                 remote_task_id = cli.create_task(payload_marshalled)
             except requests.HTTPError as exc:
-                logger.info(
-                    f"Task '{db_document.task.id}' "
-                    "could not be sent to TES endpoint hosted "
-                    f"at: {url}. Task could not be created. Original "
-                    f"error message: '{type(exc).__name__}: "
-                    f"{exc}'"
+                logger.warning(
+                    f"Task '{db_document.task.id}' could not be sent to TES"
+                    f" endpoint hosted at: {url}. Original error message:"
+                    f" '{type(exc).__name__}: {exc}'"
                 )
                 continue
 
             logger.info(
-                f"Task '{remote_task_id}' "
-                "forwarded to TES endpoint "
-                f"hosted at: {url}. proTES task identifier: "
-                f"{db_document.task.id}."
+                f"Task '{db_document.task.id}' successfully forwarded to TES"
+                f" endpoint hosted at: {url}. Remote tak identifier:"
+                f" {remote_task_id}"
             )
             try:
                 task: Task = cli.get_task(remote_task_id)
@@ -246,7 +249,8 @@ class TaskRuns:
 
         db_connector.update_task_state(state=TesState.SYSTEM_ERROR.value)
         raise NoTesInstancesAvailable(
-            "No suitable TES instance found. Task state set to 'SYSTEM_ERROR'."
+            "Could not forward the task request to any TES instance. Task"
+            " state set to 'SYSTEM_ERROR'."
         )
 
     def list_tasks(self, **kwargs) -> dict:
@@ -284,7 +288,7 @@ class TaskRuns:
         )
         tasks_list = list(cursor)
 
-        logger.info(f"Tasks list: {tasks_list}")
+        logger.debug(f"Tasks list: {tasks_list}")
         if tasks_list:
             next_page_token = str(tasks_list[-1]["_id"])
         else:
@@ -562,10 +566,6 @@ class TaskRuns:
             root="tes_endpoint",
             **tes_endpoint_dict,
         )
-        logger.info(
-            f"TES endpoint: '{db_document.tes_endpoint.host}' "
-            "finally to database "
-        )
         # updating the end time in TesTask logs
         for logs in db_document.task.logs:
             logs.end_time = time_now
@@ -585,7 +585,7 @@ class TaskRuns:
             root="task",
             **db_document.dict()["task"],
         )
-        logger.info(f"Task '{db_document.task}' inserted to database ")
+        logger.debug(f"Task '{db_document.task}' inserted to database ")
         return db_document
 
     def _update_task_metadata(
