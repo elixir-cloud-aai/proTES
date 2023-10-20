@@ -2,7 +2,7 @@
 
 import os
 
-from foca.models.config import Config
+from foca.models.config import Config  # type: ignore
 
 from pro_tes.app import init_app
 
