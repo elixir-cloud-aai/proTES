@@ -62,7 +62,7 @@ api:
           - bearerAuth: []
       add_security_fields:
         x-bearerInfoFunc: foca.security.auth.validate_token
-      disable_auth: False
+      disable_auth: True
       connexion:
         strict_validation: True
         # current specs have inconsistency, therefore disabling response validation
