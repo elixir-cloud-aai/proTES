@@ -26,6 +26,15 @@ security:
       - userinfo
       - public_key
     validation_checks: any
+  access_control:
+    model: access_control/model.conf
+    api_specs: access_control/api/access-control-specs.yaml
+    api_controllers: access_control/controllers.py
+#   api_route: /admin/access-control/permissions
+    db_name: access_controls
+    collection_name: access_control
+    owner_headers: ['user_id']
+    user_headers: ['user_id']
 
 # Database configuration
 # Cf. https://foca.readthedocs.io/en/latest/modules/foca.models.html#foca.models.config.DBConfig
