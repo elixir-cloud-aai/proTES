@@ -1,4 +1,5 @@
 celery-types>=0.20.0
+connexion>=2.11.2,<3
 foca>=0.12.1
 geopy>=2.2.0
 gunicorn>=20.1.0,<21
