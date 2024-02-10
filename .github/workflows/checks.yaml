@@ -25,6 +25,8 @@ jobs:
         run: flake8 pro_tes/ setup.py
       - name: Lint with Pylint
         run: pylint pro_tes/ setup.py
+      - name: Type check with mypy
+        run: mypy pro_tes/
   test:
     name: Run tests
     runs-on: ubuntu-latest

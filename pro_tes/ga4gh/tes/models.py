@@ -300,7 +300,7 @@ class ServiceType(CustomBaseModel):
         ),
         example="org.ga4gh",
     )
-    artifact: str = Field(
+    artifact: Enum = Field(
         ...,
         description=(
             "Name of the API or GA4GH specification implemented.            "
@@ -349,7 +349,7 @@ class Service(CustomBaseModel):
         description="Name of this service. Should be human readable.",
         example="My project",
     )
-    type: ServiceType
+    type: Optional[ServiceType]
     description: Optional[str] = Field(
         None,
         description=(
@@ -601,6 +601,7 @@ class TesTask(CustomBaseModel):
         ),
         example={"WORKFLOW_ID": "cwl-01234", "PROJECT_GROUP": "alice-lab"},
     )
+
     logs: Optional[list[TesTaskLog]] = Field(
         None,
         description=(
@@ -708,8 +709,8 @@ class DbDocument(CustomBaseModel):
         tes_endpoint: External TES endpoint.
     """
 
-    task: TesTask = TesTask()
-    task_original: TesTask = TesTask(executors=[])
+    task: TesTask = TesTask()   # type: ignore
+    task_original: TesTask = TesTask(executors=[])  # type: ignore
     user_id: Optional[str] = None
     worker_id: str = ""
     basic_auth: BasicAuth = BasicAuth()
