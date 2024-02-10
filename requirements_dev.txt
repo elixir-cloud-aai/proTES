@@ -7,3 +7,5 @@ mypy>=0.990
 pylint>=2.15.5
 pytest>=7.2.0
 python-semantic-release>=7.32.2
+mypy>=1.8.0
+types-python-dateutil>=2.8.19.20240106
