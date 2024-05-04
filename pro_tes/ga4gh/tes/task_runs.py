@@ -16,6 +16,7 @@ from pymongo.errors import DuplicateKeyError, PyMongoError  # type: ignore
 import requests
 import tes  # type: ignore
 from tes.models import Task  # type: ignore
+from pro_tes.ga4gh.tes.models import Metadata
 
 from pro_tes.exceptions import (
     BadRequest,
@@ -369,15 +370,25 @@ class TaskRuns:
                 f"{db_document.tes_endpoint.base_path.strip('/')}"
             )
 
-            assert db_document.task.logs is not None
-            logs: list[TesTaskLog] = db_document.task.logs
+            _logs = db_document.task.logs
+            assert isinstance(
+                _logs,
+                (list, tuple)
+            ), "task logs is not indexable"
 
-            if (self.store_logs and logs and logs[0].metadata and
-                    logs[0].metadata.forwarded_to):
-                task_id = logs[0].metadata.forwarded_to.id
-                task_id = logs[0].metadata.forwarded_to.id
+            _metadata = _logs[0].metadata
+            assert isinstance(
+                _metadata,
+                Metadata
+            ), "task metadata is None"
+
+            if self.store_logs:
+                assert (
+                    _metadata.forwarded_to is not None
+                ), "link to next TES is None"
+                task_id = _metadata.forwarded_to.id
             else:
-                task_id = logs[0].metadata["remote_task_id"]    # type: ignore
+                task_id = _metadata["remote_task_id"]   # type: ignore
 
             logger.info(
                 "Trying to cancel task with task identifier"
