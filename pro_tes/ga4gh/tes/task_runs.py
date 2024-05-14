@@ -417,7 +417,7 @@ class TaskRuns:
             )
             document.worker_id = uuid()
             try:
-                self.db_client.insert(document.dict(exclude_none=True))
+                self.db_client.insert_one(document.dict(exclude_none=True))
             except DuplicateKeyError:
                 continue
             assert document is not None
