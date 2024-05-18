@@ -50,7 +50,7 @@ def task__track_task_progress(  # pylint: disable=too-many-arguments
         user: User-name for basic authentication.
         password: Password for basic authentication.
     """
-    foca_config: Config = current_app.config.foca
+    foca_config: Config = current_app.config.foca   # type: ignore
     controller_config: dict = foca_config.controllers["post_task"]
 
     # create database client
@@ -110,6 +110,8 @@ def task__track_task_progress(  # pylint: disable=too-many-arguments
 
     # updating task after task is finished
     document.task.state = task_converted.state
+    assert task_converted.logs is not None
+    assert document.task.logs is not None
     for index, logs in enumerate(task_converted.logs):
         document.task.logs[index].logs = logs.logs
         document.task.logs[index].outputs = logs.outputs

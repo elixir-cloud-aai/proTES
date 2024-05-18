@@ -24,7 +24,7 @@ class ServiceInfo:
     def __init__(self) -> None:
         """Construct class instance."""
         self.db_client: Collection = (
-            current_app.config.foca.db.dbs["taskStore"]
+            current_app.config.foca.db.dbs["taskStore"]  # type: ignore
             .collections["service_info"]
             .client
         )
@@ -65,7 +65,7 @@ class ServiceInfo:
 
         Set service info only if it does not yet exist.
         """
-        service_info_conf = current_app.config.foca.serviceInfo
+        service_info_conf = current_app.config.foca.serviceInfo  # type: ignore
         try:
             service_info_db = self.get_service_info()
         except NotFound:
