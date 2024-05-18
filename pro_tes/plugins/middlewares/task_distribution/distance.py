@@ -228,7 +228,7 @@ class TaskDistributionDistance(TaskDistributionBaseClass):
         ips: dict[AnyUrl, str] = {}
         for uri in args:
             try:
-                ips[uri] = gethostbyname(urlparse(strip_auth(uri)).netloc)
+                ips[uri] = gethostbyname(urlparse(strip_auth(str(uri))).netloc)
             except gaierror as exc:
                 raise MiddlewareException(
                     f"Could not determine IP address for URI: {uri}"

@@ -16,6 +16,7 @@ from pymongo.errors import DuplicateKeyError, PyMongoError  # type: ignore
 import requests
 import tes  # type: ignore
 from tes.models import Task  # type: ignore
+from pro_tes.ga4gh.tes.models import Metadata
 
 from pro_tes.exceptions import (
     BadRequest,
@@ -57,7 +58,7 @@ class TaskRuns:
 
     def __init__(self) -> None:
         """Construct object instance."""
-        self.foca_config: Config = current_app.config.foca
+        self.foca_config: Config = current_app.config.foca  # type: ignore
         self.db_client: Collection = (
             self.foca_config.db.dbs["taskStore"].collections["tasks"].client
         )
@@ -84,7 +85,9 @@ class TaskRuns:
 
         # apply middlewares
         mw_handler = MiddlewareHandler()
-        mw_handler.set_middlewares(paths=current_app.config.foca.middlewares)
+        mw_handler.set_middlewares(
+            paths=current_app.config.foca.middlewares   # type: ignore
+        )
         logger.debug(f"Middlewares registered: {mw_handler.middlewares}")
         request_modified = mw_handler.apply_middlewares(request=request)
 
@@ -276,7 +279,7 @@ class TaskRuns:
         view = kwargs.get("view", "BASIC")
         projection = self._set_projection(view=view)
 
-        name_prefix: str = kwargs.get("name_prefix")
+        name_prefix: str = str(kwargs.get("name_prefix"))
 
         if name_prefix is not None:
             filter_dict["task_original.name"] = {"$regex": f"^{name_prefix}"}
@@ -355,7 +358,7 @@ class TaskRuns:
         if document is None:
             logger.error(f"task '{id}' not found.")
             raise TaskNotFound
-        db_document = DbDocument(**document)
+        db_document: DbDocument = DbDocument(**document)
 
         if db_document.task.state in States.CANCELABLE:
             db_connector = DbDocumentConnector(
@@ -366,10 +369,27 @@ class TaskRuns:
                 f"{db_document.tes_endpoint.host.rstrip('/')}/"
                 f"{db_document.tes_endpoint.base_path.strip('/')}"
             )
+
+            _logs = db_document.task.logs
+            assert isinstance(
+                _logs,
+                (list, tuple)
+            ), "task logs is not indexable"
+
+            _metadata = _logs[0].metadata
+            assert isinstance(
+                _metadata,
+                Metadata
+            ), "task metadata is None"
+
             if self.store_logs:
-                task_id = db_document.task.logs[0].metadata.forwarded_to.id
+                assert (
+                    _metadata.forwarded_to is not None
+                ), "link to next TES is None"
+                task_id = _metadata.forwarded_to.id
             else:
-                task_id = db_document.task.logs[0].metadata["remote_task_id"]
+                task_id = _metadata["remote_task_id"]   # type: ignore
+
             logger.info(
                 "Trying to cancel task with task identifier"
                 f" '{task_id}' and worker job"
@@ -421,6 +441,7 @@ class TaskRuns:
             except DuplicateKeyError:
                 continue
             assert document is not None
+            assert document.task.id is not None
             return document.task.id, document.worker_id
         raise DuplicateKeyError("Could not insert document into database.")
 
@@ -603,10 +624,13 @@ class TaskRuns:
         Returns:
             The updated database document.
         """
-        for logs in db_document.task.logs:
+        assert db_document.task.logs is not None
+        logs: list[TesTaskLog] = db_document.task.logs
+        for log in logs:
+            assert log.metadata is not None
             tesNextTes_obj = TesNextTes(id=remote_task_id, url=tes_url)
-            if logs.metadata.forwarded_to is None:
-                logs.metadata.forwarded_to = tesNextTes_obj
+            if log.metadata.forwarded_to is None:
+                log.metadata.forwarded_to = tesNextTes_obj
         return db_document
 
     @staticmethod
