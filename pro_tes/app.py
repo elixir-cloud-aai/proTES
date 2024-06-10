@@ -2,8 +2,8 @@
 
 from pathlib import Path
 
-from connexion import FlaskApp
-from foca import Foca
+from connexion import FlaskApp  # type: ignore
+from foca import Foca  # type: ignore
 
 from pro_tes.ga4gh.tes.service_info import ServiceInfo
 

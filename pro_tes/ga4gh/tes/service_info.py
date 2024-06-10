@@ -1,11 +1,10 @@
 """Controller for the `/service-info route."""
 
 import logging
-from typing import Dict
 
-from bson.objectid import ObjectId
+from bson.objectid import ObjectId  # type: ignore
 from flask import current_app
-from pymongo.collection import Collection
+from pymongo.collection import Collection  # type: ignore
 
 from pro_tes.exceptions import NotFound
 
@@ -25,13 +24,13 @@ class ServiceInfo:
     def __init__(self) -> None:
         """Construct class instance."""
         self.db_client: Collection = (
-            current_app.config.foca.db.dbs["taskStore"]
+            current_app.config.foca.db.dbs["taskStore"]  # type: ignore
             .collections["service_info"]
             .client
         )
         self.object_id: str = "000000000000000000000000"
 
-    def get_service_info(self) -> Dict:
+    def get_service_info(self) -> dict:
         """Get latest service info from database.
 
         Returns:
@@ -48,7 +47,7 @@ class ServiceInfo:
             raise NotFound
         return service_info
 
-    def set_service_info(self, data: Dict) -> None:
+    def set_service_info(self, data: dict) -> None:
         """Create or update service info.
 
         Arguments:
@@ -66,7 +65,7 @@ class ServiceInfo:
 
         Set service info only if it does not yet exist.
         """
-        service_info_conf = current_app.config.foca.serviceInfo
+        service_info_conf = current_app.config.foca.serviceInfo  # type: ignore
         try:
             service_info_db = self.get_service_info()
         except NotFound:

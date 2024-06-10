@@ -55,8 +55,11 @@ api:
     - path:
         - api/9e9c5aa.task_execution_service.openapi.yaml
         - api/additional_logs.yaml
+        - api/security_schemes.yaml
       add_operation_fields:
         x-openapi-router-controller: ga4gh.tes.server
+        security:
+          - bearerAuth: []
       add_security_fields:
         x-bearerInfoFunc: foca.security.auth.validate_token
       disable_auth: True
@@ -118,7 +121,7 @@ controllers:
       wait: 3
       attempts: 100
   list_tasks:
-    default_page_size: 256
+    default_page_size: 5
   celery:
     monitor:
       timeout: 0.1
@@ -140,3 +143,7 @@ tes:
 
 storeLogs:
   execution_trace: True
+
+middlewares:
+  - - "pro_tes.plugins.middlewares.task_distribution.distance.TaskDistributionDistance"
+    - "pro_tes.plugins.middlewares.task_distribution.random.TaskDistributionRandom"
