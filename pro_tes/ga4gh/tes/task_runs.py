@@ -272,16 +272,19 @@ class TaskRuns:
         )
         page_token = kwargs.get("page_token")
         filter_dict = {}
-        filter_dict["user_id"] = kwargs.get("user_id")
+
+        user_id = kwargs.get("user_id")
+        if user_id is not None:
+            filter_dict["user_id"] = user_id
 
         if page_token is not None:
             filter_dict["_id"] = {"$lt": ObjectId(page_token)}
         view = kwargs.get("view", "BASIC")
         projection = self._set_projection(view=view)
 
-        name_prefix: str = str(kwargs.get("name_prefix"))
-
+        name_prefix = kwargs.get("name_prefix")
         if name_prefix is not None:
+            name_prefix: str = str(name_prefix)
             filter_dict["task_original.name"] = {"$regex": f"^{name_prefix}"}
 
         cursor = (
