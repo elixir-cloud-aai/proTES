@@ -284,7 +284,6 @@ class TaskRuns:
 
         name_prefix = kwargs.get("name_prefix")
         if name_prefix is not None:
-            name_prefix: str = str(name_prefix)
             filter_dict["task_original.name"] = {"$regex": f"^{name_prefix}"}
 
         cursor = (
