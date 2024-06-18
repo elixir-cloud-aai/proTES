@@ -3,11 +3,11 @@
 DB = "taskStore"
 
 INDEX_CONFIG_TASKS = {
-    'keys': [('task_id', 1), ('worker_id', 1)]
+    'keys': {'task_id': 1, 'worker_id': 1}
 }
 
 INDEX_CONFIG_SERVICE_INFO = {
-    'keys': [('id', 1)]
+    'keys': {'id': 1}
 }
 
 COLLECTION_CONFIG_TASKS = {
@@ -88,6 +88,14 @@ MONGO_CONFIG = {
 STORE_LOGS_CONFIG = {
     "execution_trace": True
 }
+
+
+MIDDLEWARE_CONFIG = [
+    [
+        "pro_tes.plugins.middlewares.task_distribution.distance.TaskDistributionDistance",
+        "pro_tes.plugins.middlewares.task_distribution.random.TaskDistributionRandom"
+    ]
+]
 
 MOCK_HEADERS = {
     'Accept': 'application/json',
@@ -227,6 +235,88 @@ MOCK_TASK_FULL2 = {
     },
 }
 
+MOCK_TASK_FULL4 = {
+  "tasks":
+    {
+      "creation_time": None,
+      "description": "sample task",
+      "executors": [
+        {
+          "command": [
+            "echo",
+            "hello"
+          ],
+          "env": None,
+          "image": "alpine",
+          "stderr": None,
+          "stdin": None,
+          "stdout": None,
+          "workdir": None
+        }
+      ],
+      "id": "2BFZ1H",
+      "inputs": [
+        {
+          "content": None,
+          "description": "cwl_input:input",
+          "name": "input",
+          "path": "/var/lib/cwl/stgc957b135-7bd5-4249-9c37-265363c1e699/test.txt",
+          "type": "FILE",
+          "url": "ftp://vm4466.kaj.pouta.csc.fi/upload/foivos/test.txt"
+        },
+        {
+          "content": None,
+          "description": "cwl_input:input",
+          "name": "input",
+          "path": "/var/lib/cwl/stgc957b135-7bd5-4249-9c37-265363c1e699/test.txt",
+          "type": "FILE",
+          "url": "ftp://vm4466.kaj.pouta.csc.fi/upload/foivos/test.txt"
+        },
+        {
+          "content": None,
+          "description": "cwl_input:input",
+          "name": "input",
+          "path": "/var/lib/cwl/stgc957b135-7bd5-4249-9c37-265363c1e699/test.txt",
+          "type": "FILE",
+          "url": "ftp://vm4466.kaj.pouta.csc.fi/upload/foivos/test.txt"
+        }
+      ],
+      "logs": [
+        {
+          "end_time": "06-15-2024 08:27:27",
+          "logs": [
+            {
+              "end_time": "2024-06-15T08:27:38+00:00",
+              "exit_code": 0,
+              "start_time": "2024-06-15T08:27:31+00:00",
+              "stderr": None,
+              "stdout": ""
+            }
+          ],
+          "metadata": {
+            "forwarded_to": {
+              "forwarded_to": None,
+              "id": "task-e04bf689",
+              "url": "https://csc-tesk-noauth.rahtiapp.fi"
+            }
+          },
+          "outputs": [],
+          "start_time": "06-15-2024 08:27:05",
+          "system_logs": []
+        }
+      ],
+      "name": None,
+      "outputs": None,
+      "resources": None,
+      "state": "COMPLETE",
+      "tags": {
+        "PROJECT_GROUP": "alice-lab",
+        "WORKFLOW_ID": "cwl-01234"
+      },
+      "volumes": None
+    }
+}
+
 MOCK_TASK_CANCEL = {
     "worker_id": "a0604c66-acb4-4674-ae1b-db585826241c",
     "task": {
@@ -269,3 +359,5 @@ MOCK_TASKS_FULL_LIST = [
     MOCK_TASK_FULL1,
     MOCK_TASK_FULL2
 ]
+
+
