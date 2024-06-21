@@ -112,7 +112,7 @@ class TesExecutor(CustomBaseModel):
         examples=[{"BLASTDB": "/data/GRC38", "HMMERDB": "/data/hmmer"}],
     )
     ignore_error: Optional[bool] = Field(
-        None,
+        default=None,
         description=(
             "Default behavior of running an array of executors is that execution stops"
             " on the first error. If `ignore_error` is `True`, then the runner will"
@@ -291,6 +291,33 @@ class TesResources(CustomBaseModel):
             " assigned."
         ),
         examples=["us-west-1"],
+    )
+    backend_parameters: Optional[dict[str, str]] = Field(
+        default=None,
+        description=(
+            "Key/value pairs for backend configuration.ServiceInfo shall return a"
+            " list of keys that a backend supports. Keys are case insensitive.It is"
+            " expected that clients pass all runtime or hardware requirement"
+            " key/values that are not mapped to existing tesResources properties to"
+            " backend_parameters. Backends shall log system warnings if a key is"
+            " passed that is unsupported. Backends shall not store or return"
+            " unsupported keys if included in a task. If backend_parameters_strict"
+            " equals true, backends should fail the task if any key/values are"
+            " unsupported, otherwise, backends should attempt to run the"
+            " task Intended uses include VM size selection, coprocessor configuration,"
+            ' etc. \nExample: ```\n{\n  "backend_parameters" : {\n    "VmSize" :'
+            ' "Standard_D64_v3"\n  }\n}\n```'
+        ),
+        example={"VmSize": "Standard_D64_v3"},
+    )
+    backend_parameters_strict: Optional[bool] = Field(
+        default=False,
+        description=(
+            "If set to true, backends should fail the task if any"
+            " backend_parameters key/values are unsupported, otherwise, backends"
+            " should attempt to run the task"
+        ),
+        example=False,
     )
 
 
