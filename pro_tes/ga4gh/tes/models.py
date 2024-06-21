@@ -199,6 +199,19 @@ class TesInput(CustomBaseModel):
             ' "url"             must be ignored.'
         ),
     )
+    streamable: Optional[bool] = Field(
+        default=None,
+        description=(
+            "Indicate that a file resource could be accessed using a"
+            " streaming interface, ie a FUSE mounted s3 object. This flag indicates"
+            " that using a streaming mount, as opposed to downloading the whole file"
+            " to the local scratch space, may be faster despite the latency"
+            " and overhead. This does not mean that the backend will use a"
+            " streaming interface, as it may not be provided by the vendor, but if"
+            " the capacity is avalible it can be used without degrading"
+            " the performance of the underlying program."
+        ),
+    )
 
 
 class TesOutput(CustomBaseModel):
