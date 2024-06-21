@@ -111,6 +111,14 @@ class TesExecutor(CustomBaseModel):
         ),
         examples=[{"BLASTDB": "/data/GRC38", "HMMERDB": "/data/hmmer"}],
     )
+    ignore_error: Optional[bool] = Field(
+        None,
+        description=(
+            "Default behavior of running an array of executors is that execution stops"
+            " on the first error. If `ignore_error` is `True`, then the runner will"
+            " record error exit codes, but will continue on to the next tesExecutor."
+        ),
+    )
 
 
 class TesExecutorLog(CustomBaseModel):
