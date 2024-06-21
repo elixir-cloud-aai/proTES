@@ -189,7 +189,7 @@ class TesInput(CustomBaseModel):
         ),
         examples=["/data/file1"],
     )
-    type: TesFileType
+    type: Optional[TesFileType] = "FILE"
     content: Optional[str] = Field(
         default=None,
         description=(
@@ -228,7 +228,7 @@ class TesOutput(CustomBaseModel):
             " absolute path."
         ),
     )
-    type: TesFileType
+    type: Optional[TesFileType] = "FILE"
 
 
 class TesOutputFileLog(CustomBaseModel):
