@@ -469,6 +469,8 @@ class TesState(Enum):
     EXECUTOR_ERROR = "EXECUTOR_ERROR"
     SYSTEM_ERROR = "SYSTEM_ERROR"
     CANCELED = "CANCELED"
+    PREEMPTED = "PREEMPTED"
+    CANCELING = "CANCELING"
 
 
 class TesNextTes(CustomBaseModel):
