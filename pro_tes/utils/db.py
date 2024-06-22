@@ -23,17 +23,17 @@ class DbDocumentConnector:
     """
 
     def __init__(
-        self,
-        collection: Collection,
-        worker_id: str,
+            self,
+            collection: Collection,  # type: ignore
+            worker_id: str,
     ) -> None:
         """Construct object instance."""
-        self.collection: Collection = collection
+        self.collection: Collection = collection  # type: ignore
         self.worker_id: str = worker_id
 
     def get_document(
-        self,
-        projection: Optional[Mapping] = None,
+            self,
+            projection: Optional[Mapping] = None,
     ) -> DbDocument:
         """Get document associated with task.
 
@@ -51,7 +51,7 @@ class DbDocumentConnector:
         """
         if projection is None:
             projection = {"_id": False}
-        document_unvalidated = self.collection.find_one(
+        document_unvalidated = self.collection.find_one(  # type: ignore
             filter={"worker_id": self.worker_id},
             projection=projection,
         )
@@ -65,8 +65,8 @@ class DbDocumentConnector:
         return document
 
     def update_task_state(
-        self,
-        state: str = "UNKNOWN",
+            self,
+            state: str = "UNKNOWN",
     ) -> None:
         """Update task status.
 
@@ -80,17 +80,17 @@ class DbDocumentConnector:
             TesState(state)
         except Exception as exc:
             raise ValueError(f"Unknown state: {state}") from exc
-        self.collection.find_one_and_update(
+        self.collection.find_one_and_update(  # type: ignore
             {"worker_id": self.worker_id},
             {"$set": {"task.state": state}},
         )
         logger.info(f"[{self.worker_id}] {state}")
 
     def upsert_fields_in_root_object(
-        self,
-        root: str,
-        projection: Optional[Mapping] = None,
-        **kwargs: object,
+            self,
+            root: str,
+            projection: Optional[Mapping] = None,
+            **kwargs: object,
     ) -> DbDocument:
         """Insert or update fields in(to) the same root (object) field.
 
@@ -106,17 +106,18 @@ class DbDocumentConnector:
         """
         if projection is None:
             projection = {"_id": False}
-        document_unvalidated = self.collection.find_one_and_update(
-            {"worker_id": self.worker_id},
-            {
-                "$set": {
-                    ".".join([root, key]): value
-                    for (key, value) in kwargs.items()
-                }
-            },
-            projection=projection,
-            return_document=ReturnDocument.AFTER,
-        )
+        document_unvalidated = (
+            self.collection.find_one_and_update(    # type: ignore
+                {"worker_id": self.worker_id},
+                {
+                    "$set": {
+                        ".".join([root, key]): value
+                        for (key, value) in kwargs.items()
+                    }
+                },
+                projection=projection,
+                return_document=ReturnDocument.AFTER,
+            ))
         try:
             document: DbDocument = DbDocument(**document_unvalidated)
         except Exception as exc:
