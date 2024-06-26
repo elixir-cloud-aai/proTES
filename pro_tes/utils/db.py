@@ -2,9 +2,7 @@
 
 import logging
 from typing import Mapping, Optional
-from pymongo.collection import ReturnDocument  # type: ignore
-from pymongo import collection as Collection  # type: ignore
-
+from pymongo.collection import ReturnDocument, Collection
 from pro_tes.ga4gh.tes.models import DbDocument, TesState
 
 logger = logging.getLogger(__name__)
@@ -23,17 +21,17 @@ class DbDocumentConnector:
     """
 
     def __init__(
-            self,
-            collection: Collection,  # type: ignore
-            worker_id: str,
+        self,
+        collection: Collection,
+        worker_id: str,
     ) -> None:
         """Construct object instance."""
-        self.collection: Collection = collection  # type: ignore
+        self.collection: Collection = collection
         self.worker_id: str = worker_id
 
     def get_document(
-            self,
-            projection: Optional[Mapping] = None,
+        self,
+        projection: Optional[Mapping] = None,
     ) -> DbDocument:
         """Get document associated with task.
 
@@ -51,12 +49,12 @@ class DbDocumentConnector:
         """
         if projection is None:
             projection = {"_id": False}
-        document_unvalidated = self.collection.find_one(  # type: ignore
+        document_unvalidated = self.collection.find_one(
             filter={"worker_id": self.worker_id},
             projection=projection,
         )
         try:
-            document: DbDocument = DbDocument(**document_unvalidated)
+            document: DbDocument = DbDocument(**(document_unvalidated or {}))
         except Exception as exc:
             raise ValueError(
                 "Database document does not conform to schema: "
@@ -65,8 +63,8 @@ class DbDocumentConnector:
         return document
 
     def update_task_state(
-            self,
-            state: str = "UNKNOWN",
+        self,
+        state: str = "UNKNOWN",
     ) -> None:
         """Update task status.
 
@@ -80,17 +78,17 @@ class DbDocumentConnector:
             TesState(state)
         except Exception as exc:
             raise ValueError(f"Unknown state: {state}") from exc
-        self.collection.find_one_and_update(  # type: ignore
+        self.collection.find_one_and_update(
             {"worker_id": self.worker_id},
             {"$set": {"task.state": state}},
         )
         logger.info(f"[{self.worker_id}] {state}")
 
     def upsert_fields_in_root_object(
-            self,
-            root: str,
-            projection: Optional[Mapping] = None,
-            **kwargs: object,
+        self,
+        root: str,
+        projection: Optional[Mapping] = None,
+        **kwargs: object,
     ) -> DbDocument:
         """Insert or update fields in(to) the same root (object) field.
 
@@ -107,7 +105,7 @@ class DbDocumentConnector:
         if projection is None:
             projection = {"_id": False}
         document_unvalidated = (
-            self.collection.find_one_and_update(    # type: ignore
+            self.collection.find_one_and_update(
                 {"worker_id": self.worker_id},
                 {
                     "$set": {
