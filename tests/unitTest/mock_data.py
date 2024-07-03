@@ -72,8 +72,11 @@ SERVICE_INFO_CONFIG = {
 
 TES_CONFIG = {
     "service_list": [
-        "https://tesk-eu.hypatia-comp.athenarc.gr/",
-        "https://csc-tesk-noauth.rahtiapp.fi"
+        "https://csc-tesk-noauth.rahtiapp.fi",
+        "https://funnel.cloud.e-infra.cz/",
+        "https://tesk-eu.hypatia-comp.athenarc.gr",
+        "https://tesk-na.cloud.e-infra.cz",
+        "https://vm4816.kaj.pouta.csc.fi/"
     ]
 }
 
@@ -359,5 +362,3 @@ MOCK_TASKS_FULL_LIST = [
     MOCK_TASK_FULL1,
     MOCK_TASK_FULL2
 ]
-
-

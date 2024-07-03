@@ -1,9 +1,8 @@
-import unittest
-from copy import deepcopy
 import mongomock
+import unittest
+
 from flask import Flask
-from foca.models.config import (Config, MongoConfig)
-from unittest.mock import patch
+from foca.models.config import Config, MongoConfig
 
 from pro_tes.ga4gh.tes.server import (
     ListTasks,
