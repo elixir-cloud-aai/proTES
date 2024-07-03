@@ -104,18 +104,19 @@ class DbDocumentConnector:
         """
         if projection is None:
             projection = {"_id": False}
-        document_unvalidated = (
-            self.collection.find_one_and_update(
-                {"worker_id": self.worker_id},
-                {
-                    "$set": {
-                        ".".join([root, key]): value
-                        for (key, value) in kwargs.items()
-                    }
-                },
-                projection=projection,
-                return_document=ReturnDocument.AFTER,
-            ))
+        document_unvalidated = self.collection.find_one_and_update(
+            {
+                "worker_id": self.worker_id
+            },
+            {
+                "$set": {
+                    ".".join([root, key]): value for (key, value) in
+                    kwargs.items()
+                }
+            },
+            projection=projection,
+            return_document=ReturnDocument.AFTER,
+        )
         try:
             document: DbDocument = DbDocument(**document_unvalidated)
         except Exception as exc:
