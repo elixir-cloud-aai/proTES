@@ -105,9 +105,7 @@ class DbDocumentConnector:
         if projection is None:
             projection = {"_id": False}
         document_unvalidated = self.collection.find_one_and_update(
-            {
-                "worker_id": self.worker_id
-            },
+            {"worker_id": self.worker_id},
             {
                 "$set": {
                     ".".join([root, key]): value for (key, value) in
