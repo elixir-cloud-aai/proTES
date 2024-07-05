@@ -347,6 +347,121 @@ MOCK_TASK_CANCEL = {
     }
 }
 
+MOCK_REQUEST = {
+    "description": "sample task",
+    "tags": {"WORKFLOW_ID": "cwl-01234", "PROJECT_GROUP": "alice-lab"},
+    "inputs": [
+        {
+            "name": "input",
+            "description": "cwl_input:input",
+            "url": "ftp://vm4466.kaj.pouta.csc.fi/upload/foivos/test.txt",
+            "path": "/var/lib/cwl/stgc957b135-7bd5-4249-9c37-265363c1e699/test.txt",
+            "type": "FILE",
+        },
+        {
+            "name": "input",
+            "description": "cwl_input:input",
+            "url": "ftp://vm4466.kaj.pouta.csc.fi/upload/foivos/test.txt",
+            "path": "/var/lib/cwl/stgc957b135-7bd5-4249-9c37-265363c1e699/test.txt",
+            "type": "FILE",
+        },
+        {
+            "name": "input",
+            "description": "cwl_input:input",
+            "url": "ftp://vm4466.kaj.pouta.csc.fi/upload/foivos/test.txt",
+            "path": "/var/lib/cwl/stgc957b135-7bd5-4249-9c37-265363c1e699/test.txt",
+            "type": "FILE",
+        },
+    ],
+    "executors": [{"image": "alpine", "command": ["echo", "hello"]}],
+}
+
+MOCK_REQUEST_JSON = {
+    "description": "sample task",
+    "executors": [{"command": ["echo", "hello"], "image": "alpine"}],
+    "inputs": [
+        {
+            "description": "cwl_input:input",
+            "name": "input",
+            "path": "/var/lib/cwl/stgc957b135-7bd5-4249-9c37-265363c1e699/test.txt",
+            "type": "FILE",
+            "url": "ftp://vm4466.kaj.pouta.csc.fi/upload/foivos/test.txt",
+        },
+        {
+            "description": "cwl_input:input",
+            "name": "input",
+            "path": "/var/lib/cwl/stgc957b135-7bd5-4249-9c37-265363c1e699/test.txt",
+            "type": "FILE",
+            "url": "ftp://vm4466.kaj.pouta.csc.fi/upload/foivos/test.txt",
+        },
+        {
+            "description": "cwl_input:input",
+            "name": "input",
+            "path": "/var/lib/cwl/stgc957b135-7bd5-4249-9c37-265363c1e699/test.txt",
+            "type": "FILE",
+            "url": "ftp://vm4466.kaj.pouta.csc.fi/upload/foivos/test.txt",
+        },
+    ],
+    "tags": {"PROJECT_GROUP": "alice-lab", "WORKFLOW_ID": "cwl-01234"},
+    "tes_urls": [
+        "https://vm4816.kaj.pouta.csc.fi/",
+        "https://csc-tesk-noauth.rahtiapp.fi",
+        "https://funnel.cloud.e-infra.cz/",
+        "https://tesk-na.cloud.e-infra.cz",
+        "https://tesk-eu.hypatia-comp.athenarc.gr",
+    ],
+}
+
+MOCK_TES_URL = [
+    "https://csc-tesk-noauth.rahtiapp.fi",
+    "https://funnel.cloud.e-infra.cz/",
+    "https://tesk-eu.hypatia-comp.athenarc.gr",
+    "https://tesk-na.cloud.e-infra.cz",
+    "https://vm4816.kaj.pouta.csc.fi/",
+]
+
+MOCK_RANKED_TES_LIST = [
+        "https://vm4816.kaj.pouta.csc.fi/",
+        "https://csc-tesk-noauth.rahtiapp.fi",
+        "https://funnel.cloud.e-infra.cz/",
+        "https://tesk-na.cloud.e-infra.cz",
+        "https://tesk-eu.hypatia-comp.athenarc.gr",
+    ]
+
+MOCK_DATA_NO_INPUT = {
+    "description": "sample task",
+    "executors": [{"command": ["echo", "hello"], "image": "alpine"}],
+}
+
+MOCK_INVALID_INPUT = {
+    "description": "sample task",
+    "tags": {"WORKFLOW_ID": "cwl-01234", "PROJECT_GROUP": "alice-lab"},
+    "inputs": [
+        {
+            "name": "input",
+            "description": "cwl_input:input",
+            "url": "ftp://upload/foivos/test.txt",
+            "path": "/var/lib/cwl/stgc957b135-7bd5-4249-9c37-265363c1e699/test.txt",
+            "type": "FILE",
+        },
+        {
+            "name": "input",
+            "description": "cwl_input:input",
+            "url": "ftp://upload/foivos/test.txt",
+            "path": "/var/lib/cwl/stgc957b135-7bd5-4249-9c37-265363c1e699/test.txt",
+            "type": "FILE",
+        },
+        {
+            "name": "input",
+            "description": "cwl_input:input",
+            "url": "ftp://upload/foivos/test.txt",
+            "path": "/var/lib/cwl/stgc957b135-7bd5-4249-9c37-265363c1e699/test.txt",
+            "type": "FILE",
+        },
+    ],
+    "executors": [{"image": "alpine", "command": ["echo", "hello"]}],
+}
+
 MOCK_TASKS_MINIMAL_LIST = [
     MOCK_TASK_MINIMAL1,
     MOCK_TASK_MINIMAL2,
