@@ -189,7 +189,7 @@ class TesInput(CustomBaseModel):
         ),
         examples=["/data/file1"],
     )
-    type: Optional[TesFileType] = "FILE"
+    type: Optional[TesFileType] = TesFileType.FILE
     content: Optional[str] = Field(
         default=None,
         description=(
