@@ -114,9 +114,10 @@ class TesExecutor(CustomBaseModel):
     ignore_error: Optional[bool] = Field(
         default=None,
         description=(
-            "Default behavior of running an array of executors is that execution stops"
-            " on the first error. If `ignore_error` is `True`, then the runner will"
-            " record error exit codes, but will continue on to the next tesExecutor."
+            "Default behavior of running an array of executors is that "
+            "execution stopson the first error. If `ignore_error` is `True`, "
+            "then the runner will record error exit codes, but will continue "
+            "on to the next tesExecutor."
         ),
     )
 
@@ -203,13 +204,14 @@ class TesInput(CustomBaseModel):
         default=None,
         description=(
             "Indicate that a file resource could be accessed using a"
-            " streaming interface, ie a FUSE mounted s3 object. This flag indicates"
-            " that using a streaming mount, as opposed to downloading the whole file"
-            " to the local scratch space, may be faster despite the latency"
-            " and overhead. This does not mean that the backend will use a"
-            " streaming interface, as it may not be provided by the vendor, but if"
-            " the capacity is avalible it can be used without degrading"
-            " the performance of the underlying program."
+            " streaming interface, ie a FUSE mounted s3 object. This flag"
+            " indicates that using a streaming mount, as opposed to "
+            "downloading the whole file to the local scratch space, may be "
+            "faster despite the latency and overhead. This does not mean that"
+            " the backend will use a streaming interface, as it may not be "
+            "provided by the vendor, but if the capacity is avalible it can "
+            " be used without degrading the performance of the underlying"
+            " program."
         ),
     )
 
@@ -308,18 +310,19 @@ class TesResources(CustomBaseModel):
     backend_parameters: Optional[dict[str, str]] = Field(
         default=None,
         description=(
-            "Key/value pairs for backend configuration.ServiceInfo shall return a"
-            " list of keys that a backend supports. Keys are case insensitive.It is"
-            " expected that clients pass all runtime or hardware requirement"
-            " key/values that are not mapped to existing tesResources properties to"
-            " backend_parameters. Backends shall log system warnings if a key is"
-            " passed that is unsupported. Backends shall not store or return"
-            " unsupported keys if included in a task. If backend_parameters_strict"
-            " equals true, backends should fail the task if any key/values are"
-            " unsupported, otherwise, backends should attempt to run the"
-            " task Intended uses include VM size selection, coprocessor configuration,"
-            ' etc. \nExample: ```\n{\n  "backend_parameters" : {\n    "VmSize" :'
-            ' "Standard_D64_v3"\n  }\n}\n```'
+            "Key/value pairs for backend configuration.ServiceInfo shall "
+            "return a list of keys that a backend supports. Keys are case "
+            "insensitive. It is expected that clients pass all runtime or "
+            "hardware requirement key/values that are not mapped to existing"
+            " tesResources properties to backend_parameters. Backends shall"
+            " log system warnings if a key is passed that is unsupported. "
+            "Backends shall not store or return unsupported keys if included "
+            "in a task. If backend_parameters_strict equals true, backends "
+            "should fail the task if any key/values are unsupported, "
+            " otherwise, backends should attempt to run the task Intended "
+            "uses include VM size selection, coprocessor configuration,"
+            ' etc. \nExample: ```\n{\n  "backend_parameters" : {\n    '
+            '"VmSize" :"Standard_D64_v3"\n  }\n}\n```'
         ),
         example={"VmSize": "Standard_D64_v3"},
     )
@@ -327,8 +330,8 @@ class TesResources(CustomBaseModel):
         default=False,
         description=(
             "If set to true, backends should fail the task if any"
-            " backend_parameters key/values are unsupported, otherwise, backends"
-            " should attempt to run the task"
+            " backend_parameters key/values are unsupported, otherwise, "
+            "backends should attempt to run the task"
         ),
         example=False,
     )
