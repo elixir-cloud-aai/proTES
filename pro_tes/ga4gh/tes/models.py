@@ -243,7 +243,7 @@ class TesOutput(CustomBaseModel):
             " absolute path."
         ),
     )
-    type: Optional[TesFileType] = "FILE"
+    type: Optional[TesFileType] = TesFileType.FILE
 
 
 class TesOutputFileLog(CustomBaseModel):
@@ -324,7 +324,7 @@ class TesResources(CustomBaseModel):
             ' etc. \nExample: ```\n{\n  "backend_parameters" : {\n    '
             '"VmSize" :"Standard_D64_v3"\n  }\n}\n```'
         ),
-        example={"VmSize": "Standard_D64_v3"},
+        examples=[{"VmSize": "Standard_D64_v3"}],
     )
     backend_parameters_strict: Optional[bool] = Field(
         default=False,
@@ -333,7 +333,7 @@ class TesResources(CustomBaseModel):
             " backend_parameters key/values are unsupported, otherwise, "
             "backends should attempt to run the task"
         ),
-        example=False,
+        examples=[False],
     )
 
 
