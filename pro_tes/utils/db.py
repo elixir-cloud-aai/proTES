@@ -2,9 +2,7 @@
 
 import logging
 from typing import Mapping, Optional
-from pymongo.collection import ReturnDocument  # type: ignore
-from pymongo import collection as Collection  # type: ignore
-
+from pymongo.collection import ReturnDocument, Collection
 from pro_tes.ga4gh.tes.models import DbDocument, TesState
 
 logger = logging.getLogger(__name__)
@@ -56,7 +54,7 @@ class DbDocumentConnector:
             projection=projection,
         )
         try:
-            document: DbDocument = DbDocument(**document_unvalidated)
+            document: DbDocument = DbDocument(**(document_unvalidated or {}))
         except Exception as exc:
             raise ValueError(
                 "Database document does not conform to schema: "
@@ -110,8 +108,8 @@ class DbDocumentConnector:
             {"worker_id": self.worker_id},
             {
                 "$set": {
-                    ".".join([root, key]): value
-                    for (key, value) in kwargs.items()
+                    ".".join([root, key]): value for (key, value) in
+                    kwargs.items()
                 }
             },
             projection=projection,
