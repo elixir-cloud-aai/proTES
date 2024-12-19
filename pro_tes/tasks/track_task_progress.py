@@ -20,14 +20,17 @@ logger = logging.getLogger(__name__)
 
 # pylint: disable-msg=too-many-locals
 # pylint: disable=unsubscriptable-object
+# pylint: disable=too-many-arguments
+# pylint: disable=too-many-positional-arguments
+# pylint: disable=unused-argument
 @celery.task(
     name="tasks.track_run_progress",
     bind=True,
     ignore_result=True,
     track_started=True,
 )
-def task__track_task_progress(  # pylint: disable=too-many-arguments
-    self,  # pylint: disable=unused-argument
+def task__track_task_progress(
+    self,
     worker_id: str,
     remote_host: str,
     remote_base_path: str,
