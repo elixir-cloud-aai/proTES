@@ -17,7 +17,7 @@ threads = int(os.environ.get("GUNICORN_THREADS", "1"))
 forwarded_allow_ips = "*"  # pylint: disable=invalid-name
 
 # Set Gunicorn bind address
-bind = f"{app_config.server.host}:{app_config.server.port}"
+bind = f"{app_config.server.host}:{app_config.server.port}"  # pylint: disable=C0103
 
 # Source environment variables for Gunicorn workers
 raw_env = [
