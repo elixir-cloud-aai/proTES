@@ -49,7 +49,12 @@ jobs:
       - name: Deploy app
         run: docker-compose up -d --build
       - name: Wait for app startup
-        run: sleep 20
+        run: |
+          for i in $(seq 1 24); do
+            sleep 5; curl localhost:8080 -so /dev/null && return;
+            docker-compose ps;
+            echo "Retrying ($i) in 5 seconds...";
+          done
       - name: Run integration tests
         shell: bash
         run: pytest tests/test_integration
