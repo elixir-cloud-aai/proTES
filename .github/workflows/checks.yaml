@@ -17,6 +17,8 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: "3.10"
+      - name: Pin pip version
+        run: python -m pip install --upgrade "pip<24.1"
       - name: Install requirements
         run: |
           pip install .
@@ -40,12 +42,14 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: "3.10"
+      - name: Pin pip version
+        run: python -m pip install --upgrade "pip<24.1"
       - name: Install requirements
         run: |
           pip install .
           pip install -r requirements_dev.txt
       - name: Deploy app
-        run: docker-compose up -d --build
+        run: docker compose up -d --build
       - name: Wait for app startup
         run: sleep 20
       - name: Run integration tests

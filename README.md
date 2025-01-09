@@ -17,7 +17,7 @@ environments composed of GA4GH TES nodes.
 
 proTES gateway may serve as a crucial component in federated compute networks
 based on the GA4GH Cloud ecosystem. Its primary purpose is to provide
-centralized features to a federated network of independently operated  GA4GH TES 
+centralized features to a federated network of independently operated  GA4GH TES
 instances. As such, it can serve, for example, as a compatibility layer, a load
 balancer workload distribution layer, a public entry point to an enclave of
 independent compute nodes, or a means of collecting telemetry.
@@ -38,9 +38,9 @@ proof-of-concept examples for different task distribution scenarios:
   evenly (actually: randomly!) distributes workloads across a network of TES
   endpoints
 * **Bringing compute to the data**: The
-  `pro_tes.middleware.task_distribution.distance` plugin selects TES endpoints 
+  `pro_tes.middleware.task_distribution.distance` plugin selects TES endpoints
   to relay incoming requests to in such a way that the distance the (input) data
-  of a task has to travel across the network of TES endpoints is minimized. 
+  of a task has to travel across the network of TES endpoints is minimized.
 
 ### Implementation notes
 
@@ -76,7 +76,7 @@ Ensure you have the following software installed:
 
 ### Prerequisites
 
-Create data directory and required subdiretories
+Create data directory and required subdirectories
 
 ```bash
 export PROTES_DATA_DIR=/path/to/data/directory
@@ -135,7 +135,7 @@ interactions with the community.
 
 ## Versioning
 
-The project adopts the [semantic versioning][semver] scheme for versioning.
+The project adopts the [semantic versioning][res-sem-ver] scheme for versioning.
 Currently the service is in beta stage, so the API may change and even break
 without further notice. However, once we deem the service stable and "feature
 complete", the major, minor and patch version will shadow the supported TES
@@ -174,22 +174,19 @@ thread in our [Q&A forum][contact-qa], or send us an [email][contact-email].
 [docs-contributing]: <https://elixir-cloud-aai.github.io/guides/guide-contributor/>
 [docs-deploy]: deployment/README.md
 [docs-license]: LICENSE
-[GA4GH TES OpenAPI specification]:<https://github.com/ga4gh/task-execution-schemas>
 [image-protes-overview]: <images/overview.svg>
 [res-celery]: <http://www.celeryproject.org/>
-[res-connexion]: <https://github.com/zalando/connexion>
 [res-docker]: <https://www.docker.com/>
 [res-docker-compose]: <https://docs.docker.com/compose/>
 [res-elixir-cloud-aai]: <https://elixir-cloud.dcc.sib.swiss/>
 [res-flask]: <http://flask.pocoo.org/>
 [res-foca]: <https://github.com/elixir-cloud-aai/foca>
 [res-ga4gh]: <https://www.ga4gh.org/>
-[res-ga4gh-cloud]: <https://www.ga4gh.org/work_stream/cloud/>
 [res-ga4gh-tes]: <https://github.com/ga4gh/task-execution-schemas>
 [res-git]: <https://git-scm.com/>
 [res-helm]: <https://helm.sh/>
 [res-kubernetes]: <https://kubernetes.io/>
-[res-mondodb]: <https://www.mongodb.com/>
-[res-ouath2]: <https://oauth.net/2/>
+[res-mongodb]: <https://www.mongodb.com/>
+[res-oauth2]: <https://oauth.net/2/>
 [res-rabbitmq]: <https://www.rabbitmq.com/>
 [res-sem-ver]: <https://semver.org/>
