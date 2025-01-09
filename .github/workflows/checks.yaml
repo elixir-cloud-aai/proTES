@@ -44,22 +44,20 @@ jobs:
         run: |
           pip install .
           pip install -r requirements_dev.txt
-          curl -L "https://github.com/docker/compose/releases/download/1.29.2/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-          chmod +x /usr/local/bin/docker-compose
       - name: Deploy app
-        run: docker-compose up -d --build
+        run: docker compose up -d --build
       - name: Wait for app startup
         run: |
           for i in $(seq 1 24); do
             sleep 5; curl localhost:8080 -so /dev/null && return;
-            docker-compose ps;
+            docker compose ps;
             echo "Retrying ($i) in 5 seconds...";
           done
       - name: Run integration tests
         shell: bash
         run: pytest tests/test_integration
       - name: Tear down app
-        run: docker-compose down
+        run: docker compose down
   publish:
     name: Build and publish app image
     runs-on: ubuntu-latest
