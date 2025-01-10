@@ -49,7 +49,7 @@ jobs:
       - name: Wait for app startup
         run: |
           for i in $(seq 1 24); do
-            sleep 5; curl localhost:8080 -so /dev/null && return;
+            sleep 5; curl localhost:8080 -so /dev/null && break;
             docker compose ps;
             echo "Retrying ($i) in 5 seconds...";
           done
