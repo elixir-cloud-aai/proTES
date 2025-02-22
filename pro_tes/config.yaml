@@ -17,7 +17,10 @@ server:
 # Cf. https://foca.readthedocs.io/en/latest/modules/foca.models.html#foca.models.config.SecurityConfig
 security:
   auth:
+    required: True
     add_key_to_claims: True
+    claim_identity: sub
+    claim_issuer: iss
     algorithms:
       - RS256
     allow_expired: False
@@ -26,6 +29,12 @@ security:
       - userinfo
       - public_key
     validation_checks: any
+  access_control:
+    db_name: proTesAccess
+    collection_name: permissions
+    model: proTES/pro_tes/api/proTes_policy.conf
+    owner_headers: ['user_id']
+    user_headers: ['user_id']
 
 # Database configuration
 # Cf. https://foca.readthedocs.io/en/latest/modules/foca.models.html#foca.models.config.DBConfig
@@ -62,7 +71,6 @@ api:
           - bearerAuth: []
       add_security_fields:
         x-bearerInfoFunc: foca.security.auth.validate_token
-      disable_auth: True
       connexion:
         strict_validation: True
         # current specs have inconsistency, therefore disabling response validation

@@ -4,6 +4,10 @@ import logging
 
 from connexion import request  # type: ignore
 from foca.utils.logging import log_traffic  # type: ignore
+from foca.security.access_control.register_access_control import (
+    check_permissions
+)   # type: ignore
+
 
 from pro_tes.ga4gh.tes.service_info import ServiceInfo
 from pro_tes.ga4gh.tes.task_runs import TaskRuns
@@ -33,6 +37,7 @@ def CancelTask(
 
 # POST /tasks
 @log_traffic
+@check_permissions
 def CreateTask(*args, **kwargs) -> dict:
     """Create task.
 
