@@ -32,10 +32,18 @@ class NoTesInstancesAvailable(ValueError):
 class MiddlewareException(ValueError):
     """Raised when a middleware could not be applied."""
 
+class TesUriError(ValueError):
+    """Raised when TES URI cannot be parsed."""
 
 class InvalidMiddleware(MiddlewareException):
     """Raised when a middleware is invalid."""
 
+class InputUriError(ValueError):
+    """Raised when input URI cannot be parsed."""
+
+
+class IPDistanceCalculationError(ValueError):
+    """Raised when IP distance cannot be calculated."""
 
 exceptions = {
     Exception: {
@@ -94,4 +102,16 @@ exceptions = {
         "message": "Middleware is invalid.",
         "code": "500",
     },
+    InputUriError: {
+        "message": "Input URI cannot be parsed.",
+        "code": "400",
+    },
+    IPDistanceCalculationError: {
+        "message": "IP distance calculation failed.",
+        "code": "500",
+    },
+        TesUriError: {
+        "message": "TES URI cannot be parsed",
+        "code": "400",
+        },
 }
