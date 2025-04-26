@@ -92,13 +92,15 @@ log:
     level: 10
     handlers: [console]
 
+#Background job configuration
+# Cf. https://foca.readthedocs.io/en/latest/modules/foca.models.html#foca.models.config.JobsConfig
 jobs:
   host: rabbitmq
   port: 5672
   backend: "rpc://"
   include:
     - pro_tes.tasks.track_task_progress
-
+ 
 # Exception configuration
 # Cf. https://foca.readthedocs.io/en/latest/modules/foca.models.html#foca.models.config.ExceptionConfig
 exceptions:
