@@ -4,14 +4,133 @@ from typing import Optional
 from pathlib import Path
 
 from pydantic import BaseModel  # pylint: disable=no-name-in-module
-
+from typing import List
 from pro_wes.ga4gh.wes.models import ServiceInfoBase as ServiceInfo
 
 # pragma pylint: disable=too-few-public-methods
 
+class DB(BaseModel):
+    """DB config for post_task.
+
+    Args:
+        insert_attempts: Number of attempts to insert a new task in DB.
+
+    Attributes:
+        insert_attempts: Number of attempts to insert a new task in DB.
+    """
+    insert_attempts: int = 10
+
+
+class TaskID(BaseModel):
+    """Task ID config.
+
+    Args:
+        charset: Characters to use when generating task IDs.
+        length: Length of the generated task ID.
+
+    Attributes:
+        charset: Characters to use when generating task IDs.
+        length: Length of the generated task ID.
+    """
+    charset: str = string.ascii_uppercase + string.digits
+    length: int = 6
+
+
+class Timeout(BaseModel):
+    """Timeout config.
+
+    Args:
+        post: Timeout for POST requests (None disables timeout).
+        poll: Timeout for polling.
+        job: Timeout for job execution (None disables timeout).
+
+    Attributes:
+        post: Timeout for POST requests (None disables timeout).
+        poll: Timeout for polling.
+        job: Timeout for job execution (None disables timeout).
+    """
+    post: Optional[int] = None
+    poll: int = 2
+    job: Optional[int] = None
+
+
+class Polling(BaseModel):
+    """Polling config.
+
+    Args:
+        wait: Wait time between polling attempts.
+        attempts: Max polling attempts before failure.
+
+    Attributes:
+        wait: Wait time between polling attempts.
+        attempts: Max polling attempts before failure.
+    """
+    wait: int = 3
+    attempts: int = 100
+
+
+class PostTask(BaseModel):
+    """Configuration for POST /task.
+
+    Args:
+        db: DB insert behavior.
+        task_id: Task ID generation settings.
+        timeout: Timeout settings.
+        polling: Polling behavior.
+
+    Attributes:
+        db: DB insert behavior.
+        task_id: Task ID generation settings.
+        timeout: Timeout settings.
+        polling: Polling behavior.
+    """
+    db: DB = DB()
+    task_id: TaskID = TaskID()
+    timeout: Timeout = Timeout()
+    polling: Polling = Polling()
+
+
+class ListTasks(BaseModel):
+    """Configuration for GET /tasks.
+
+    Args:
+        default_page_size: Default pagination size.
+
+    Attributes:
+        default_page_size: Default pagination size.
+    """
+    default_page_size: int = 5
+
+
+class Monitor(BaseModel):
+    """Celery monitor settings.
+
+    Args:
+        timeout: Timeout to wait for Celery monitoring.
+
+    Attributes:
+        timeout: Timeout to wait for Celery monitoring.
+    """
+    timeout: float = 0.1
+
+
+class Celery(BaseModel):
+    """Celery configuration.
+
+    Args:
+        monitor: Monitor settings.
+        message_maxsize: Maximum allowed message size.
+
+    Attributes:
+        monitor: Monitor settings.
+        message_maxsize: Maximum allowed message size.
+    """
+    monitor: Monitor = Monitor()
+    message_maxsize: int = 16777216
+
 
 class Controllers(BaseModel):
-  """Controller configurations.
+    """Controller configurations.
 
     Args:
         post_task: Settings for POST /task.
@@ -22,26 +141,10 @@ class Controllers(BaseModel):
         post_task: Settings for POST /task.
         list_tasks: Settings for GET /tasks.
         celery: Celery background task settings.
-    """   
-    post_task:
-      db:
-      insert_attempts: 10
-    task_id:
-      charset: string.ascii_uppercase + string.digits
-      length: 6
-        timeout:
-          post: null
-          poll: 2
-          job: null
-        polling:
-          wait: 3
-          attempts: 100
-    list_tasks:
-      default_page_size: 5
-    celery:
-      monitor:
-      timeout: 0.1
-      message_maxsize: 16777216
+    """
+    post_task: PostTask = PostTask()
+    list_tasks: ListTasks = ListTasks()
+    celery: Celery = Celery()
 
 class Tes(BaseModel):
   """TES backend configuration.
@@ -53,14 +156,13 @@ class Tes(BaseModel):
         service_list: List of available TES services.
     """
 
-service_list:
-    - "https://csc-tesk-noauth.rahtiapp.fi"
-    - "https://funnel.cloud.e-infra.cz/"
-    - "https://tesk-eu.hypatia-comp.athenarc.gr"
-    - "https://tesk-na.cloud.e-infra.cz"
-    - "https://vm4816.kaj.pouta.csc.fi/"
-
-        
+   service_list: List[str] = [
+    "https://csc-tesk-noauth.rahtiapp.fi",
+    "https://funnel.cloud.e-infra.cz/",
+    "https://tesk-eu.hypatia-comp.athenarc.gr",
+    "https://tesk-na.cloud.e-infra.cz",
+    "https://vm4816.kaj.pouta.csc.fi/",
+]
 
 class StoreLogs(BaseModel):
    """Logging configuration.
@@ -74,9 +176,12 @@ class StoreLogs(BaseModel):
       execution_trace: True
 
 class Middlewares(BaseModel):
-      - - "pro_tes.plugins.middlewares.task_distribution.distance.TaskDistributionDistance"
-        - "pro_tes.plugins.middlewares.task_distribution.random.TaskDistributionRandom"
-
+    middlewares: List[List[str]] = [
+        [
+            "pro_tes.plugins.middlewares.task_distribution.distance.TaskDistributionDistance",
+            "pro_tes.plugins.middlewares.task_distribution.random.TaskDistributionRandom",
+        ]
+    ]
 
 class CustomConfig(BaseModel):
   """Custom app configuration.
