@@ -190,7 +190,15 @@ class StoreLogs(BaseModel):
 
 
 class Middlewares(BaseModel):
-    middlewares: List[List[str]] = [
+    """Middleware configuration.
+
+    Args:
+        __root__: A list of middleware class paths.
+
+    Attributes:
+        __root__: A list of middleware class paths.
+    """
+    __root__: List[List[str]] = [
         [
             (
                 "pro_tes.plugins.middlewares.task_distribution.distance."
