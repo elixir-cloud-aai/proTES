@@ -1,10 +1,9 @@
 """Custom app config models."""
 
-from typing import Optional
-from pydantic import BaseModel  # pylint: disable=no-name-in-module
-from typing import List
-from pro_wes.ga4gh.wes.models import ServiceInfoBase as ServiceInfo
+from typing import List, Optional
 import string
+from pydantic import BaseModel  # pylint: disable=no-name-in-module
+from pro_tes.ga4gh.tes.models import Service as TesServiceInfo
 
 
 # pragma pylint: disable=too-few-public-methods
@@ -235,4 +234,4 @@ class CustomConfig(BaseModel):
     tes: Tes = Tes()
     storeLogs: StoreLogs = StoreLogs()
     middlewares: Middlewares = Middlewares()
-    service_info: ServiceInfo
+    service_info: TesServiceInfo
