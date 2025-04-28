@@ -198,6 +198,7 @@ class Middlewares(BaseModel):
     Attributes:
         __root__: A list of middleware class paths.
     """
+
     __root__: List[List[str]] = [
         [
             (
