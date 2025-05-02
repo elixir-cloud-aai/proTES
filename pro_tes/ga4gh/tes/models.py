@@ -38,7 +38,7 @@ class TesCreateTaskResponse(CustomBaseModel):
 
 class TesExecutor(CustomBaseModel):
     image: str = Field(
-        default=[""],
+        default="",
         description=(
             "Name of the container image. The string will be passed as        "
             "    the image\nargument to the containerization run command.     "
@@ -626,7 +626,7 @@ class TesTask(CustomBaseModel):
     )
     resources: Optional[TesResources] = None
     executors: list[TesExecutor] = Field(
-        default=[TesExecutor],
+        default=[TesExecutor()],
         description=(
             "An array of executors to be run. Each of the executors           "
             " will run one\nat a time sequentially. Each executor is a"
