@@ -17,6 +17,8 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: "3.10"
+      - name: Pin pip version
+        run: python -m pip install --upgrade "pip<24.1"
       - name: Install requirements
         run: |
           pip install .
@@ -45,14 +47,19 @@ jobs:
           pip install .
           pip install -r requirements_dev.txt
       - name: Deploy app
-        run: docker-compose up -d --build
+        run: docker compose up -d --build
       - name: Wait for app startup
-        run: sleep 20
+        run: |
+          for i in $(seq 1 24); do
+            sleep 5; curl localhost:8080 -so /dev/null && break;
+            docker compose ps;
+            echo "Retrying ($i) in 5 seconds...";
+          done
       - name: Run integration tests
         shell: bash
         run: pytest tests/test_integration
       - name: Tear down app
-        run: docker-compose down
+        run: docker compose down
   publish:
     name: Build and publish app image
     runs-on: ubuntu-latest
