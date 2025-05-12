@@ -193,3 +193,4 @@ thread in our [Q&A forum][contact-qa], or send us an [email][contact-email].
 [res-ouath2]: <https://oauth.net/2/>
 [res-rabbitmq]: <https://www.rabbitmq.com/>
 [res-sem-ver]: <https://semver.org/>
+[res-docker compose]: <https://docs.docker.com/compose/>
