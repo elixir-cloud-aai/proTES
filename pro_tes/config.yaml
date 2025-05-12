@@ -106,44 +106,46 @@ exceptions:
   status_member: ["code"]
   exceptions: pro_tes.exceptions.exceptions
 
-controllers:
-  post_task:
-    db:
-      insert_attempts: 10
-    task_id:
-      charset: string.ascii_uppercase + string.digits
-      length: 6
-    timeout:
-      post: null
-      poll: 2
-      job: null
-    polling:
-      wait: 3
-      attempts: 100
-  list_tasks:
-    default_page_size: 5
+# Custom configuration
+custom:
+  controllers:
+    post_task:
+      db:
+        insert_attempts: 10
+      task_id:
+        charset: string.ascii_uppercase + string.digits
+        length: 6
+      timeout:
+        post: null
+        poll: 2
+        job: null
+      polling:
+        wait: 3
+        attempts: 100
+    list_tasks:
+      default_page_size: 5
   celery:
     monitor:
       timeout: 0.1
     message_maxsize: 16777216
 
-serviceInfo:
-  doc: Proxy TES for distributing tasks across a list of service TES instances
-  name: proTES
-  storage:
-    - file:///path/to/local/storage
+  serviceInfo:
+    doc: Proxy TES for distributing tasks across a list of service TES instances
+    name: proTES
+    storage:
+      - file:///path/to/local/storage
 
-tes:
-  service_list:
-    - "https://csc-tesk-noauth.rahtiapp.fi"
-    - "https://funnel.cloud.e-infra.cz/"
-    - "https://tesk-eu.hypatia-comp.athenarc.gr"
-    - "https://tesk-na.cloud.e-infra.cz"
-    - "https://vm4816.kaj.pouta.csc.fi/"
+  tes:
+    service_list:
+      - "https://csc-tesk-noauth.rahtiapp.fi"
+      - "https://funnel.cloud.e-infra.cz/"
+      - "https://tesk-eu.hypatia-comp.athenarc.gr"
+      - "https://tesk-na.cloud.e-infra.cz"
+      - "https://vm4816.kaj.pouta.csc.fi/"
 
-storeLogs:
-  execution_trace: True
+  storeLogs:
+    execution_trace: True
 
-middlewares:
-  - - "pro_tes.plugins.middlewares.task_distribution.distance.TaskDistributionDistance"
-    - "pro_tes.plugins.middlewares.task_distribution.random.TaskDistributionRandom"
+  middlewares:
+    - - "pro_tes.plugins.middlewares.task_distribution.distance.TaskDistributionDistance"
+      - "pro_tes.plugins.middlewares.task_distribution.random.TaskDistributionRandom"

@@ -62,7 +62,7 @@ class TaskRuns:
         self.db_client: Collection = (
             self.foca_config.db.dbs["taskStore"].collections["tasks"].client
         )
-        self.store_logs = self.foca_config.storeLogs["execution_trace"]
+        self.store_logs = self.foca_config.custom.storeLogs["execution_trace"]
 
     def create_task(  # pylint: disable=too-many-statements,too-many-branches
         self, **kwargs
@@ -86,7 +86,7 @@ class TaskRuns:
         # apply middlewares
         mw_handler = MiddlewareHandler()
         mw_handler.set_middlewares(
-            paths=current_app.config.foca.middlewares   # type: ignore
+            paths=current_app.config.foca.custom.middlewares   # type: ignore
         )
         logger.debug(f"Middlewares registered: {mw_handler.middlewares}")
         request_modified = mw_handler.apply_middlewares(request=request)
@@ -268,8 +268,10 @@ class TaskRuns:
         """
         page_size = kwargs.get(
             "page_size",
-            self.foca_config.controllers["list_tasks"]["default_page_size"],
-        )
+            self.foca_config.custom.controllers["list_tasks"][
+                "default_page_size"
+                ],
+            )
         page_token = kwargs.get("page_token")
         filter_dict = {}
 
@@ -427,7 +429,7 @@ class TaskRuns:
         Returns:
             Tuple of task id and worker id.
         """
-        controller_config = self.foca_config.controllers["post_task"]
+        controller_config = self.foca_config.custom.controllers["post_task"]
         charset = controller_config["task_id"]["charset"]
         length = controller_config["task_id"]["length"]
 
