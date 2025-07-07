@@ -17,16 +17,16 @@ from werkzeug.exceptions import (
 # pylint: disable="too-few-public-methods"
 
 
-class TaskNotFound(NotFound):
-    """Raised when task with given task identifier was not found."""
-
-
 class IdsUnavailableProblem(PyMongoError):
     """Raised when task identifier is unavailable."""
 
 
-class NoTesInstancesAvailable(ValueError):
-    """Raised when no TES instances are available."""
+class InputUriError(ValueError):
+    """Raised when input URI cannot be parsed."""
+
+
+class IPDistanceCalculationError(ValueError):
+    """Raised when IP distance cannot be calculated."""
 
 
 class MiddlewareException(ValueError):
@@ -35,6 +35,18 @@ class MiddlewareException(ValueError):
 
 class InvalidMiddleware(MiddlewareException):
     """Raised when a middleware is invalid."""
+
+
+class NoTesInstancesAvailable(ValueError):
+    """Raised when no TES instances are available."""
+
+
+class TaskNotFound(NotFound):
+    """Raised when task with given task identifier was not found."""
+
+
+class TesUriError(ValueError):
+    """Raised when TES URI cannot be parsed."""
 
 
 exceptions = {
@@ -56,6 +68,14 @@ exceptions = {
     },
     ValidationError: {
         "message": "The request is malformed.",
+        "code": "400",
+    },
+    TesUriError: {
+        "message": "TES URI cannot be parsed",
+        "code": "400",
+        },
+    InputUriError: {
+        "message": "Input URI cannot be parsed.",
         "code": "400",
     },
     Unauthorized: {
@@ -92,6 +112,10 @@ exceptions = {
     },
     InvalidMiddleware: {
         "message": "Middleware is invalid.",
+        "code": "500",
+    },
+    IPDistanceCalculationError: {
+        "message": "IP distance calculation failed.",
         "code": "500",
     },
 }
