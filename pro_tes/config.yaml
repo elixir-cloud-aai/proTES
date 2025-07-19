@@ -129,7 +129,12 @@ custom:
       timeout: 0.1
     message_maxsize: 16777216
 
-  serviceInfo:
+  service_info:
+    id: v1.proTes.ga4gh.org.example
+    organization:
+      name: elixir
+      url: "https://default.org"
+    version: 1.2.3
     doc: Proxy TES for distributing tasks across a list of service TES instances
     name: proTES
     storage:

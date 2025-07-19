@@ -62,7 +62,7 @@ class TaskRuns:
         self.db_client: Collection = (
             self.foca_config.db.dbs["taskStore"].collections["tasks"].client
         )
-        self.store_logs = self.foca_config.custom.storeLogs["execution_trace"]
+        self.store_logs = self.foca_config.custom.storeLogs.execution_trace
 
     def create_task(  # pylint: disable=too-many-statements,too-many-branches
         self, **kwargs
@@ -86,7 +86,7 @@ class TaskRuns:
         # apply middlewares
         mw_handler = MiddlewareHandler()
         mw_handler.set_middlewares(
-            paths=current_app.config.foca.custom.middlewares   # type: ignore
+            paths=self.foca_config.custom.middlewares.__root__
         )
         logger.debug(f"Middlewares registered: {mw_handler.middlewares}")
         request_modified = mw_handler.apply_middlewares(request=request)
@@ -268,9 +268,7 @@ class TaskRuns:
         """
         page_size = kwargs.get(
             "page_size",
-            self.foca_config.custom.controllers["list_tasks"][
-                "default_page_size"
-                ],
+            self.foca_config.custom.controllers.list_tasks.default_page_size,
             )
         page_token = kwargs.get("page_token")
         filter_dict = {}
@@ -429,12 +427,12 @@ class TaskRuns:
         Returns:
             Tuple of task id and worker id.
         """
-        controller_config = self.foca_config.custom.controllers["post_task"]
-        charset = controller_config["task_id"]["charset"]
-        length = controller_config["task_id"]["length"]
+        controller_config = self.foca_config.custom.controllers.post_task
+        charset = controller_config.task_id.charset
+        length = controller_config.task_id.length
 
         # try inserting until unused task id found
-        for _ in range(controller_config["db"]["insert_attempts"]):
+        for _ in range(controller_config.db.insert_attempts):
             document.task.id = generate_id(
                 charset=charset,
                 length=length,

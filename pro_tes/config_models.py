@@ -3,7 +3,7 @@
 from typing import List, Optional
 import string
 from pydantic import BaseModel  # pylint: disable=no-name-in-module
-from pro_tes.ga4gh.tes.models import Service as TesServiceInfo
+from pro_tes.ga4gh.tes.models import TesServiceInfo
 
 
 # pragma pylint: disable=too-few-public-methods

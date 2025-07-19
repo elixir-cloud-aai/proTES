@@ -39,9 +39,7 @@ class TaskDistributionBaseClass(AbstractMiddleware):
             raise MiddlewareException("Request has no JSON payload.")
         self._set_tes_urls(
             tes_urls=deepcopy(
-                current_app.config.foca.custom.tes[     # type: ignore
-                    "service_list"
-                    ]
+                current_app.config.foca.custom.tes.service_list  # type: ignore
             ),
             request=request,
         )
