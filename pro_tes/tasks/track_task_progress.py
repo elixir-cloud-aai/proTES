@@ -51,7 +51,7 @@ def task__track_task_progress(  # pylint: disable=too-many-arguments,R0917
         password: Password for basic authentication.
     """
     foca_config: Config = current_app.config.foca   # type: ignore
-    controller_config: dict = foca_config.custom.controllers["post_task"]
+    controller_config: dict = foca_config.custom["controllers"]["post_task"]
 
     # create database client
     collection = _create_mongo_client(
