@@ -289,13 +289,14 @@ class TaskRuns:
         cursor = (
             self.db_client.find(filter=filter_dict, projection=projection)
             .sort("_id", -1)
-            .limit(page_size)
+            .limit(page_size+1)
         )
         tasks_list = list(cursor)
 
         logger.debug(f"Tasks list: {tasks_list}")
-        if tasks_list:
-            next_page_token = str(tasks_list[-1]["_id"])
+        if len(tasks_list) > page_size:
+            next_page_token = str(tasks_list[page_size-1]["_id"])
+            tasks_list = tasks_list[:page_size]
         else:
             next_page_token = ""
 
