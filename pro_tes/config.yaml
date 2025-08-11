@@ -30,7 +30,7 @@ security:
 # Database configuration
 # Cf. https://foca.readthedocs.io/en/latest/modules/foca.models.html#foca.models.config.DBConfig
 db:
-  host: mongodb
+  host: 'mongodb'
   port: 27017
   dbs:
     taskStore:

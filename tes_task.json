@@ -1,0 +1,63 @@
+{
+    "name": "genome-analysis-demo",
+    "description": "Demo TES task for genome analysis",
+    "inputs": [
+      {
+        "name": "input-genome-data",
+        "url": "gs://genomics-bucket/input-data/genome-data.bam",
+        "path": "/data/genome-data.bam",
+        "type": "FILE"
+      },
+      {
+        "name": "reference-genome",
+        "url": "gs://genomics-bucket/reference/human-reference.fa",
+        "path": "/data/human-reference.fa",
+        "type": "FILE"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "output-processed-data",
+        "url": "gs://genomics-bucket/processed-data/processed-output.bam",
+        "path": "/output/processed-output.bam",
+        "type": "FILE"
+      },
+      {
+        "name": "log-file",
+        "url": "gs://genomics-bucket/logs/task-log.txt",
+        "path": "/output/task-log.txt",
+        "type": "FILE"
+      }
+    ],
+    "resources": {
+      "cpu_cores": 8,
+      "ram_gb": 32,
+      "disk_gb": 100,
+      "preemptible": true,
+      "zones": ["us-west1-a", "us-west1-b"],
+      "backend_parameters": {
+        "VmSize": "Standard_D64_v3"
+      }
+    },
+    "executors": [
+      {
+        "image": "bioinformatics/pipeline",
+        "command": [
+          "bash",
+          "-c",
+          "/tools/process-genome.sh /data/genome-data.bam /data/human-reference.fa /output/processed-output.bam"
+        ],
+        "stdout": "/output/task-log.txt",
+        "stderr": "/output/task-error-log.txt",
+        "workdir": "/mnt/workdir",
+        "env": {
+          "GENOME_ENV": "production",
+          "MAX_THREADS": "8"
+        }
+      }
+    ],
+    "tags": {
+      "department": "bioinformatics",
+      "project": "genome-analysis"
+    }
+  }

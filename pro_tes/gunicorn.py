@@ -19,6 +19,19 @@ forwarded_allow_ips = "*"  # pylint: disable=invalid-name
 # Set Gunicorn bind address
 bind = f"{app_config.server.host}:{app_config.server.port}"  # pylint: disable=C0103  # noqa: E501
 
+# HTTPS support
+if os.environ.get("ENABLE_HTTPS", "false").lower() == "true":
+    certfile = os.environ.get("SSL_CERTFILE", None)
+    keyfile = os.environ.get("SSL_KEYFILE", None)
+    if certfile and keyfile:
+        keyfile = keyfile
+        certfile = certfile
+        # Gunicorn expects these variables in the config file
+        # They will be picked up automatically
+        # See: https://docs.gunicorn.org/en/stable/settings.html#keyfile
+    else:
+        raise RuntimeError("ENABLE_HTTPS is true but SSL_CERTFILE or SSL_KEYFILE is not set.")
+
 # Source environment variables for Gunicorn workers
 raw_env = [
     f'TES_CONFIG={os.environ.get("TES_CONFIG", "")}',

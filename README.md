@@ -193,3 +193,47 @@ thread in our [Q&A forum][contact-qa], or send us an [email][contact-email].
 [res-ouath2]: <https://oauth.net/2/>
 [res-rabbitmq]: <https://www.rabbitmq.com/>
 [res-sem-ver]: <https://semver.org/>
+
+## Middleware System
+
+proTES uses a modular middleware system to support flexible task distribution and request processing. Middleware classes are configured in `pro_tes/config.yaml` under the `middlewares` section. Each middleware must inherit from `AbstractMiddleware` and implement the `apply_middleware` method.
+
+### Configuring Middleware
+
+- Middlewares are listed in `pro_tes/config.yaml`:
+  ```yaml
+  middlewares:
+    - - "pro_tes.plugins.middlewares.task_distribution.distance.TaskDistributionDistance"
+      - "pro_tes.plugins.middlewares.task_distribution.random.TaskDistributionRandom"
+  ```
+- The system supports fallback: if the first middleware fails, the next is tried.
+
+### Extending Middleware
+
+- To add a new middleware, create a class inheriting from `AbstractMiddleware` and implement `apply_middleware`.
+- Add the fully qualified class path to the `middlewares` list in the config.
+
+### Task Distribution
+
+- proTES includes:
+  - `TaskDistributionDistance`: Ranks TES instances by geodesic distance to task inputs.
+  - `TaskDistributionRandom`: Randomizes TES instance selection.
+
+### Python Version Limitation
+
+- **Distance-based task distribution requires `ip2geotools`, which is only compatible with Python <=3.11.**
+- On Python 3.12+ or 3.13+, only random task distribution is available unless the distance-based middleware is refactored to use a different geolocation library.
+
+### Testing Middleware
+
+- Unit tests for middleware are in `tests/unitTest/pro_tes/middleware/`.
+- To run tests (with Python 3.11):
+  ```sh
+  source venv/bin/activate
+  pip install -r requirements.txt
+  python -m pytest tests/unitTest/pro_tes/middleware/
+  ```
+
+---
+
+For more details, see the code in `pro_tes/middleware/` and `pro_tes/plugins/middlewares/`.

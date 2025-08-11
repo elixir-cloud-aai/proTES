@@ -1,65 +1,41 @@
 openapi: 3.0.1
 info:
   title: Task Execution Service
-  version: 1.0.0
+  version: 1.1.0
   x-logo:
-    url: 'https://www.ga4gh.org/wp-content/themes/ga4gh-theme/gfx/GA-logo-horizontal-tag-RGB.svg'
-  description: >
+    url: https://www.ga4gh.org/wp-content/themes/ga4gh/dist/assets/svg/logos/logo-full-color.svg
+  license:
+    name: Apache 2.0
+    url: https://raw.githubusercontent.com/ga4gh/task-execution-schemas/develop/LICENSE
+  description: |
     ## Executive Summary
-
-    The Task Execution Service (TES) API is a standardized schema and API for
-    describing and executing batch execution tasks. A task defines a set of
-    input files, a set of containers and commands to run, a set of
-    output files and some other logging and metadata.
-
-
-    TES servers accept task documents and execute them asynchronously on
-    available compute resources. A TES server could be built on top of
-    a traditional HPC queuing system,
-    such as Grid Engine, Slurm or cloud style compute systems such as AWS Batch
-    or Kubernetes.
-
+    The Task Execution Service (TES) API is a standardized schema and API for describing and executing batch execution tasks. A task defines a set of input files, a set of containers and commands to run, a set of output files and some other logging and metadata.
+    
+    TES servers accept task documents and execute them asynchronously on available compute resources. A TES server could be built on top of a traditional HPC queuing system, such as Grid Engine, Slurm or cloud style compute systems such as AWS Batch or Kubernetes.
     ## Introduction
-
-    This document describes the TES API and provides details on the specific
-    endpoints, request formats, and responses. It is intended to provide key
-    information for developers of TES-compatible services as well as clients
-    that will call these TES services. Use cases include:
-
+    This document describes the TES API and provides details on the specific endpoints, request formats, and responses. It is intended to provide key information for developers of TES-compatible services as well as clients that will call these TES services. Use cases include:
+    
       - Deploying existing workflow engines on new infrastructure. Workflow engines
       such as CWL-Tes and Cromwell have extentions for using TES. This will allow
       a system engineer to deploy them onto a new infrastructure using a job scheduling
       system not previously supported by the engine.
-
+    
       - Developing a custom workflow management system. This API provides a common
       interface to asynchronous batch processing capabilities. A developer can write
       new tools against this interface and expect them to work using a variety of
       backend solutions that all support the same specification.
-
-
+    
+    
     ## Standards
-
-    The TES API specification is written in OpenAPI and embodies a RESTful service
-    philosophy. It uses JSON in requests and responses and standard
-    HTTP/HTTPS for information transport. HTTPS should be used rather than plain HTTP
-    except for testing or internal-only purposes.
-
+    The TES API specification is written in OpenAPI and embodies a RESTful service philosophy. It uses JSON in requests and responses and standard HTTP/HTTPS for information transport. HTTPS should be used rather than plain HTTP except for testing or internal-only purposes.
     ### Authentication and Authorization
-
-    Is is envisaged that most TES API instances will require users to authenticate to use the endpoints.
-    However, the decision if authentication is required should be taken by TES API implementers.
-
-
+    Is is envisaged that most TES API instances will require users to authenticate to use the endpoints. However, the decision if authentication is required should be taken by TES API implementers.
+    
     If authentication is required, we recommend that TES implementations use an OAuth2  bearer token, although they can choose other mechanisms if appropriate.
-
-
+    
     Checking that a user is authorized to submit TES requests is a responsibility of TES implementations.
-
     ### CORS
-
-    If TES API implementation is to be used by another website or domain it must implement Cross Origin Resource Sharing (CORS).
-    Please refer to https://w3id.org/ga4gh/product-approval-support/cors for more information about GA4GH’s recommendations and how to implement CORS.
-
+    If TES API implementation is to be used by another website or domain it must implement Cross Origin Resource Sharing (CORS). Please refer to https://w3id.org/ga4gh/product-approval-support/cors for more information about GA4GH's recommendations and how to implement CORS.
 
 servers:
 - url: /ga4gh/tes/v1
@@ -67,14 +43,12 @@ paths:
   /service-info:
     get:
       tags:
-      - TaskService
-      summary: GetServiceInfo
-      description: |-
-        Provides information about the service, this structure is based on the
-        standardized GA4GH service info structure. In addition, this endpoint
-        will also provide information about customized storage endpoints offered
-        by the TES server.
-      operationId: GetServiceInfo
+      - TES
+      summary: Get service information
+      description: >
+        Provides information about the service, including the TES version
+        and other meta-data.
+      operationId: pro_tes.ga4gh.tes.server.GetServiceInfo
       responses:
         200:
           description: ""
@@ -85,13 +59,12 @@ paths:
   /tasks:
     get:
       tags:
-      - TaskService
-      summary: ListTasks
-      description: |-
-        List tasks tracked by the TES server. This includes queued, active and completed tasks.
-        How long completed tasks are stored by the system may be dependent on the underlying
-        implementation.
-      operationId: ListTasks
+      - TES
+      summary: List tasks
+      description: >
+        List tasks. TaskView is returned, which allows the client to page
+        through task lists and filter tasks by name, etc.
+      operationId: pro_tes.ga4gh.tes.server.ListTasks
       parameters:
       - name: name_prefix
         in: query
@@ -127,12 +100,9 @@ paths:
                 $ref: '#/components/schemas/tesListTasksResponse'
     post:
       tags:
-      - TaskService
-      summary: CreateTask
-      description: |-
-        Create a new task. The user provides a Task document, which the server
-        uses as a basis and adds additional fields.
-      operationId: CreateTask
+      - TES
+      summary: Create a new task
+      operationId: pro_tes.ga4gh.tes.server.CreateTask
       requestBody:
         content:
           application/json:
@@ -150,11 +120,10 @@ paths:
   /tasks/{id}:
     get:
       tags:
-      - TaskService
-      summary: GetTask
-      description: |-
-        Get a single task, based on providing the exact task ID string.
-      operationId: GetTask
+      - TES
+      summary: Get a task
+      description: Get a task's full details.
+      operationId: pro_tes.ga4gh.tes.server.GetTask
       parameters:
       - name: id
         in: path
@@ -173,10 +142,10 @@ paths:
   /tasks/{id}:cancel:
     post:
       tags:
-      - TaskService
-      summary: CancelTask
-      description: Cancel a task based on providing an exact task ID.
-      operationId: CancelTask
+      - TES
+      summary: Cancel a task
+      description: Cancel a running task.
+      operationId: pro_tes.ga4gh.tes.server.CancelTask
       parameters:
       - name: id
         in: path
