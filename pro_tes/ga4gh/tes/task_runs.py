@@ -298,7 +298,7 @@ class TaskRuns:
             next_page_token = str(tasks_list[page_size - 1]["_id"])
             tasks_list = tasks_list[:page_size]
         else:
-            next_page_token = ""
+            next_page_token = str(tasks_list[-1]["_id"])
 
         tasks_lists = []
         for task in tasks_list:
