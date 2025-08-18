@@ -16,6 +16,7 @@ def init_app() -> FlaskApp:
     """
     foca = Foca(
         config_file=Path(__file__).resolve().parent / "config.yaml",
+        custom_config_model="pro_tes.config_models.CustomConfig",
     )
     app = foca.create_app()
     with app.app.app_context():

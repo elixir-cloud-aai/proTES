@@ -1,12 +1,15 @@
 """Controller for the `/service-info route."""
-
+# pylint: disable=unused-import
 import logging
 
-from bson.objectid import ObjectId  # type: ignore
+from bson.objectid import ObjectId
 from flask import current_app
-from pymongo.collection import Collection  # type: ignore
+from pymongo.collection import Collection
 
 from pro_tes.exceptions import NotFound
+from pro_tes.ga4gh.tes.models import (  # noqa: F401
+    TesServiceInfo
+)
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +56,11 @@ class ServiceInfo:
         Arguments:
             data: Dictionary of service info values. Cf.
         """
+        if hasattr(data, "model_dump"):
+            data = data.model_dump()
+        elif hasattr(data, "dict"):
+            data = data.dict()
+
         self.db_client.replace_one(
             filter={"_id": ObjectId(self.object_id)},
             replacement=data,
@@ -65,7 +73,9 @@ class ServiceInfo:
 
         Set service info only if it does not yet exist.
         """
-        service_info_conf = current_app.config.foca.serviceInfo  # type: ignore
+        service_info_conf = (
+            current_app.config.foca.custom.service_info  # type: ignore
+            )
         try:
             service_info_db = self.get_service_info()
         except NotFound:
