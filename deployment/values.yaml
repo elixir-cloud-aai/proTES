@@ -68,6 +68,13 @@ mongodb:
     databaseName: prowes-db
   volumeSize: 1Gi
   image: docker.io/library/mongo:noble
+  resources:
+    limits:
+      cpu: 200m
+      memory: 512Mi
+    requests:
+      cpu: 200m
+      memory: 512Mi
 
 rabbitmq:
   appName: rabbitmq
