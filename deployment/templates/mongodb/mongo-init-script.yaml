@@ -30,12 +30,12 @@ data:
       { id: 1 }
     );
 
-    dbproWES.createCollection('runs');
-    dbproWES.runs.createIndex(
+    dbproTES.createCollection('runs');
+    dbproTES.runs.createIndex(
       { run_id: 1, task_id: 1 },
       { unique: true, sparse: true }
     );
-    dbproWES.createCollection('service_info');
-    dbproWES.service_info.createIndex(
+    dbproTES.createCollection('service_info');
+    dbproTES.service_info.createIndex(
       { id: 1}
     );
