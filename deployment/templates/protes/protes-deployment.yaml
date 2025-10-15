@@ -12,11 +12,24 @@ spec:
       labels:
         app: {{ .Values.protes.appName }}
     spec:
+      {{- if eq .Values.storageAccessMode "ReadWriteOnce" }}
+      affinity:
+        podAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: app
+                operator: In
+                values:
+                - {{ .Values.celeryWorker.appName }}
+            topologyKey: "kubernetes.io/hostname"
+      {{- end }}
       initContainers:
       - name: vol-init
         image: busybox
         command: [ 'mkdir' ]
         args: [ '-p', '/data/db', '/data/specs' ]
+        resources: {{- toYaml .Values.protes.initResources | nindent 10 }}
         volumeMounts:
         - mountPath: /data
           name: protes-volume
@@ -35,22 +48,23 @@ spec:
         - name: MONGO_USERNAME
           valueFrom:
             secretKeyRef:
-              key: database-user
+              key: databaseUser
               name: {{ .Values.mongodb.appName }}
         - name: MONGO_PASSWORD
           valueFrom:
             secretKeyRef:
-              key: database-password
+              key: databasePassword
               name: {{ .Values.mongodb.appName }}
         - name: MONGO_DBNAME
           valueFrom:
             secretKeyRef:
-              key: database-name
+              key: databaseName
               name: {{ .Values.mongodb.appName }}
         - name: RABBIT_HOST
           value: {{ .Values.rabbitmq.appName }}
         - name: RABBIT_PORT
           value: "5672"
+        resources: {{- toYaml .Values.protes.resources | nindent 10 }}
         livenessProbe:
           tcpSocket:
             port: protes-port
