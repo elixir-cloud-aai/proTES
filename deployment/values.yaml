@@ -2,11 +2,11 @@
 # This is a YAML-formatted file.
 # Declare variables to be passed into your templates.
 
-applicationDomain: "rahtiapp.fi"
+applicationDomain: ""
 
 # which cluster type proTES is going to be deployed on
 # it can be either 'kubernetes' or 'openshift'
-clusterType: openshift
+clusterType: kubernetes
 
 # mongodb-pvc.yaml/rabbitmq-pvc.yaml, change to ReadWriteMany if storageClass can do RWX
 storageAccessMode: ReadWriteOnce
