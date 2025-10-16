@@ -2,11 +2,11 @@
 # This is a YAML-formatted file.
 # Declare variables to be passed into your templates.
 
-applicationDomain: ""
+applicationDomain: "rahtiapp.fi"
 
 # which cluster type proTES is going to be deployed on
 # it can be either 'kubernetes' or 'openshift'
-clusterType: kubernetes
+clusterType: openshift
 
 # mongodb-pvc.yaml/rabbitmq-pvc.yaml, change to ReadWriteMany if storageClass can do RWX
 storageAccessMode: ReadWriteOnce
@@ -83,7 +83,7 @@ rabbitmq:
   resources:
     limits:
       cpu: 200m
-      memory: 1Gi
+      memory: 256Mi
     requests:
       cpu: 200m
       memory: 256Mi
