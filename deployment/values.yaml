@@ -18,7 +18,7 @@ flower:
   resources:
     limits:
       cpu: 200m
-      memory: 1Gi
+      memory: 500Mi
     requests:
       cpu: 200m
       memory: 500Mi
@@ -61,11 +61,11 @@ celeryWorker:
 mongodb:
   appName: mongodb
   secret:
-    databaseRootUsername: prowes-adm
-    databaseRootPassword: adminpasswd
-    databaseUser: prowes-user
-    databasePassword: prowes-db-passwd
-    databaseName: prowes-db
+    databaseRootUsername: ""
+    databaseRootPassword: ""
+    databaseUser: ""
+    databasePassword: ""
+    databaseName: ""
   volumeSize: 1Gi
   image: docker.io/library/mongo:noble
   resources:
