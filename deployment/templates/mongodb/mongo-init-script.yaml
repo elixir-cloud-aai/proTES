@@ -21,7 +21,7 @@ data:
     // Create the 'tasks' and 'service_info' collections
     // Database configuration from https://github.com/elixir-cloud-aai/proTES/blob/2f2d88915d9948b0d2ffbe6799af01bbc413b00a/pro_tes/config.yaml#L30
     db.createCollection('tasks');
-    db.runs.createIndex(
+    db.tasks.createIndex(
       { task_id: 1, worker_id: 1 },
       { unique: true, sparse: true }
     );
