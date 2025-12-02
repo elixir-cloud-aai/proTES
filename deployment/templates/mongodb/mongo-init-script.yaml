@@ -1,0 +1,41 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mongo-init-script
+data:
+  init-script.js: |
+    db = db.getSiblingDB('taskStore');
+    dbproTES = db.getSiblingDB('{{ tpl .Values.mongodb.secret.databaseName . }}')
+
+    dbproTES.createUser({
+      user: "{{ tpl .Values.mongodb.secret.databaseUser . }}",
+      pwd: "{{ tpl .Values.mongodb.secret.databasePassword . }}",
+      roles: [
+        {
+          role: "readWrite",
+          db: "{{ tpl .Values.mongodb.secret.databaseName . }}"
+        }
+      ]
+    });
+
+    // Create the 'tasks' and 'service_info' collections
+    // Database configuration from https://github.com/elixir-cloud-aai/proTES/blob/2f2d88915d9948b0d2ffbe6799af01bbc413b00a/pro_tes/config.yaml#L30
+    db.createCollection('tasks');
+    db.tasks.createIndex(
+      { task_id: 1, worker_id: 1 },
+      { unique: true, sparse: true }
+    );
+    db.createCollection('service_info');
+    db.service_info.createIndex(
+      { id: 1 }
+    );
+
+    dbproTES.createCollection('runs');
+    dbproTES.runs.createIndex(
+      { run_id: 1, task_id: 1 },
+      { unique: true, sparse: true }
+    );
+    dbproTES.createCollection('service_info');
+    dbproTES.service_info.createIndex(
+      { id: 1}
+    );

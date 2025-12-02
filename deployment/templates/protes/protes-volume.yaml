@@ -5,7 +5,7 @@ metadata:
   name: {{ .Values.protes.appName}}-volume
 spec:
   accessModes:
-    - ReadWriteMany
+    - {{ .Values.storageAccessMode }} 
   resources:
     requests:
       storage: '1Gi'

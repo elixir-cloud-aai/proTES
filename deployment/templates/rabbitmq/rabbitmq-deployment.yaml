@@ -17,6 +17,7 @@ spec:
       containers:
       - name: rabbitmq
         image: {{ .Values.rabbitmq.image }}
+        resources: {{- toYaml .Values.rabbitmq.resources | nindent 10 }}
         volumeMounts:
         - mountPath: /var/lib/rabbitmq
           name: rabbitmq-volume

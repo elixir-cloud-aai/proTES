@@ -2,35 +2,88 @@
 # This is a YAML-formatted file.
 # Declare variables to be passed into your templates.
 
-applicationDomain: rahtiapp.fi
+applicationDomain: ""
 
 # which cluster type proTES is going to be deployed on
 # it can be either 'kubernetes' or 'openshift'
-clusterType: openshift
+clusterType: kubernetes
+
+# mongodb-pvc.yaml/rabbitmq-pvc.yaml, change to ReadWriteMany if storageClass can do RWX
+storageAccessMode: ReadWriteOnce
 
 flower:
   appName: protes-flower
   basicAuth: admin:admin
   image: endocode/flower
+  resources:
+    limits:
+      cpu: 200m
+      memory: 500Mi
+    requests:
+      cpu: 200m
+      memory: 500Mi
 
 protes:
   appName: protes
   image: elixircloud/protes:latest
+  initResources:
+    limits:
+      memory: 16Mi
+      cpu: 50m
+    requests:
+      memory: 16Mi
+  resources:
+    limits:
+      memory: 256Mi
+      cpu: 100m
+    requests:
+      memory: 256Mi
+      cpu: 100m
 
 celeryWorker:
   appName: celery-worker
   image: elixircloud/protes:latest
+  initResources:
+    limits:
+      memory: 16Mi
+      cpu: 50m
+    requests:
+      memory: 16Mi
+      cpu: 50m
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 100m
+      memory: 256Mi
 
 mongodb:
   appName: mongodb
-  databaseAdminPassword: adminpasswd
-  databaseName: protes-db
-  databasePassword: protes-db-passwd
-  databaseUser: protes-user
+  secret:
+    databaseRootUsername: ""
+    databaseRootPassword: ""
+    databaseUser: ""
+    databasePassword: ""
+    databaseName: ""
   volumeSize: 1Gi
-  image: centos/mongodb-36-centos7
+  image: docker.io/library/mongo:noble
+  resources:
+    limits:
+      cpu: 200m
+      memory: 512Mi
+    requests:
+      cpu: 200m
+      memory: 512Mi
 
 rabbitmq:
   appName: rabbitmq
   volumeSize: 1Gi
-  image: rabbitmq:3-management
+  image: rabbitmq:4.1.4-management
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 200m
+      memory: 256Mi
