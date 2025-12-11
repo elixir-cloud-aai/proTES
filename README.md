@@ -128,14 +128,14 @@ firefox http://localhost:8080/ga4gh/tes/v1/ui
 ## Docker MTU Troubleshooting
 
 Sometimes containers cannot reach external hosts due to a mismatch between the
-container network MTU and the host/network MTU (for example when the host
-interface or an overlay/VPN uses a lower MTU). This may cause TCP connections
-to hang or time out when packets exceed the path MTU and ICMP "fragmentation
-needed" messages are not delivered correctly.
+container network Maximum Transmission Unit (MTU) and the host/network MTU 
+(for example when the host interface or an overlay/VPN uses a lower MTU). 
+This may cause TCP connections to hang or time out when packets exceed 
+the path MTU and ICMP "fragmentation needed" messages are not delivered correctly.
 
 Quick checks
 
-- From the host: `ip link show` to inspect MTU of the physical interface
+- From the host: `ip link` to inspect MTU of the physical interface
   (e.g. `enp3s0`) and existing bridges (`br-...`).
 - From the container: verify connectivity with `curl` and check `/etc/resolv.conf`.
 - Capture ICMP messages on the host while reproducing the failure: e.g.
