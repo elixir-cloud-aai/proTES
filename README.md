@@ -125,6 +125,53 @@ firefox http://localhost:8080/ga4gh/tes/v1/ui
 > **Note:** Host and port may differ if you have changed the configuration or
 > use an HTTP server to reroute calls to a different host.
 
+## Docker MTU Troubleshooting
+
+Sometimes containers cannot reach external hosts due to a mismatch between the
+container network MTU and the host/network MTU (for example when the host
+interface or an overlay/VPN uses a lower MTU). This may cause TCP connections
+to hang or time out when packets exceed the path MTU and ICMP "fragmentation
+needed" messages are not delivered correctly.
+
+Quick checks
+
+- From the host: `ip link show` to inspect MTU of the physical interface
+  (e.g. `enp3s0`) and existing bridges (`br-...`).
+- From the container: verify connectivity with `curl` and check `/etc/resolv.conf`.
+- Capture ICMP messages on the host while reproducing the failure: e.g.
+  `sudo tcpdump -n -i any host <container-ip> and icmp`.
+
+Temporary verification
+
+- Temporarily lower the container interface MTU (requires host access):
+
+```bash
+PID=$(docker inspect -f '{{.State.Pid}}' <container>)
+sudo nsenter -t $PID -n ip link set dev eth0 mtu 1400
+```
+
+If connectivity is restored after lowering the MTU, a PMTU mismatch is likely.
+
+Permanent fixes
+
+- Set Docker daemon MTU (global): edit `/etc/docker/daemon.json` and add
+  `{"mtu": 1400}` then `sudo systemctl restart docker` and recreate networks.
+- Or set the compose network MTU for the project by adding to
+  `docker-compose.yaml` under a top-level `networks.default.driver_opts`:
+
+```yaml
+networks:
+  default:
+    driver: bridge
+    driver_opts:
+      com.docker.network.driver.mtu: "1400"
+```
+
+After applying either change, recreate the compose stack so the bridge and
+veths are created with the new MTU and verify with `ip link` and a
+test `curl` from a container.
+
+
 ## Contributing
 
 This project is a community effort and lives off your contributions, be it in
