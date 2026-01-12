@@ -1,0 +1,11 @@
+Elixir Cloud proTES is being deployed!
+
+Once deployed:
+
+  1. Access the API via https://{{ .Values.protes.appName }}.{{ .Values.applicationDomain }}/ga4gh/tes/v1/
+
+     To test the connection, you can run:
+
+       curl -X GET "https://{{ .Values.protes.appName }}.{{ .Values.applicationDomain }}/ga4gh/tes/v1/service-info" -H "Accept: application/json"
+
+  2. Access the Swagger UI via https://{{ .Values.protes.appName }}.{{ .Values.applicationDomain }}/ga4gh/tes/v1/ui
