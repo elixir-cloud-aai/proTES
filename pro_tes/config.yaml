@@ -143,14 +143,12 @@ custom:
   tes:
     service_list:
       - "https://csc-tesk-noauth.rahtiapp.fi"
-      - "https://funnel.cloud.e-infra.cz/"
-      - "https://tesk-eu.hypatia-comp.athenarc.gr"
-      - "https://tesk-na.cloud.e-infra.cz"
-      - "https://vm4816.kaj.pouta.csc.fi/"
+      - "http://host.docker.internal:8000"
 
   storeLogs:
     execution_trace: True
 
   middlewares:
-    - - "pro_tes.plugins.middlewares.task_distribution.distance.TaskDistributionDistance"
-      - "pro_tes.plugins.middlewares.task_distribution.random.TaskDistributionRandom"
+#    - - "pro_tes.plugins.middlewares.task_distribution.distance.TaskDistributionDistance"
+#      - "pro_tes.plugins.middlewares.task_distribution.random.TaskDistributionRandom"
+    - - "pro_tes.plugins.middlewares.task_distribution.random.TaskDistributionRandom"
