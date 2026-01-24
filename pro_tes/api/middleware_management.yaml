@@ -1,0 +1,671 @@
+openapi: 3.0.3
+info:
+  title: proTES Middleware Management API
+  description: |
+    API for dynamically managing middleware in proTES (GA4GH Task Execution Service Proxy).
+    This API allows runtime configuration of middleware components that process task execution requests.
+  version: 1.0.0
+  contact:
+    name: ELIXIR Cloud & AAI
+    url: https://github.com/elixir-cloud-aai/proTES
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0.html
+
+servers:
+  - url: /ga4gh/tes/v1
+    description: proTES API base path
+
+tags:
+  - name: Middleware Management
+    description: Operations for managing middleware stack
+
+paths:
+  /middlewares:
+    get:
+      summary: List all middlewares
+      description: |
+        Retrieve all configured middlewares with their order, metadata, and status.
+        Results are sorted by execution order (ascending) by default.
+      operationId: listMiddlewares
+      tags:
+        - Middleware Management
+      parameters:
+        - name: limit
+          in: query
+          description: Maximum number of results to return
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+        - name: offset
+          in: query
+          description: Number of results to skip (for pagination)
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: sort_by
+          in: query
+          description: Field to sort by
+          required: false
+          schema:
+            type: string
+            enum: [order, name, created_at, updated_at]
+            default: order
+        - name: enabled
+          in: query
+          description: Filter by enabled status
+          required: false
+          schema:
+            type: boolean
+        - name: source
+          in: query
+          description: Filter by middleware source
+          required: false
+          schema:
+            type: string
+            enum: [local, github]
+      responses:
+        '200':
+          description: Successful response with list of middlewares
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MiddlewareList'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    post:
+      summary: Add a new middleware
+      description: |
+        Add a new middleware to the execution stack. Middleware can be loaded from 
+        local class paths or fetched from GitHub repositories. If order is not specified,
+        the middleware is appended to the end of the stack. If order is specified, 
+        existing middlewares at that position or higher are shifted up by one.
+      operationId: addMiddleware
+      tags:
+        - Middleware Management
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MiddlewareCreate'
+            examples:
+              local_middleware:
+                summary: Add local middleware
+                value:
+                  name: "Distance-based Router"
+                  class_path: "pro_tes.plugins.middlewares.task_distribution.distance.TaskDistributionDistance"
+                  order: 0
+                  enabled: true
+              github_middleware:
+                summary: Add middleware from GitHub
+                value:
+                  name: "Custom Load Balancer"
+                  class_path: "CustomMiddleware"
+                  github_url: "https://raw.githubusercontent.com/user/repo/main/middleware.py"
+                  enabled: true
+              fallback_group:
+                summary: Add fallback group
+                value:
+                  name: "Load Balancing Group"
+                  class_path:
+                    - "pro_tes.plugins.middlewares.task_distribution.distance.TaskDistributionDistance"
+                    - "pro_tes.plugins.middlewares.task_distribution.random.TaskDistributionRandom"
+                  order: 0
+                  enabled: true
+      responses:
+        '201':
+          description: Middleware created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MiddlewareCreateResponse'
+        '400':
+          description: Invalid request (duplicate name/class_path, invalid code)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /middlewares/{middleware_id}:
+    get:
+      summary: Get middleware details
+      description: Retrieve detailed information about a specific middleware by ID
+      operationId: getMiddleware
+      tags:
+        - Middleware Management
+      parameters:
+        - name: middleware_id
+          in: path
+          description: Unique identifier of the middleware
+          required: true
+          schema:
+            type: string
+            pattern: '^[a-f0-9]{24}$'
+      responses:
+        '200':
+          description: Successful response with middleware details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MiddlewareConfig'
+        '404':
+          description: Middleware not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    put:
+      summary: Update middleware configuration
+      description: |
+        Update middleware configuration. Only name, order, config, and enabled fields
+        can be updated. class_path and source cannot be modified for security reasons.
+      operationId: updateMiddleware
+      tags:
+        - Middleware Management
+      parameters:
+        - name: middleware_id
+          in: path
+          description: Unique identifier of the middleware
+          required: true
+          schema:
+            type: string
+            pattern: '^[a-f0-9]{24}$'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MiddlewareUpdate'
+      responses:
+        '200':
+          description: Middleware updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MiddlewareConfig'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Middleware not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Conflict (e.g., duplicate name)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      summary: Remove a middleware
+      description: |
+        Remove a middleware from the execution stack. By default performs soft delete
+        (sets enabled=false). Use force=true query parameter for hard deletion.
+      operationId: deleteMiddleware
+      tags:
+        - Middleware Management
+      parameters:
+        - name: middleware_id
+          in: path
+          description: Unique identifier of the middleware
+          required: true
+          schema:
+            type: string
+            pattern: '^[a-f0-9]{24}$'
+        - name: force
+          in: query
+          description: Perform hard delete (permanently remove)
+          required: false
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '204':
+          description: Middleware deleted successfully
+        '404':
+          description: Middleware not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /middlewares/reorder:
+    put:
+      summary: Reorder middleware stack
+      description: |
+        Reorder the entire middleware execution stack by providing an ordered array
+        of middleware IDs. All middleware IDs must be provided in the desired execution order.
+      operationId: reorderMiddlewares
+      tags:
+        - Middleware Management
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MiddlewareOrder'
+      responses:
+        '200':
+          description: Middlewares reordered successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Middleware stack reordered successfully"
+                  middlewares:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/MiddlewareConfig'
+        '400':
+          description: Invalid request (missing IDs, invalid IDs)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /middlewares/validate:
+    post:
+      summary: Validate middleware code
+      description: |
+        Validate middleware code without adding it to the stack. Performs static
+        analysis to check if the code is valid and safe. Useful for testing before
+        deploying middleware.
+      operationId: validateMiddleware
+      tags:
+        - Middleware Management
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ValidationRequest'
+      responses:
+        '200':
+          description: Validation results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+    MiddlewareConfig:
+      type: object
+      description: Complete middleware configuration object
+      required:
+        - _id
+        - name
+        - class_path
+        - order
+        - source
+        - enabled
+        - created_at
+        - updated_at
+      properties:
+        _id:
+          type: string
+          description: Unique identifier (MongoDB ObjectId)
+          example: "507f1f77bcf86cd799439011"
+        name:
+          type: string
+          description: Human-readable name for the middleware
+          example: "Distance-based Router"
+        class_path:
+          oneOf:
+            - type: string
+              description: Single middleware class path
+              example: "pro_tes.plugins.middlewares.task_distribution.distance.TaskDistributionDistance"
+            - type: array
+              description: Fallback group (array of class paths)
+              items:
+                type: string
+              example:
+                - "pro_tes.plugins.middlewares.task_distribution.distance.TaskDistributionDistance"
+                - "pro_tes.plugins.middlewares.task_distribution.random.TaskDistributionRandom"
+        order:
+          type: integer
+          description: Execution order (0 = first)
+          minimum: 0
+          example: 0
+        source:
+          type: string
+          description: Source of the middleware
+          enum: [local, github]
+          example: "local"
+        github_url:
+          type: string
+          description: GitHub URL if source is github
+          nullable: true
+          example: "https://raw.githubusercontent.com/user/repo/main/middleware.py"
+        config:
+          type: object
+          description: Middleware-specific configuration
+          nullable: true
+          additionalProperties: true
+          example:
+            timeout: 30
+            retries: 3
+        enabled:
+          type: boolean
+          description: Whether the middleware is active
+          example: true
+        created_at:
+          type: string
+          format: date-time
+          description: Creation timestamp
+          example: "2026-01-24T10:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Last update timestamp
+          example: "2026-01-24T10:30:00Z"
+
+    MiddlewareCreate:
+      type: object
+      description: Request body for creating a middleware
+      required:
+        - name
+        - class_path
+      properties:
+        name:
+          type: string
+          description: Human-readable name for the middleware
+          minLength: 1
+          maxLength: 255
+          example: "Distance-based Router"
+        class_path:
+          oneOf:
+            - type: string
+              description: Single middleware class path
+              example: "pro_tes.plugins.middlewares.task_distribution.distance.TaskDistributionDistance"
+            - type: array
+              description: Fallback group (array of class paths)
+              items:
+                type: string
+              minItems: 2
+              example:
+                - "pro_tes.plugins.middlewares.task_distribution.distance.TaskDistributionDistance"
+                - "pro_tes.plugins.middlewares.task_distribution.random.TaskDistributionRandom"
+        order:
+          type: integer
+          description: Execution order (omit to append to end)
+          minimum: 0
+          nullable: true
+          example: 0
+        github_url:
+          type: string
+          description: GitHub URL for fetching middleware code
+          nullable: true
+          pattern: '^https://raw\.githubusercontent\.com/.+\.py$'
+          example: "https://raw.githubusercontent.com/user/repo/main/middleware.py"
+        config:
+          type: object
+          description: Middleware-specific configuration
+          nullable: true
+          additionalProperties: true
+          example:
+            timeout: 30
+            retries: 3
+        enabled:
+          type: boolean
+          description: Whether the middleware should be active
+          default: true
+          example: true
+
+    MiddlewareUpdate:
+      type: object
+      description: Request body for updating a middleware
+      properties:
+        name:
+          type: string
+          description: Human-readable name for the middleware
+          minLength: 1
+          maxLength: 255
+          example: "Distance-based Router v2"
+        order:
+          type: integer
+          description: Execution order
+          minimum: 0
+          example: 1
+        config:
+          type: object
+          description: Middleware-specific configuration
+          nullable: true
+          additionalProperties: true
+          example:
+            timeout: 60
+            retries: 5
+        enabled:
+          type: boolean
+          description: Whether the middleware is active
+          example: false
+
+    MiddlewareList:
+      type: object
+      description: Paginated list of middlewares
+      required:
+        - middlewares
+        - total
+        - limit
+        - offset
+      properties:
+        middlewares:
+          type: array
+          description: Array of middleware configurations
+          items:
+            $ref: '#/components/schemas/MiddlewareConfig'
+        total:
+          type: integer
+          description: Total number of middlewares (without pagination)
+          example: 5
+        limit:
+          type: integer
+          description: Maximum results per page
+          example: 50
+        offset:
+          type: integer
+          description: Number of results skipped
+          example: 0
+
+    MiddlewareCreateResponse:
+      type: object
+      description: Response after creating a middleware
+      required:
+        - _id
+        - order
+        - message
+      properties:
+        _id:
+          type: string
+          description: Unique identifier of created middleware
+          example: "507f1f77bcf86cd799439011"
+        order:
+          type: integer
+          description: Assigned execution order
+          example: 0
+        message:
+          type: string
+          description: Success message
+          example: "Middleware added successfully"
+
+    MiddlewareOrder:
+      type: object
+      description: Request body for reordering middlewares
+      required:
+        - ordered_ids
+      properties:
+        ordered_ids:
+          type: array
+          description: Array of middleware IDs in desired execution order
+          items:
+            type: string
+            pattern: '^[a-f0-9]{24}$'
+          minItems: 1
+          example:
+            - "507f1f77bcf86cd799439011"
+            - "507f1f77bcf86cd799439012"
+            - "507f1f77bcf86cd799439013"
+
+    ValidationRequest:
+      type: object
+      description: Request body for validating middleware code
+      required:
+        - class_path
+      properties:
+        class_path:
+          type: string
+          description: Class path or code to validate
+          example: "pro_tes.plugins.middlewares.task_distribution.distance.TaskDistributionDistance"
+        github_url:
+          type: string
+          description: GitHub URL for fetching middleware code
+          nullable: true
+          pattern: '^https://raw\.githubusercontent\.com/.+\.py$'
+          example: "https://raw.githubusercontent.com/user/repo/main/middleware.py"
+        code:
+          type: string
+          description: Raw Python code to validate (alternative to class_path)
+          nullable: true
+
+    ValidationResponse:
+      type: object
+      description: Validation results
+      required:
+        - valid
+        - message
+      properties:
+        valid:
+          type: boolean
+          description: Whether the middleware code is valid
+          example: true
+        message:
+          type: string
+          description: Validation summary message
+          example: "Middleware is valid and safe to use"
+        errors:
+          type: array
+          description: List of validation errors (if any)
+          items:
+            type: object
+            properties:
+              line:
+                type: integer
+                description: Line number of error
+                example: 15
+              column:
+                type: integer
+                description: Column number of error
+                example: 8
+              message:
+                type: string
+                description: Error message
+                example: "Method 'apply_middleware' not found"
+              severity:
+                type: string
+                enum: [error, warning, info]
+                example: "error"
+        warnings:
+          type: array
+          description: List of validation warnings
+          items:
+            type: object
+            properties:
+              line:
+                type: integer
+                example: 20
+              message:
+                type: string
+                example: "Consider adding type hints"
+              severity:
+                type: string
+                enum: [error, warning, info]
+                example: "warning"
+
+    ErrorResponse:
+      type: object
+      description: Standard error response
+      required:
+        - error
+        - message
+      properties:
+        error:
+          type: string
+          description: Error type/code
+          example: "MiddlewareNotFound"
+        message:
+          type: string
+          description: Human-readable error message
+          example: "Middleware with ID '507f1f77bcf86cd799439011' not found"
+        details:
+          type: object
+          description: Additional error details
+          nullable: true
+          additionalProperties: true
+        timestamp:
+          type: string
+          format: date-time
+          description: Error timestamp
+          example: "2026-01-24T10:30:00Z"
