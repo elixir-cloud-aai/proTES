@@ -87,7 +87,6 @@ specs:
       - api/middleware_management.yaml
     add_operation_fields:
       x-openapi-router-controller: pro_tes.api.middlewares.controllers
-    disable_auth: True
     connexion:
       strict_validation: True
       validate_responses: True
@@ -96,7 +95,7 @@ specs:
 This configuration tells FOCA to:
 - Load the OpenAPI spec from the api directory
 - Route requests to the middlewares controller module
-- Disable authentication for initial development (will be secured in Subtask 4)
+- Use existing authentication scheme for security
 - Enable strict validation of requests and responses
 
 The FOCA framework uses Connexion under the hood, which automatically generates routing, parameter validation, and response serialization based on the OpenAPI specification.
@@ -110,29 +109,8 @@ pro_tes/
 └── config.yaml                             (FOCA integration)
 
 docs/
-├── api/
-│   ├── middleware_management.md            (API documentation)
-│   ├── middleware_management.postman_collection.json
-│   └── QUICK_REFERENCE.md
-├── architecture/
-│   └── middleware_api_design.md            (Architecture decisions)
 └── middleware.md                           (This file)
-
-scripts/
-└── validate_openapi.sh                     (Validation utility)
 ```
-
-## Documentation Deliverables
-
-**API Documentation**: Comprehensive guide with request/response examples for each endpoint. Includes curl commands, common use cases, and troubleshooting tips.
-
-**Architecture Decision Record**: Documents twelve major design decisions with rationale, alternatives considered, and consequences. Serves as reference for future development.
-
-**Postman Collection**: Ready-to-use collection with fourteen pre-configured requests. Includes environment variables, test scripts, and example data for all scenarios.
-
-**Quick Reference**: Single-page reference with essential endpoints, parameters, and response codes. Designed for daily development use.
-
-**Validation Script**: Bash script that validates OpenAPI syntax using multiple tools. Checks for common errors like undefined schema references and invalid endpoint definitions.
 
 ## Testing Approach
 
@@ -150,19 +128,21 @@ Runtime testing will occur in Subtask 2 when controllers are implemented.
 
 ## Security Considerations
 
-While authentication is disabled for initial development, the specification includes security design:
+The specification includes comprehensive security design:
 
-**Input Validation**: All parameters include type, format, and constraint definitions. Connexion will automatically validate inputs before they reach controller code.
+**Authentication Required**: All middleware management endpoints require authentication through the existing proTES security scheme.
+
+**Input Validation**: All parameters include type, format, and constraint definitions. Connexion automatically validates inputs before they reach controller code.
 
 **MongoDB ObjectId Pattern**: Enforces 24-character hex pattern preventing injection attacks through malformed IDs.
 
 **Class Path Immutability**: Prevents code substitution attacks by making class paths unchangeable after creation.
 
-**Code Validation**: Separate validation endpoint allows testing code safety before deployment.
+**Database Constraints**: Unique indexes on both name and class_path fields prevent duplicate middleware registration.
 
 **Source Tracking**: Records code origin for audit and security review purposes.
 
-Full security implementation including authentication, authorization, and rate limiting will be added in Subtask 4.
+Authorization controls and role-based access will be added in Subtask 4.
 
 ## Future Work
 

@@ -27,7 +27,7 @@ paths:
       description: |
         Retrieve all configured middlewares with their order, metadata, and status.
         Results are sorted by execution order (ascending) by default.
-      operationId: listMiddlewares
+      operationId: ListMiddlewares
       tags:
         - Middleware Management
       parameters:
@@ -90,7 +90,7 @@ paths:
         local class paths or fetched from GitHub repositories. If order is not specified,
         the middleware is appended to the end of the stack. If order is specified, 
         existing middlewares at that position or higher are shifted up by one.
-      operationId: addMiddleware
+      operationId: AddMiddleware
       tags:
         - Middleware Management
       requestBody:
@@ -147,7 +147,7 @@ paths:
     get:
       summary: Get middleware details
       description: Retrieve detailed information about a specific middleware by ID
-      operationId: getMiddleware
+      operationId: GetMiddleware
       tags:
         - Middleware Management
       parameters:
@@ -183,7 +183,7 @@ paths:
       description: |
         Update middleware configuration. Only name, order, config, and enabled fields
         can be updated. class_path and source cannot be modified for security reasons.
-      operationId: updateMiddleware
+      operationId: UpdateMiddleware
       tags:
         - Middleware Management
       parameters:
@@ -237,7 +237,7 @@ paths:
       description: |
         Remove a middleware from the execution stack. By default performs soft delete
         (sets enabled=false). Use force=true query parameter for hard deletion.
-      operationId: deleteMiddleware
+      operationId: DeleteMiddleware
       tags:
         - Middleware Management
       parameters:
@@ -277,7 +277,7 @@ paths:
       description: |
         Reorder the entire middleware execution stack by providing an ordered array
         of middleware IDs. All middleware IDs must be provided in the desired execution order.
-      operationId: reorderMiddlewares
+      operationId: ReorderMiddlewares
       tags:
         - Middleware Management
       requestBody:
@@ -321,7 +321,7 @@ paths:
         Validate middleware code without adding it to the stack. Performs static
         analysis to check if the code is valid and safe. Useful for testing before
         deploying middleware.
-      operationId: validateMiddleware
+      operationId: ValidateMiddleware
       tags:
         - Middleware Management
       requestBody:
@@ -572,12 +572,10 @@ components:
     ValidationRequest:
       type: object
       description: Request body for validating middleware code
-      required:
-        - class_path
       properties:
         class_path:
           type: string
-          description: Class path or code to validate
+          description: Class path to validate
           example: "pro_tes.plugins.middlewares.task_distribution.distance.TaskDistributionDistance"
         github_url:
           type: string
@@ -587,8 +585,11 @@ components:
           example: "https://raw.githubusercontent.com/user/repo/main/middleware.py"
         code:
           type: string
-          description: Raw Python code to validate (alternative to class_path)
+          description: Raw Python code to validate
           nullable: true
+      oneOf:
+        - required: [class_path]
+        - required: [code]
 
     ValidationResponse:
       type: object
@@ -648,25 +649,14 @@ components:
       type: object
       description: Standard error response
       required:
-        - error
+        - code
         - message
       properties:
-        error:
-          type: string
-          description: Error type/code
-          example: "MiddlewareNotFound"
+        code:
+          type: integer
+          description: HTTP status code
+          example: 404
         message:
           type: string
           description: Human-readable error message
           example: "Middleware with ID '507f1f77bcf86cd799439011' not found"
-        details:
-          type: object
-          description: Additional error details
-          nullable: true
-          additionalProperties: true
-        timestamp:
-          type: string
-          format: date-time
-          description: Error timestamp
-          example: "2026-01-24T10:30:00Z"
-          

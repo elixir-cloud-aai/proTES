@@ -51,6 +51,12 @@ db:
           indexes:
             - keys:
                 name: 1
+              options:
+                "unique": True
+            - keys:
+                class_path: 1
+              options:
+                "unique": True
 
 # API configuration
 # Cf. https://foca.readthedocs.io/en/latest/modules/foca.models.html#foca.models.config.APIConfig
@@ -79,7 +85,6 @@ api:
         - api/middleware_management.yaml
       add_operation_fields:
         x-openapi-router-controller: pro_tes.api.middlewares.controllers
-      disable_auth: True
       connexion:
         strict_validation: True
         validate_responses: True
@@ -169,4 +174,3 @@ custom:
   middlewares:
     - - "pro_tes.plugins.middlewares.task_distribution.distance.TaskDistributionDistance"
       - "pro_tes.plugins.middlewares.task_distribution.random.TaskDistributionRandom"
-      
