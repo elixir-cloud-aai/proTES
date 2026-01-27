@@ -3,6 +3,7 @@
 import logging
 from datetime import datetime
 from typing import Optional
+from urllib.parse import urlparse
 
 from bson import ObjectId
 from flask import current_app, request
@@ -392,11 +393,29 @@ def ValidateMiddleware() -> dict:
         
         # Fetch code from GitHub if github_url is provided
         if github_url and not code:
+            # Validate that the provided URL is a safe GitHub URL to prevent SSRF.
+            parsed = urlparse(github_url)
+            if not parsed.scheme or parsed.scheme.lower() != "https":
+                raise BadRequest("github_url must use https scheme")
+            if not parsed.hostname:
+                raise BadRequest("github_url must include a hostname")
+            allowed_github_hosts = {
+                "github.com",
+                "raw.githubusercontent.com",
+                "gist.github.com",
+            }
+            hostname = parsed.hostname.lower()
+            if hostname not in allowed_github_hosts:
+                raise BadRequest("github_url must point to a valid GitHub domain")
+
             try:
                 import requests
                 response = requests.get(github_url, timeout=10)
                 response.raise_for_status()
                 code = response.text
+            except BadRequest:
+                # Re-raise explicit BadRequest raised by validation above
+                raise
             except Exception as e:
                 raise MiddlewareCodeFetchError(f"Failed to fetch code from GitHub: {str(e)}")
         
