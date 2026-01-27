@@ -1,9 +1,8 @@
 """Data models for middleware management."""
 
-from datetime import datetime
 from typing import List, Optional, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 
 class MiddlewareDocument(BaseModel):
@@ -51,14 +50,15 @@ class MiddlewareList(BaseModel):
 class MiddlewareCreateResponse(BaseModel):
     """Response model for middleware creation."""
     
-    id: str
+    _id: str
+    order: int
     message: str
 
 
 class MiddlewareOrder(BaseModel):
     """Request model for reordering middlewares."""
     
-    middleware_ids: List[str]
+    ordered_ids: List[str]
 
 
 class ValidationRequest(BaseModel):
@@ -74,5 +74,5 @@ class ValidationResponse(BaseModel):
     
     valid: bool
     message: str
-    detected_class: Optional[str] = None
-    required_methods: Optional[List[str]] = None
+    errors: Optional[List[dict]] = []
+    warnings: Optional[List[dict]] = []

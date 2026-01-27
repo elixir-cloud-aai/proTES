@@ -6,9 +6,17 @@ from typing import Optional
 
 from bson import ObjectId
 from flask import current_app, request
-from pymongo.errors import DuplicateKeyError, PyMongoError
-from werkzeug.exceptions import BadRequest, InternalServerError, NotFound
+from pymongo.errors import PyMongoError
+from werkzeug.exceptions import InternalServerError
 
+from pro_tes.exceptions import (
+    BadRequest,
+    MiddlewareNotFound,
+    MiddlewareDuplicateName,
+    MiddlewareDuplicateClassPath,
+    MiddlewareValidationError,
+    MiddlewareCodeFetchError
+)
 from pro_tes.api.middlewares.models import (
     MiddlewareCreate,
     MiddlewareUpdate,
@@ -53,6 +61,9 @@ def ListMiddlewares(
         if source is not None:
             filter_dict["source"] = source
         
+        # Exclude soft-deleted middlewares
+        filter_dict["deleted_at"] = {"$exists": False}
+        
         cursor = collection.find(
             filter_dict
         ).sort(sort_by, 1).skip(offset).limit(limit)
@@ -89,7 +100,7 @@ def AddMiddleware() -> tuple:
         
         existing = collection.find_one({"name": middleware.name})
         if existing:
-            raise BadRequest(f"Middleware with name '{middleware.name}' already exists")
+            raise MiddlewareDuplicateName(f"Middleware with name '{middleware.name}' already exists")
         
         class_path_str = (
             middleware.class_path if isinstance(middleware.class_path, str)
@@ -97,7 +108,7 @@ def AddMiddleware() -> tuple:
         )
         existing_path = collection.find_one({"class_path": class_path_str})
         if existing_path:
-            raise BadRequest(
+            raise MiddlewareDuplicateClassPath(
                 f"Middleware with class_path '{class_path_str}' already exists"
             )
         
@@ -132,7 +143,8 @@ def AddMiddleware() -> tuple:
         logger.info(f"Created middleware: {middleware.name} (ID: {middleware_id})")
         
         return {
-            "id": middleware_id,
+            "_id": middleware_id,
+            "order": order,
             "message": "Middleware created successfully"
         }, 201
         
@@ -158,17 +170,17 @@ def GetMiddleware(middleware_id: str) -> dict:
         if not ObjectId.is_valid(middleware_id):
             raise BadRequest("Invalid middleware ID format")
         
-        document = collection.find_one(
-            {"_id": ObjectId(middleware_id)},
-            {"_id": 0}
-        )
-        
+        document = collection.find_one({"_id": ObjectId(middleware_id)})
+
         if document is None:
-            raise NotFound(f"Middleware with ID '{middleware_id}' not found")
+            raise MiddlewareNotFound(f"Middleware with ID '{middleware_id}' not found")
+        
+        # Convert ObjectId to string for JSON serialization
+        document["_id"] = str(document["_id"])
         
         return document
         
-    except (BadRequest, NotFound):
+    except (BadRequest, MiddlewareNotFound):
         raise
     except Exception as e:
         logger.error(f"Error retrieving middleware: {e}")
@@ -192,7 +204,7 @@ def UpdateMiddleware(middleware_id: str) -> dict:
         
         existing = collection.find_one({"_id": ObjectId(middleware_id)})
         if not existing:
-            raise NotFound(f"Middleware with ID '{middleware_id}' not found")
+            raise MiddlewareNotFound(f"Middleware with ID '{middleware_id}' not found")
         
         data = request.json
         update_data = MiddlewareUpdate(**data)
@@ -238,16 +250,15 @@ def UpdateMiddleware(middleware_id: str) -> dict:
             {"$set": update_dict}
         )
         
-        updated_doc = collection.find_one(
-            {"_id": ObjectId(middleware_id)},
-            {"_id": 0}
-        )
+        updated_doc = collection.find_one({"_id": ObjectId(middleware_id)})
+        if updated_doc:
+            updated_doc["_id"] = str(updated_doc["_id"])
         
         logger.info(f"Updated middleware: {middleware_id}")
         
         return updated_doc
         
-    except (BadRequest, NotFound):
+    except (BadRequest, MiddlewareNotFound):
         raise
     except Exception as e:
         logger.error(f"Error updating middleware: {e}")
@@ -272,7 +283,7 @@ def DeleteMiddleware(middleware_id: str, force: bool = False) -> tuple:
         
         middleware = collection.find_one({"_id": ObjectId(middleware_id)})
         if not middleware:
-            raise NotFound(f"Middleware with ID '{middleware_id}' not found")
+            raise MiddlewareNotFound(f"Middleware with ID '{middleware_id}' not found")
         
         if force:
             deleted_order = middleware["order"]
@@ -296,7 +307,7 @@ def DeleteMiddleware(middleware_id: str, force: bool = False) -> tuple:
         
         return "", 204
         
-    except (BadRequest, NotFound):
+    except (BadRequest, MiddlewareNotFound):
         raise
     except Exception as e:
         logger.error(f"Error deleting middleware: {e}")
@@ -313,18 +324,20 @@ def ReorderMiddlewares() -> dict:
         collection = get_middleware_collection()
         data = request.json
         
-        middleware_ids = data.get("middleware_ids", [])
+        middleware_ids = data.get("ordered_ids", [])
         
         if not middleware_ids:
-            raise BadRequest("middleware_ids array is required")
+            raise BadRequest("ordered_ids array is required")
         
         if len(middleware_ids) != len(set(middleware_ids)):
             raise BadRequest("Duplicate middleware IDs in array")
         
-        total_count = collection.count_documents({})
+        # Only count active (non-deleted) middlewares
+        active_filter = {"deleted_at": {"$exists": False}}
+        total_count = collection.count_documents(active_filter)
         if len(middleware_ids) != total_count:
             raise BadRequest(
-                f"Array must contain all {total_count} middlewares"
+                f"Array must contain all {total_count} active middlewares"
             )
         
         for middleware_id in middleware_ids:
@@ -333,7 +346,7 @@ def ReorderMiddlewares() -> dict:
             
             exists = collection.find_one({"_id": ObjectId(middleware_id)})
             if not exists:
-                raise NotFound(f"Middleware with ID '{middleware_id}' not found")
+                raise MiddlewareNotFound(f"Middleware with ID '{middleware_id}' not found")
         
         now = datetime.utcnow().isoformat() + "Z"
         for new_order, middleware_id in enumerate(middleware_ids):
@@ -342,7 +355,10 @@ def ReorderMiddlewares() -> dict:
                 {"$set": {"order": new_order, "updated_at": now}}
             )
         
-        middlewares = list(collection.find({}, {"_id": 0}).sort("order", 1))
+        middlewares = list(collection.find({}).sort("order", 1))
+        # Convert ObjectIds to strings
+        for mw in middlewares:
+            mw["_id"] = str(mw["_id"])
         
         logger.info("Reordered middleware stack")
         
@@ -351,7 +367,7 @@ def ReorderMiddlewares() -> dict:
             "middlewares": middlewares
         }
         
-    except (BadRequest, NotFound):
+    except (BadRequest, MiddlewareNotFound):
         raise
     except Exception as e:
         logger.error(f"Error reordering middlewares: {e}")
@@ -371,8 +387,18 @@ def ValidateMiddleware() -> dict:
         code = data.get("code")
         github_url = data.get("github_url")
         
-        if not class_path and not code:
-            raise BadRequest("Either class_path or code must be provided")
+        if not class_path and not code and not github_url:
+            raise BadRequest("Either class_path, code, or github_url must be provided")
+        
+        # Fetch code from GitHub if github_url is provided
+        if github_url and not code:
+            try:
+                import requests
+                response = requests.get(github_url, timeout=10)
+                response.raise_for_status()
+                code = response.text
+            except Exception as e:
+                raise MiddlewareCodeFetchError(f"Failed to fetch code from GitHub: {str(e)}")
         
         result = validate_middleware_code(code=code, class_path=class_path)
         

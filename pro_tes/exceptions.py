@@ -72,90 +72,90 @@ class MiddlewareCodeFetchError(BadRequest):
 exceptions = {
     Exception: {
         "message": "An unexpected error occurred.",
-        "code": "500",
+        "code": 500,
     },
     BadRequest: {
         "message": "The request is malformed.",
-        "code": "400",
+        "code": 400,
     },
     BadRequestProblem: {
         "message": "The request is malformed.",
-        "code": "400",
+        "code": 400,
     },
     ExtraParameterProblem: {
         "message": "The request is malformed.",
-        "code": "400",
+        "code": 400,
     },
     ValidationError: {
         "message": "The request is malformed.",
-        "code": "400",
+        "code": 400,
     },
     TesUriError: {
         "message": "TES URI cannot be parsed",
-        "code": "400",
+        "code": 400,
         },
     InputUriError: {
         "message": "Input URI cannot be parsed.",
-        "code": "400",
+        "code": 400,
     },
     Unauthorized: {
         "message": " The request is unauthorized.",
-        "code": "401",
+        "code": 401,
     },
     Forbidden: {
         "message": "The requester is not authorized to perform this action.",
-        "code": "403",
+        "code": 403,
     },
     NotFound: {
         "message": "The requested resource wasn't found.",
-        "code": "404",
+        "code": 404,
     },
     TaskNotFound: {
         "message": "The requested task wasn't found.",
-        "code": "404",
+        "code": 404,
     },
     InternalServerError: {
         "message": "An unexpected error occurred.",
-        "code": "500",
+        "code": 500,
     },
     IdsUnavailableProblem: {
         "message": "No/few unique task identifiers available.",
-        "code": "500",
+        "code": 500,
     },
     NoTesInstancesAvailable: {
         "message": "No valid TES instances available.",
-        "code": "500",
+        "code": 500,
     },
     MiddlewareException: {
         "message": "Middleware could not be applied.",
-        "code": "500",
+        "code": 500,
     },
     InvalidMiddleware: {
         "message": "Middleware is invalid.",
-        "code": "500",
+        "code": 500,
     },
     IPDistanceCalculationError: {
         "message": "IP distance calculation failed.",
-        "code": "500",
+        "code": 500,
     },
     MiddlewareNotFound: {
         "message": "Middleware with given ID was not found.",
-        "code": "404",
+        "code": 404,
     },
     MiddlewareDuplicateName: {
         "message": "Middleware name already exists.",
-        "code": "400",
+        "code": 400,
     },
     MiddlewareDuplicateClassPath: {
         "message": "Middleware class_path already exists.",
-        "code": "400",
+        "code": 400,
     },
     MiddlewareValidationError: {
         "message": "Middleware code validation failed.",
-        "code": "400",
+        "code": 400,
     },
     MiddlewareCodeFetchError: {
         "message": "Fetching middleware code from GitHub failed.",
-        "code": "400",
+        "code": 400,
     },
 }
