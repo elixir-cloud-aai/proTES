@@ -49,6 +49,26 @@ class TesUriError(ValueError):
     """Raised when TES URI cannot be parsed."""
 
 
+class MiddlewareNotFound(NotFound):
+    """Raised when middleware with given ID was not found."""
+
+
+class MiddlewareDuplicateName(BadRequest):
+    """Raised when middleware name already exists."""
+
+
+class MiddlewareDuplicateClassPath(BadRequest):
+    """Raised when middleware class_path already exists."""
+
+
+class MiddlewareValidationError(BadRequest):
+    """Raised when middleware code validation fails."""
+
+
+class MiddlewareCodeFetchError(BadRequest):
+    """Raised when fetching middleware code from GitHub fails."""
+
+
 exceptions = {
     Exception: {
         "message": "An unexpected error occurred.",
@@ -117,5 +137,25 @@ exceptions = {
     IPDistanceCalculationError: {
         "message": "IP distance calculation failed.",
         "code": "500",
+    },
+    MiddlewareNotFound: {
+        "message": "Middleware with given ID was not found.",
+        "code": "404",
+    },
+    MiddlewareDuplicateName: {
+        "message": "Middleware name already exists.",
+        "code": "400",
+    },
+    MiddlewareDuplicateClassPath: {
+        "message": "Middleware class_path already exists.",
+        "code": "400",
+    },
+    MiddlewareValidationError: {
+        "message": "Middleware code validation failed.",
+        "code": "400",
+    },
+    MiddlewareCodeFetchError: {
+        "message": "Fetching middleware code from GitHub failed.",
+        "code": "400",
     },
 }

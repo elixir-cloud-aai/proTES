@@ -47,6 +47,16 @@ db:
           indexes:
             - keys:
                 id: 1
+        middlewares:
+          indexes:
+            - keys:
+                name: 1
+              options:
+                "unique": True
+            - keys:
+                class_path: 1
+              options:
+                "unique": True
 
 # API configuration
 # Cf. https://foca.readthedocs.io/en/latest/modules/foca.models.html#foca.models.config.APIConfig
@@ -71,6 +81,18 @@ api:
         options:
           swagger_ui: True
           serve_spec: True
+    - path:
+        - api/middleware_management.yaml
+      add_operation_fields:
+        x-openapi-router-controller: pro_tes.api.middlewares.controllers
+      disable_auth: True
+      connexion:
+        strict_validation: True
+        validate_responses: True
+        options:
+          swagger_ui: True
+          serve_spec: True
+          name: middleware_api
 
 # Logging configuration
 # Cf. https://foca.readthedocs.io/en/latest/modules/foca.models.html#foca.models.config.LogConfig
