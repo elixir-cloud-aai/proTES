@@ -2,80 +2,83 @@
 
 ## Overview
 
-This document describes the implementation of Subtask 1 for the Middleware Management feature in proTES. This subtask focuses on designing and documenting the API specification that will enable dynamic middleware management at runtime.
+The Middleware Management API provides REST endpoints for dynamically managing middleware components in proTES at runtime. This API allows administrators and developers to add, configure, update, and remove middleware without service restarts.
 
 ## Background
 
-The proTES project required a way to manage middleware components dynamically without restarting the service. The maintainer requested that this feature be broken down into smaller, independently mergeable pull requests following a design-first approach. This subtask represents the foundation: the OpenAPI specification that defines how the API will behave.
+proTES uses a middleware architecture to process task execution requests. Previously, middleware configuration was static and required service restarts for any changes. The Middleware Management API enables dynamic runtime configuration, making it easier to adapt the service to changing requirements and deploy new middleware components.
 
-## Implementation Details
+## API Specification
 
-### What Was Built
-
-This subtask delivers a complete OpenAPI 3.0 specification for middleware management. The specification defines seven REST endpoints that cover all necessary operations for middleware lifecycle management.
+The Middleware Management API is defined using OpenAPI 3.0 specification and provides seven REST endpoints for complete middleware lifecycle management.
 
 ### API Endpoints
 
-**List Middlewares** - GET /ga4gh/tes/v1/middlewares
+**List Middlewares** - GET /protes/v1/middlewares
 Returns all configured middlewares with pagination and filtering support. Results are sorted by execution order by default. Supports filtering by enabled status and source type.
 
-**Add Middleware** - POST /ga4gh/tes/v1/middlewares
-Creates a new middleware in the execution stack. Supports loading from local class paths or GitHub repositories. Automatically handles order assignment and stack shifting.
+**Add Middleware** - POST /protes/v1/middlewares
+Creates a new middleware in the execution stack. Supports loading from local packages, GitHub repositories, or PyPI packages. Automatically handles order assignment and stack shifting.
 
-**Get Middleware Details** - GET /ga4gh/tes/v1/middlewares/{middleware_id}
+**Get Middleware Details** - GET /protes/v1/middlewares/{middleware_id}
 Retrieves detailed information about a specific middleware including configuration, metadata, and execution statistics.
 
-**Update Middleware** - PUT /ga4gh/tes/v1/middlewares/{middleware_id}
-Updates middleware configuration. Only allows modification of name, order, config parameters, and enabled status. Class path cannot be changed for security reasons.
+**Update Middleware** - PUT /protes/v1/middlewares/{middleware_id}
+Updates middleware configuration. Only allows modification of name, order, config parameters, and enabled status. Package path and entry point cannot be changed for security reasons.
 
-**Delete Middleware** - DELETE /ga4gh/tes/v1/middlewares/{middleware_id}
+**Delete Middleware** - DELETE /protes/v1/middlewares/{middleware_id}
 Removes a middleware from the stack. Supports soft delete (disable) by default and hard delete with force parameter.
 
-**Reorder Stack** - PUT /ga4gh/tes/v1/middlewares/reorder
+**Reorder Stack** - PUT /protes/v1/middlewares/reorder
 Reorders the entire middleware execution stack by accepting an ordered array of middleware IDs.
 
-**Validate Code** - POST /ga4gh/tes/v1/middlewares/validate
+**Validate Code** - POST /protes/v1/middlewares/validate
 Validates middleware code before creation. Checks Python syntax, required interface implementation, and security constraints.
 
 ### Data Model
 
-The API uses nine schema definitions to structure request and response data:
+The API uses comprehensive schema definitions to structure request and response data:
 
-**MiddlewareConfig**: Complete middleware representation including ID, name, class path, execution order, enabled status, configuration parameters, source information, and timestamps.
+**MiddlewareConfig**: Complete middleware representation including ID, name, package information (source type, package path, entry point), execution order, enabled status, configuration parameters, and timestamps.
 
-**MiddlewareCreate**: Request body for creating new middleware. Includes name, class path (string or array for fallback groups), optional order, enabled flag, configuration dict, and optional GitHub URL.
+**MiddlewareCreate**: Request body for creating new middleware. Includes name, package source configuration (local path, GitHub URL, or PyPI package), entry point (class path), optional order, enabled flag, and configuration dict.
 
 **MiddlewareUpdate**: Request body for updates. Limited to name, order, config, and enabled fields to prevent unauthorized code changes.
 
-**MiddlewareList**: Paginated list response containing middleware array and total count.
+**MiddlewareList**: Paginated list response containing middleware array, total count, page information, and navigation tokens following GA4GH pagination guidelines.
 
-**MiddlewareCreateResponse**: Response after successful creation including the new middleware object and a success message.
+**MiddlewareCreateResponse**: Response after successful creation including the middleware ID, assigned order, and success message.
 
 **MiddlewareOrder**: Request body for reordering containing an array of middleware IDs in desired execution order.
 
-**ValidationRequest**: Code validation request containing Python code string to validate.
+**ValidationRequest**: Code validation request containing package source information and entry point to validate.
 
-**ValidationResponse**: Validation result including validity boolean, validation messages array, detected class name, and required methods check.
+**ValidationResponse**: Validation result including validity boolean, validation messages, error details with line numbers, and warnings.
 
-**ErrorResponse**: Standard error response with status code, error type, and detailed message.
+**ErrorResponse**: Standard error response with HTTP status code, error message, and optional details.
 
-### Key Design Decisions
+### Key Features
 
 **MongoDB ObjectId Format**: Uses 24-character hexadecimal strings for middleware identification. This aligns with the existing proTES database schema and provides guaranteed uniqueness.
 
 **Order-Based Execution**: Middlewares execute in ascending order. Lower order values run first. This provides clear, predictable execution flow that's easy to understand and debug.
 
-**Fallback Group Support**: Allows multiple class paths in a single middleware entry. If the first middleware fails, the system automatically tries the next one in the list. This improves reliability without complex error handling.
+**Fallback Group Support**: Allows grouping multiple middleware sources in a single middleware entry. If the first middleware fails, the system automatically tries the next one in the list. Each middleware in a fallback group specifies its own source, package path, and entry point.
 
 **Soft Delete Default**: DELETE operations disable rather than remove middlewares by default. This preserves execution history and allows easy rollback. Hard delete requires explicit force parameter.
 
-**Immutable Class Path**: Once created, a middleware's class path cannot be changed. This prevents security risks from code substitution attacks. To change implementation, users must delete and recreate.
+**Immutable Package Configuration**: Once created, a middleware's package source and entry point cannot be changed. This prevents security risks from code substitution attacks. To change implementation, users must delete and recreate.
 
-**GitHub Integration**: Supports loading middleware code directly from GitHub URLs. The system fetches, validates, and caches the code. This enables sharing middleware across deployments without manual file management.
+**Multiple Package Sources**: Supports loading middleware from:
+  - **Local packages**: Installed Python packages with a class path entry point
+  - **GitHub repositories**: Direct Git repository URLs with setup.py or pyproject.toml
+  - **PyPI packages**: Public or private package registries with specified entry points
 
-**Source Tracking**: Records whether middleware originated from local files or GitHub. Helps administrators understand deployment composition and troubleshoot issues.
+**Source Tracking**: Records whether middleware originated from local packages, GitHub, or PyPI. Helps administrators understand deployment composition and troubleshoot issues.
 
 **Validation Endpoint**: Separate endpoint for validating middleware code before creation. Prevents deployment of broken middleware and provides immediate feedback on implementation issues.
+
+**GA4GH-Compliant Pagination**: Implements page-based pagination following the GA4GH API pagination guide with `page` and `page_size` parameters, supporting predictable result navigation.
 
 ### Integration with FOCA
 
@@ -109,54 +112,83 @@ pro_tes/
 └── config.yaml                             (FOCA integration)
 
 docs/
-└── middleware.md                           (This file)
+└── middleware.md                           (This documentation)
 ```
 
-## Testing Approach
+## Usage Examples
 
-This subtask focuses on specification validation rather than runtime testing since no executable code is implemented yet. Validation performed:
+### Adding a Local Package Middleware
 
-**YAML Syntax**: Verified file parses correctly as valid YAML without syntax errors.
+```bash
+curl -X POST https://protes.example.org/protes/v1/middlewares \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Distance-based Router",
+    "source": {
+      "type": "local",
+      "entry_point": "pro_tes.plugins.middlewares.task_distribution.distance.TaskDistributionDistance"
+    },
+    "order": 0,
+    "enabled": true
+  }'
+```
 
-**OpenAPI Compliance**: Confirmed specification follows OpenAPI 3.0 standards including required fields, valid schema definitions, and proper reference resolution.
+### Adding a GitHub Middleware
 
-**Schema Completeness**: Validated all endpoints reference defined schemas and all schemas include required properties with appropriate types.
+```bash
+curl -X POST https://protes.example.org/protes/v1/middlewares \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Custom Load Balancer",
+    "source": {
+      "type": "github",
+      "repository": "https://github.com/user/repo.git",
+      "entry_point": "custom_middleware.LoadBalancer"
+    },
+    "enabled": true
+  }'
+```
 
-**Path Coverage**: Verified all seven endpoints are defined with appropriate HTTP methods and parameters.
+### Creating a Fallback Group
 
-Runtime testing will occur in Subtask 2 when controllers are implemented.
+```bash
+curl -X POST https://protes.example.org/protes/v1/middlewares \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Load Balancing Group",
+    "sources": [
+      {
+        "type": "local",
+        "entry_point": "pro_tes.plugins.middlewares.task_distribution.distance.TaskDistributionDistance"
+      },
+      {
+        "type": "github",
+        "repository": "https://github.com/org/fallback.git",
+        "entry_point": "fallback.RandomRouter"
+      }
+    ],
+    "order": 0,
+    "enabled": true
+  }'
+```
 
 ## Security Considerations
 
-The specification includes comprehensive security design:
+The API includes comprehensive security controls:
 
 **Authentication Required**: All middleware management endpoints require authentication through the existing proTES security scheme.
 
-**Input Validation**: All parameters include type, format, and constraint definitions. Connexion automatically validates inputs before they reach controller code.
+**Input Validation**: All parameters include type, format, and constraint definitions. The API framework automatically validates inputs before processing.
 
 **MongoDB ObjectId Pattern**: Enforces 24-character hex pattern preventing injection attacks through malformed IDs.
 
-**Class Path Immutability**: Prevents code substitution attacks by making class paths unchangeable after creation.
+**Package Configuration Immutability**: Prevents code substitution attacks by making package sources and entry points unchangeable after creation.
 
-**Database Constraints**: Unique indexes on both name and class_path fields prevent duplicate middleware registration.
+**Database Constraints**: Unique indexes on both name and entry point fields prevent duplicate middleware registration.
 
 **Source Tracking**: Records code origin for audit and security review purposes.
 
-Authorization controls and role-based access will be added in Subtask 4.
-
-## Future Work
-
-This subtask completes the API design phase. Subsequent subtasks will build on this foundation:
-
-**Subtask 2**: Implement controller logic to handle API requests and interact with MongoDB.
-
-**Subtask 3**: Build dynamic middleware loading system that instantiates classes and manages execution stack at runtime.
-
-**Subtask 4**: Add authentication, authorization, RBAC controls, and API security.
-
-**Subtask 5**: Implement monitoring, logging, and metrics collection for middleware operations.
-
-**Subtask 6**: Complete integration testing, update deployment configurations, and finalize documentation.
+**Error Responses**: All endpoints define 400 (Bad Request), 401 (Unauthorized), 403 (Forbidden), and where applicable 404 (Not Found) error responses for comprehensive error handling.
 
 ## Dependencies
 
@@ -171,25 +203,6 @@ This subtask completes the API design phase. Subsequent subtasks will build on t
 - Current middleware plugin architecture
 - MongoDB database configuration
 
-## Breaking Changes
+## API Specification Location
 
-None. This subtask only adds new API endpoints without modifying existing functionality.
-
-## Validation Results
-
-Specification validated successfully:
-- 7 API endpoints defined
-- 9 schema definitions complete
-- All references resolve correctly
-- YAML syntax valid
-- OpenAPI 3.0 compliance confirmed
-Location: pro_tes/api/middleware_management.yaml
-
-## Changelog
-
-**2026-01-24**: Initial OpenAPI specification completed
-- Defined 7 REST endpoints for middleware management
-- Created 9 schema definitions
-- Integrated with FOCA configuration
-- Delivered comprehensive documentation suite
-- Validated specification structure and syntax
+The complete OpenAPI 3.0 specification is available at: `pro_tes/api/middleware_management.yaml`
