@@ -105,16 +105,18 @@ paths:
       summary: Add a new middleware
       description: |
         Add a new middleware to the execution stack. Middleware can be loaded from:
-        - Local packages: Installed Python packages with a class path entry point
-        - GitHub repositories: Git repositories containing setup.py or pyproject.toml
-        - PyPI packages: Packages from PyPI or other package registries
+        - GitHub repositories: Git repositories containing setup.py or pyproject.toml (recommended)
+        - PyPI packages: Packages from PyPI or other package registries (recommended)
+        - Local packages: Installed Python packages (**deprecated** - for development only)
         
-        If order is not specified, the middleware is appended to the end of the stack. 
-        If order is specified, existing middlewares at that position or higher are 
-        shifted up by one.
+        If order is not specified, defaults to 0. If a middleware already exists at that 
+        position, existing middlewares at that position or higher are shifted up by one.
         
-        Fallback groups can be created by providing an array of source configurations,
-        allowing mixed sources (local, GitHub, PyPI) in a single middleware entry.
+        If name is not provided, it will be derived from the package or repository name.
+        
+        Fallback groups can be created by providing an array of source configurations.
+        If the first middleware in the group fails, the system tries the next one in the 
+        fallback group, allowing mixed sources (GitHub, PyPI, local) in a single entry.
       operationId: AddMiddleware
       tags:
         - Middleware Management
@@ -125,15 +127,6 @@ paths:
             schema:
               $ref: '#/components/schemas/MiddlewareCreate'
             examples:
-              local_middleware:
-                summary: Add local middleware
-                value:
-                  name: "Distance-based Router"
-                  source:
-                    type: "local"
-                    entry_point: "pro_tes.plugins.middlewares.task_distribution.distance.TaskDistributionDistance"
-                  order: 0
-                  enabled: true
               github_middleware:
                 summary: Add middleware from GitHub
                 value:
@@ -142,6 +135,7 @@ paths:
                     type: "github"
                     repository: "https://github.com/user/repo.git"
                     entry_point: "custom_middleware.LoadBalancer"
+                  order: 0
                   enabled: true
               pypi_middleware:
                 summary: Add middleware from PyPI
@@ -153,13 +147,23 @@ paths:
                     entry_point: "custom.Middleware"
                     version: "1.0.0"
                   enabled: true
+              local_middleware:
+                summary: Add local middleware (deprecated - development only)
+                value:
+                  name: "Distance-based Router"
+                  source:
+                    type: "local"
+                    entry_point: "pro_tes.plugins.middlewares.task_distribution.distance.TaskDistributionDistance"
+                  order: 0
+                  enabled: true
               fallback_group:
                 summary: Add fallback group with mixed sources
                 value:
                   name: "Load Balancing Group"
                   source:
-                    - type: "local"
-                      entry_point: "pro_tes.plugins.middlewares.task_distribution.distance.TaskDistributionDistance"
+                    - type: "github"
+                      repository: "https://github.com/org/primary.git"
+                      entry_point: "primary.DistanceRouter"
                     - type: "github"
                       repository: "https://github.com/org/fallback.git"
                       entry_point: "fallback.RandomRouter"
@@ -323,8 +327,8 @@ paths:
     delete:
       summary: Remove a middleware
       description: |
-        Remove a middleware from the execution stack. By default performs soft delete
-        (sets enabled=false). Use force=true query parameter for hard deletion.
+        Permanently remove a middleware from the execution stack and database.
+        To temporarily disable a middleware, use the UPDATE endpoint to set enabled=false.
       operationId: DeleteMiddleware
       tags:
         - Middleware Management
@@ -336,13 +340,6 @@ paths:
           schema:
             type: string
             pattern: '^[a-f0-9]{24}$'
-        - name: force
-          in: query
-          description: Perform hard delete (permanently remove)
-          required: false
-          schema:
-            type: boolean
-            default: false
       responses:
         '204':
           description: Middleware deleted successfully
@@ -432,54 +429,6 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  /middlewares/validate:
-    post:
-      summary: Validate middleware code
-      description: |
-        Validate middleware code without adding it to the stack. Performs static
-        analysis to check if the code is valid and safe. Useful for testing before
-        deploying middleware.
-      operationId: ValidateMiddleware
-      tags:
-        - Middleware Management
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ValidationRequest'
-      responses:
-        '200':
-          description: Validation results
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ValidationResponse'
-        '400':
-          description: Invalid request (missing or invalid source configuration)
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '401':
-          description: Unauthorized (authentication required)
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '403':
-          description: Forbidden (insufficient permissions)
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '500':
-          description: Internal server error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-
 components:
   schemas:
     MiddlewareConfig:
@@ -487,7 +436,6 @@ components:
       description: Complete middleware configuration object
       required:
         - _id
-        - name
         - source
         - order
         - enabled
@@ -497,10 +445,12 @@ components:
         _id:
           type: string
           description: Unique identifier (MongoDB ObjectId)
+          readOnly: true
           example: "507f1f77bcf86cd799439011"
         name:
           type: string
-          description: Human-readable name for the middleware
+          description: Human-readable name for the middleware. If not provided, derived from package or repository name.
+          nullable: true
           example: "Distance-based Router"
         source:
           oneOf:
@@ -511,8 +461,9 @@ components:
                 $ref: '#/components/schemas/MiddlewareSource'
               minItems: 2
               example:
-                - type: "local"
-                  entry_point: "pro_tes.plugins.middlewares.task_distribution.distance.TaskDistributionDistance"
+                - type: "github"
+                  repository: "https://github.com/org/primary.git"
+                  entry_point: "primary.DistanceRouter"
                 - type: "github"
                   repository: "https://github.com/org/fallback.git"
                   entry_point: "fallback.RandomRouter"
@@ -520,6 +471,7 @@ components:
           type: integer
           description: Execution order (0 = first)
           minimum: 0
+          default: 0
           example: 0
         config:
           type: object
@@ -536,12 +488,14 @@ components:
         created_at:
           type: string
           format: date-time
-          description: Creation timestamp
+          description: Creation timestamp (set by system)
+          readOnly: true
           example: "2026-01-24T10:30:00Z"
         updated_at:
           type: string
           format: date-time
-          description: Last update timestamp
+          description: Last update timestamp (set by system)
+          readOnly: true
           example: "2026-01-24T10:30:00Z"
 
     MiddlewareSource:
@@ -579,14 +533,14 @@ components:
       type: object
       description: Request body for creating a middleware
       required:
-        - name
         - source
       properties:
         name:
           type: string
-          description: Human-readable name for the middleware
+          description: Human-readable name for the middleware. If not provided, will be derived from package or repository name.
           minLength: 1
           maxLength: 255
+          nullable: true
           example: "Distance-based Router"
         source:
           oneOf:
@@ -597,8 +551,9 @@ components:
                 $ref: '#/components/schemas/MiddlewareSource'
               minItems: 2
               example:
-                - type: "local"
-                  entry_point: "pro_tes.plugins.middlewares.task_distribution.distance.TaskDistributionDistance"
+                - type: "github"
+                  repository: "https://github.com/org/primary.git"
+                  entry_point: "primary.DistanceRouter"
                 - type: "github"
                   repository: "https://github.com/org/fallback.git"
                   entry_point: "fallback.RandomRouter"
@@ -606,6 +561,7 @@ components:
           type: integer
           description: Execution order (omit to append to end)
           minimum: 0
+          default: 0
           nullable: true
           example: 0
         config:
@@ -725,69 +681,6 @@ components:
             - "507f1f77bcf86cd799439011"
             - "507f1f77bcf86cd799439012"
             - "507f1f77bcf86cd799439013"
-
-    ValidationRequest:
-      type: object
-      description: Request body for validating middleware code
-      required:
-        - source
-      properties:
-        source:
-          $ref: '#/components/schemas/MiddlewareSource'
-
-    ValidationResponse:
-      type: object
-      description: Validation results
-      required:
-        - valid
-        - message
-      properties:
-        valid:
-          type: boolean
-          description: Whether the middleware code is valid
-          example: true
-        message:
-          type: string
-          description: Validation summary message
-          example: "Middleware is valid and safe to use"
-        errors:
-          type: array
-          description: List of validation errors (if any)
-          items:
-            type: object
-            properties:
-              line:
-                type: integer
-                description: Line number of error
-                example: 15
-              column:
-                type: integer
-                description: Column number of error
-                example: 8
-              message:
-                type: string
-                description: Error message
-                example: "Method 'apply_middleware' not found"
-              severity:
-                type: string
-                enum: [error, warning, info]
-                example: "error"
-        warnings:
-          type: array
-          description: List of validation warnings
-          items:
-            type: object
-            properties:
-              line:
-                type: integer
-                example: 20
-              message:
-                type: string
-                example: "Consider adding type hints"
-              severity:
-                type: string
-                enum: [error, warning, info]
-                example: "warning"
 
     ErrorResponse:
       type: object

@@ -10,73 +10,33 @@ proTES uses a middleware architecture to process task execution requests. Previo
 
 ## API Specification
 
-The Middleware Management API is defined using OpenAPI 3.0 specification and provides seven REST endpoints for complete middleware lifecycle management.
+The Middleware Management API is defined using OpenAPI 3.0 specification. For comprehensive, interactive documentation with the ability to explore endpoints, request/response schemas, and examples, please visit:
 
-### API Endpoints
+**[Swagger Editor - Middleware Management API](https://editor.swagger.io/?url=https://raw.githubusercontent.com/elixir-cloud-aai/proTES/refs/heads/dev/pro_tes/api/middleware_management.yaml)**
 
-**List Middlewares** - GET /protes/v1/middlewares
-Returns all configured middlewares with pagination and filtering support. Results are sorted by execution order by default. Supports filtering by enabled status and source type.
-
-**Add Middleware** - POST /protes/v1/middlewares
-Creates a new middleware in the execution stack. Supports loading from local packages, GitHub repositories, or PyPI packages. Automatically handles order assignment and stack shifting.
-
-**Get Middleware Details** - GET /protes/v1/middlewares/{middleware_id}
-Retrieves detailed information about a specific middleware including configuration, metadata, and execution statistics.
-
-**Update Middleware** - PUT /protes/v1/middlewares/{middleware_id}
-Updates middleware configuration. Only allows modification of name, order, config parameters, and enabled status. Package path and entry point cannot be changed for security reasons.
-
-**Delete Middleware** - DELETE /protes/v1/middlewares/{middleware_id}
-Removes a middleware from the stack. Supports soft delete (disable) by default and hard delete with force parameter.
-
-**Reorder Stack** - PUT /protes/v1/middlewares/reorder
-Reorders the entire middleware execution stack by accepting an ordered array of middleware IDs.
-
-**Validate Code** - POST /protes/v1/middlewares/validate
-Validates middleware code before creation. Checks Python syntax, required interface implementation, and security constraints.
-
-### Data Model
-
-The API uses comprehensive schema definitions to structure request and response data:
-
-**MiddlewareConfig**: Complete middleware representation including ID, name, package information (source type, package path, entry point), execution order, enabled status, configuration parameters, and timestamps.
-
-**MiddlewareCreate**: Request body for creating new middleware. Includes name, package source configuration (local path, GitHub URL, or PyPI package), entry point (class path), optional order, enabled flag, and configuration dict.
-
-**MiddlewareUpdate**: Request body for updates. Limited to name, order, config, and enabled fields to prevent unauthorized code changes.
-
-**MiddlewareList**: Paginated list response containing middleware array, total count, page information, and navigation tokens following GA4GH pagination guidelines.
-
-**MiddlewareCreateResponse**: Response after successful creation including the middleware ID, assigned order, and success message.
-
-**MiddlewareOrder**: Request body for reordering containing an array of middleware IDs in desired execution order.
-
-**ValidationRequest**: Code validation request containing package source information and entry point to validate.
-
-**ValidationResponse**: Validation result including validity boolean, validation messages, error details with line numbers, and warnings.
-
-**ErrorResponse**: Standard error response with HTTP status code, error message, and optional details.
+The interactive documentation provides:
+- Complete endpoint definitions with request/response examples
+- Detailed schema specifications for all data models
+- Parameter descriptions and validation rules
+- Error response definitions
+- The ability to test API calls directly
 
 ### Key Features
 
-**MongoDB ObjectId Format**: Uses 24-character hexadecimal strings for middleware identification. This aligns with the existing proTES database schema and provides guaranteed uniqueness.
-
 **Order-Based Execution**: Middlewares execute in ascending order. Lower order values run first. This provides clear, predictable execution flow that's easy to understand and debug.
 
-**Fallback Group Support**: Allows grouping multiple middleware sources in a single middleware entry. If the first middleware fails, the system automatically tries the next one in the list. Each middleware in a fallback group specifies its own source, package path, and entry point.
-
-**Soft Delete Default**: DELETE operations disable rather than remove middlewares by default. This preserves execution history and allows easy rollback. Hard delete requires explicit force parameter.
+**Fallback Group Support**: Allows grouping multiple middleware sources in a single middleware entry. If the first middleware fails, the system automatically tries the next one in the fallback group. Each middleware in a fallback group specifies its own source, package path, and entry point.
 
 **Immutable Package Configuration**: Once created, a middleware's package source and entry point cannot be changed. This prevents security risks from code substitution attacks. To change implementation, users must delete and recreate.
 
 **Multiple Package Sources**: Supports loading middleware from:
-  - **Local packages**: Installed Python packages with a class path entry point
-  - **GitHub repositories**: Direct Git repository URLs with setup.py or pyproject.toml
-  - **PyPI packages**: Public or private package registries with specified entry points
+  - **GitHub repositories**: Git repository URLs with setup.py or pyproject.toml (recommended for production)
+  - **PyPI packages**: Public or private package registries with specified entry points (recommended for production)
+  - **Local packages**: Installed Python packages with a class path entry point (**deprecated** - for development purposes only, will be removed in future versions)
 
-**Source Tracking**: Records whether middleware originated from local packages, GitHub, or PyPI. Helps administrators understand deployment composition and troubleshoot issues.
+**Note on Local Packages**: Local package sources are discouraged and deprecated. They are difficult to reproduce across environments and most users won't have access to the running instance's file system. This option is only useful for developers and local deployments and will be removed once the built-in middlewares are migrated to a separate repository.
 
-**Validation Endpoint**: Separate endpoint for validating middleware code before creation. Prevents deployment of broken middleware and provides immediate feedback on implementation issues.
+**Source Tracking**: Records whether middleware originated from GitHub or PyPI. Helps administrators understand deployment composition and troubleshoot issues.
 
 **GA4GH-Compliant Pagination**: Implements page-based pagination following the GA4GH API pagination guide with `page` and `page_size` parameters, supporting predictable result navigation.
 
@@ -117,33 +77,34 @@ docs/
 
 ## Usage Examples
 
-### Adding a Local Package Middleware
-
-```bash
-curl -X POST https://protes.example.org/protes/v1/middlewares \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "Distance-based Router",
-    "source": {
-      "type": "local",
-      "entry_point": "pro_tes.plugins.middlewares.task_distribution.distance.TaskDistributionDistance"
-    },
-    "order": 0,
-    "enabled": true
-  }'
-```
-
 ### Adding a GitHub Middleware
 
 ```bash
 curl -X POST https://protes.example.org/protes/v1/middlewares \
   -H "Content-Type: application/json" \
   -d '{
-    "name": "Custom Load Balancer",
     "source": {
       "type": "github",
       "repository": "https://github.com/user/repo.git",
       "entry_point": "custom_middleware.LoadBalancer"
+    },
+    "order": 0,
+    "enabled": true
+  }'
+```
+
+### Adding a PyPI Package Middleware
+
+```bash
+curl -X POST https://protes.example.org/protes/v1/middlewares \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Third-party Middleware",
+    "source": {
+      "type": "pypi",
+      "package": "protes-middleware-custom",
+      "entry_point": "custom.Middleware",
+      "version": "1.0.0"
     },
     "enabled": true
   }'
@@ -156,10 +117,11 @@ curl -X POST https://protes.example.org/protes/v1/middlewares \
   -H "Content-Type: application/json" \
   -d '{
     "name": "Load Balancing Group",
-    "sources": [
+    "source": [
       {
-        "type": "local",
-        "entry_point": "pro_tes.plugins.middlewares.task_distribution.distance.TaskDistributionDistance"
+        "type": "github",
+        "repository": "https://github.com/org/primary.git",
+        "entry_point": "primary.DistanceRouter"
       },
       {
         "type": "github",
@@ -169,6 +131,16 @@ curl -X POST https://protes.example.org/protes/v1/middlewares \
     ],
     "order": 0,
     "enabled": true
+  }'
+```
+
+### Disabling a Middleware (Instead of Deleting)
+
+```bash
+curl -X PUT https://protes.example.org/protes/v1/middlewares/{middleware_id} \
+  -H "Content-Type: application/json" \
+  -d '{
+    "enabled": false
   }'
 ```
 
