@@ -16,22 +16,29 @@ from pydantic import BaseModel, Field
 
 class MiddlewareSourceLocal(BaseModel):
     """Local package source configuration (deprecated - development only)."""
-    
+
     type: Literal["local"]
     entry_point: str = Field(
         ...,
-        description="Class path entry point (e.g., 'package.module.ClassName')",
-        example="pro_tes.plugins.middlewares.task_distribution.distance.TaskDistributionDistance"
+        description=(
+            "Class path entry point (e.g., 'package.module.ClassName')"
+        ),
+        example=(
+            "pro_tes.plugins.middlewares.task_distribution.distance."
+            "TaskDistributionDistance"
+        )
     )
 
 
 class MiddlewareSourceGithub(BaseModel):
     """GitHub repository source configuration (recommended for production)."""
-    
+
     type: Literal["github"]
     entry_point: str = Field(
         ...,
-        description="Class path entry point (e.g., 'package.module.ClassName')",
+        description=(
+            "Class path entry point (e.g., 'package.module.ClassName')"
+        ),
         example="custom_middleware.LoadBalancer"
     )
     repository: str = Field(
@@ -49,11 +56,13 @@ class MiddlewareSourceGithub(BaseModel):
 
 class MiddlewareSourcePypi(BaseModel):
     """PyPI package source configuration (recommended for production)."""
-    
+
     type: Literal["pypi"]
     entry_point: str = Field(
         ...,
-        description="Class path entry point (e.g., 'package.module.ClassName')",
+        description=(
+            "Class path entry point (e.g., 'package.module.ClassName')"
+        ),
         example="custom.Middleware"
     )
     package: str = Field(
@@ -69,7 +78,11 @@ class MiddlewareSourcePypi(BaseModel):
 
 
 # Discriminated union of all source types
-MiddlewareSource = Union[MiddlewareSourceLocal, MiddlewareSourceGithub, MiddlewareSourcePypi]
+MiddlewareSource = Union[
+    MiddlewareSourceLocal,
+    MiddlewareSourceGithub,
+    MiddlewareSourcePypi
+]
 
 
 # ============================================================================
@@ -78,12 +91,15 @@ MiddlewareSource = Union[MiddlewareSourceLocal, MiddlewareSourceGithub, Middlewa
 
 class MiddlewareCreate(BaseModel):
     """Request model for creating middleware."""
-    
+
     name: Optional[str] = Field(
         None,
         min_length=1,
         max_length=255,
-        description="Human-readable name. If not provided, derived from package/repo name.",
+        description=(
+            "Human-readable name. If not provided, "
+            "derived from package/repo name."
+        ),
         example="Distance-based Router"
     )
     source: Union[MiddlewareSource, List[MiddlewareSource]] = Field(
@@ -93,7 +109,10 @@ class MiddlewareCreate(BaseModel):
     order: Optional[int] = Field(
         0,
         ge=0,
-        description="Execution order (0 = first). If not provided, defaults to 0.",
+        description=(
+            "Execution order (0 = first). "
+            "If not provided, defaults to 0."
+        ),
         example=0
     )
     config: Optional[dict] = Field(
@@ -110,7 +129,7 @@ class MiddlewareCreate(BaseModel):
 
 class MiddlewareUpdate(BaseModel):
     """Request model for updating middleware."""
-    
+
     name: Optional[str] = Field(
         None,
         min_length=1,
@@ -138,7 +157,7 @@ class MiddlewareUpdate(BaseModel):
 
 class MiddlewareConfig(BaseModel):
     """Complete middleware configuration (response model)."""
-    
+
     id: str = Field(
         ...,
         alias="_id",
@@ -179,14 +198,14 @@ class MiddlewareConfig(BaseModel):
         description="Last update timestamp",
         example="2026-01-24T10:30:00Z"
     )
-    
+
     class Config:
         populate_by_name = True
 
 
 class PaginationInfo(BaseModel):
     """Pagination information following GA4GH guidelines."""
-    
+
     page: int = Field(
         ...,
         description="Current page number (0-indexed)",
@@ -211,7 +230,7 @@ class PaginationInfo(BaseModel):
 
 class MiddlewareList(BaseModel):
     """Response model for list of middlewares."""
-    
+
     middlewares: List[dict] = Field(
         ...,
         description="Array of middleware configurations"
@@ -224,7 +243,7 @@ class MiddlewareList(BaseModel):
 
 class MiddlewareCreateResponse(BaseModel):
     """Response model for middleware creation."""
-    
+
     id: str = Field(
         ...,
         alias="_id",
@@ -241,14 +260,14 @@ class MiddlewareCreateResponse(BaseModel):
         description="Success message",
         example="Middleware added successfully"
     )
-    
+
     class Config:
         populate_by_name = True
 
 
 class MiddlewareOrder(BaseModel):
     """Request model for reordering middlewares."""
-    
+
     ordered_ids: List[str] = Field(
         ...,
         min_items=1,
@@ -262,8 +281,8 @@ class MiddlewareOrder(BaseModel):
 # ============================================================================
 
 class MiddlewareDocument(BaseModel):
-    """MongoDB document structure for middleware storage (internal use only)."""
-    
+    """MongoDB document structure for middleware storage (internal use)."""
+
     name: Optional[str]
     source: Union[MiddlewareSource, List[MiddlewareSource]]
     order: int
