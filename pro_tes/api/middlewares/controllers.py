@@ -8,7 +8,7 @@ specification from PR #1 (middleware-api-spec branch).
 import logging
 import math
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Any
 
 from bson import ObjectId
 from flask import current_app, request
@@ -126,7 +126,7 @@ def ListMiddlewares(
     try:
         collection = get_middleware_collection()
 
-        filter_dict = {}
+        filter_dict: dict = {}
         if enabled is not None:
             filter_dict["enabled"] = enabled
         if source is not None:
@@ -171,7 +171,7 @@ def AddMiddleware() -> tuple:
         collection = get_middleware_collection()
         data = request.json
 
-        middleware = MiddlewareCreate(**data)
+        middleware = MiddlewareCreate(**data)  # type: ignore[arg-type]
 
         # Derive name if not provided
         name = middleware.name
@@ -211,12 +211,12 @@ def AddMiddleware() -> tuple:
         now = datetime.utcnow().isoformat() + "Z"
 
         # Convert Pydantic model source to dict for MongoDB storage
-        source_data = middleware.source
+        source_data: Any = middleware.source
         if isinstance(source_data, list):
             source_data = [
                 s.model_dump() if hasattr(s, 'model_dump') else s
                 for s in source_data
-            ]
+            ]  # type: ignore[misc]
         elif hasattr(source_data, 'model_dump'):
             source_data = source_data.model_dump()
 
@@ -304,9 +304,9 @@ def UpdateMiddleware(middleware_id: str) -> dict:
             )
 
         data = request.json
-        update_data = MiddlewareUpdate(**data)
+        update_data = MiddlewareUpdate(**data)  # type: ignore[arg-type]
 
-        update_dict = {}
+        update_dict: dict = {}
 
         if update_data.name is not None:
             if update_data.name != existing.get("name"):
@@ -316,7 +316,7 @@ def UpdateMiddleware(middleware_id: str) -> dict:
                         f"Middleware with name "
                         f"'{update_data.name}' already exists"
                     )
-            update_dict["name"] = update_data.name
+            update_dict["name"] = update_data.name  # type: ignore[assignment]
 
         if (update_data.order is not None and
                 update_data.order != existing["order"]):
@@ -334,13 +334,13 @@ def UpdateMiddleware(middleware_id: str) -> dict:
                     {"$inc": {"order": 1}}
                 )
 
-            update_dict["order"] = new_order
+            update_dict["order"] = new_order  # type: ignore[assignment]
 
         if update_data.config is not None:
-            update_dict["config"] = update_data.config
+            update_dict["config"] = update_data.config  # type: ignore[assignment]
 
         if update_data.enabled is not None:
-            update_dict["enabled"] = update_data.enabled
+            update_dict["enabled"] = update_data.enabled  # type: ignore[assignment]
 
         update_dict["updated_at"] = datetime.utcnow().isoformat() + "Z"
 
@@ -418,7 +418,7 @@ def ReorderMiddlewares() -> dict:
         data = request.json
 
         # Use correct field name from OpenAPI spec
-        middleware_ids = data.get("ordered_ids", [])
+        middleware_ids = data.get("ordered_ids", []) if data else []
 
         if not middleware_ids:
             raise BadRequest("ordered_ids array is required")

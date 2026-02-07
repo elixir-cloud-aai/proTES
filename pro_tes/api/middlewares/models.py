@@ -23,10 +23,10 @@ class MiddlewareSourceLocal(BaseModel):
         description=(
             "Class path entry point (e.g., 'package.module.ClassName')"
         ),
-        example=(
+        json_schema_extra={"example": (
             "pro_tes.plugins.middlewares.task_distribution.distance."
             "TaskDistributionDistance"
-        )
+        )}
     )
 
 
@@ -39,18 +39,18 @@ class MiddlewareSourceGithub(BaseModel):
         description=(
             "Class path entry point (e.g., 'package.module.ClassName')"
         ),
-        example="custom_middleware.LoadBalancer"
+        json_schema_extra={"example": "custom_middleware.LoadBalancer"}
     )
     repository: str = Field(
         ...,
         description="Git repository URL",
         pattern=r'^https://github\.com/.+\.git$',
-        example="https://github.com/user/repo.git"
+        json_schema_extra={"example": "https://github.com/user/repo.git"}
     )
     version: Optional[str] = Field(
         None,
         description="Git tag or branch name",
-        example="v1.0.0"
+        json_schema_extra={"example": "v1.0.0"}
     )
 
 
@@ -63,17 +63,17 @@ class MiddlewareSourcePypi(BaseModel):
         description=(
             "Class path entry point (e.g., 'package.module.ClassName')"
         ),
-        example="custom.Middleware"
+        json_schema_extra={"example": "custom.Middleware"}
     )
     package: str = Field(
         ...,
         description="Package name from PyPI",
-        example="protes-middleware-custom"
+        json_schema_extra={"example": "protes-middleware-custom"}
     )
     version: Optional[str] = Field(
         None,
         description="Package version",
-        example="1.0.0"
+        json_schema_extra={"example": "1.0.0"}
     )
 
 
@@ -100,7 +100,7 @@ class MiddlewareCreate(BaseModel):
             "Human-readable name. If not provided, "
             "derived from package/repo name."
         ),
-        example="Distance-based Router"
+        json_schema_extra={"example": "Distance-based Router"}
     )
     source: Union[MiddlewareSource, List[MiddlewareSource]] = Field(
         ...,
@@ -113,17 +113,17 @@ class MiddlewareCreate(BaseModel):
             "Execution order (0 = first). "
             "If not provided, defaults to 0."
         ),
-        example=0
+        json_schema_extra={"example": 0}
     )
     config: Optional[dict] = Field(
         None,
         description="Middleware-specific configuration",
-        example={"timeout": 30, "retries": 3}
+        json_schema_extra={"example": {"timeout": 30}, "retries": 3}
     )
     enabled: bool = Field(
         True,
         description="Whether the middleware should be active",
-        example=True
+        json_schema_extra={"example": True}
     )
 
 
@@ -135,23 +135,23 @@ class MiddlewareUpdate(BaseModel):
         min_length=1,
         max_length=255,
         description="Human-readable name for the middleware",
-        example="Distance-based Router v2"
+        json_schema_extra={"example": "Distance-based Router v2"}
     )
     order: Optional[int] = Field(
         None,
         ge=0,
         description="Execution order",
-        example=1
+        json_schema_extra={"example": 1}
     )
     config: Optional[dict] = Field(
         None,
         description="Middleware-specific configuration",
-        example={"timeout": 60, "retries": 5}
+        json_schema_extra={"example": {"timeout": 60}, "retries": 5}
     )
     enabled: Optional[bool] = Field(
         None,
         description="Whether the middleware is active",
-        example=False
+        json_schema_extra={"example": False}
     )
 
 
@@ -162,12 +162,12 @@ class MiddlewareConfig(BaseModel):
         ...,
         alias="_id",
         description="Unique identifier (MongoDB ObjectId)",
-        example="507f1f77bcf86cd799439011"
+        json_schema_extra={"example": "507f1f77bcf86cd799439011"}
     )
     name: Optional[str] = Field(
         None,
         description="Human-readable name for the middleware",
-        example="Distance-based Router"
+        json_schema_extra={"example": "Distance-based Router"}
     )
     source: Union[MiddlewareSource, List[MiddlewareSource]] = Field(
         ...,
@@ -176,27 +176,27 @@ class MiddlewareConfig(BaseModel):
     order: int = Field(
         ...,
         description="Execution order (0 = first)",
-        example=0
+        json_schema_extra={"example": 0}
     )
     config: Optional[dict] = Field(
         None,
         description="Middleware-specific configuration",
-        example={"timeout": 30, "retries": 3}
+        json_schema_extra={"example": {"timeout": 30}, "retries": 3}
     )
     enabled: bool = Field(
         ...,
         description="Whether the middleware is active",
-        example=True
+        json_schema_extra={"example": True}
     )
     created_at: str = Field(
         ...,
         description="Creation timestamp",
-        example="2026-01-24T10:30:00Z"
+        json_schema_extra={"example": "2026-01-24T10:30:00Z"}
     )
     updated_at: str = Field(
         ...,
         description="Last update timestamp",
-        example="2026-01-24T10:30:00Z"
+        json_schema_extra={"example": "2026-01-24T10:30:00Z"}
     )
 
     class Config:
@@ -211,22 +211,22 @@ class PaginationInfo(BaseModel):
     page: int = Field(
         ...,
         description="Current page number (0-indexed)",
-        example=0
+        json_schema_extra={"example": 0}
     )
     page_size: int = Field(
         ...,
         description="Number of results per page",
-        example=50
+        json_schema_extra={"example": 50}
     )
     total: int = Field(
         ...,
         description="Total number of middlewares available",
-        example=5
+        json_schema_extra={"example": 5}
     )
     total_pages: int = Field(
         ...,
         description="Total number of pages available",
-        example=1
+        json_schema_extra={"example": 1}
     )
 
 
@@ -250,17 +250,17 @@ class MiddlewareCreateResponse(BaseModel):
         ...,
         alias="_id",
         description="Unique identifier of created middleware",
-        example="507f1f77bcf86cd799439011"
+        json_schema_extra={"example": "507f1f77bcf86cd799439011"}
     )
     order: int = Field(
         ...,
         description="Assigned execution order",
-        example=0
+        json_schema_extra={"example": 0}
     )
     message: str = Field(
         ...,
         description="Success message",
-        example="Middleware added successfully"
+        json_schema_extra={"example": "Middleware added successfully"}
     )
 
     class Config:
@@ -274,9 +274,9 @@ class MiddlewareOrder(BaseModel):
 
     ordered_ids: List[str] = Field(
         ...,
-        min_items=1,
+        min_length=1,
         description="Array of middleware IDs in desired execution order",
-        example=["507f1f77bcf86cd799439011", "507f1f77bcf86cd799439012"]
+        json_schema_extra={"example": ["507f1f77bcf86cd799439011", "507f1f77bcf86cd799439012"]}
     )
 
 
