@@ -200,6 +200,8 @@ class MiddlewareConfig(BaseModel):
     )
 
     class Config:
+        """Pydantic model configuration."""
+
         populate_by_name = True
 
 
@@ -262,6 +264,8 @@ class MiddlewareCreateResponse(BaseModel):
     )
 
     class Config:
+        """Pydantic model configuration."""
+
         populate_by_name = True
 
 
