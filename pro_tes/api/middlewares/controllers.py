@@ -1,9 +1,14 @@
-"""Controllers for middleware management API."""
+"""Controllers for middleware management API.
+
+This module implements all REST API endpoints for managing middlewares
+dynamically at runtime. All implementations match the finalized OpenAPI
+specification from PR #1 (middleware-api-spec branch).
+"""
 
 import logging
+import math
 from datetime import datetime
 from typing import Optional
-from urllib.parse import urlparse
 
 from bson import ObjectId
 from flask import current_app, request
@@ -14,15 +19,11 @@ from pro_tes.exceptions import (
     BadRequest,
     MiddlewareNotFound,
     MiddlewareDuplicateName,
-    MiddlewareDuplicateClassPath,
-    MiddlewareValidationError,
-    MiddlewareCodeFetchError
 )
 from pro_tes.api.middlewares.models import (
     MiddlewareCreate,
     MiddlewareUpdate,
 )
-from pro_tes.api.middlewares.validation import validate_middleware_code
 
 logger = logging.getLogger(__name__)
 
@@ -34,9 +35,65 @@ def get_middleware_collection():
     ].client
 
 
+def _extract_entry_points(source):
+    """Extract all entry points from a source (single or fallback group).
+    
+    Args:
+        source: Single MiddlewareSource dict/object or list of MiddlewareSource dicts/objects
+        
+    Returns:
+        List of entry point strings
+    """
+    if isinstance(source, list):
+        return [
+            s.entry_point if hasattr(s, 'entry_point') else s.get("entry_point")
+            for s in source
+            if (hasattr(s, 'entry_point') and s.entry_point) or (hasattr(s, 'get') and s.get("entry_point"))
+        ]
+    # Handle both Pydantic objects and dicts
+    if hasattr(source, 'entry_point'):
+        return [source.entry_point] if source.entry_point else []
+    return [source.get("entry_point")] if source.get("entry_point") else []
+
+
+def _derive_name_from_source(source):
+    """Derive middleware name from source configuration.
+    
+    Args:
+        source: Single MiddlewareSource dict/object or list of MiddlewareSource dicts/objects
+        
+    Returns:
+        Derived name string
+    """
+    if isinstance(source, list):
+        # For fallback groups, use first source
+        source = source[0]
+    
+    # Handle both Pydantic objects and dicts
+    # Try to get package name
+    package = getattr(source, 'package', None) if hasattr(source, 'package') else source.get('package') if hasattr(source, 'get') else None
+    if package:
+        return package
+    
+    # Try to get repository name
+    repository = getattr(source, 'repository', None) if hasattr(source, 'repository') else source.get('repository') if hasattr(source, 'get') else None
+    if repository:
+        # Extract repo name from URL
+        repo_name = repository.rstrip("/").rstrip(".git").split("/")[-1]
+        return repo_name
+    
+    # Try to get entry_point
+    entry_point = getattr(source, 'entry_point', None) if hasattr(source, 'entry_point') else source.get('entry_point') if hasattr(source, 'get') else None
+    if entry_point:
+        # Use last part of entry_point
+        return entry_point.split(".")[-1]
+    
+    return "Unnamed Middleware"
+
+
 def ListMiddlewares(
-    limit: int = 50,
-    offset: int = 0,
+    page_size: int = 50,
+    page: int = 0,
     sort_by: str = "order",
     enabled: Optional[bool] = None,
     source: Optional[str] = None,
@@ -44,14 +101,14 @@ def ListMiddlewares(
     """List all middlewares with pagination and filtering.
     
     Args:
-        limit: Maximum number of results to return.
-        offset: Number of results to skip.
+        page_size: Maximum number of results to return per page.
+        page: Page number to retrieve (0-indexed).
         sort_by: Field to sort by.
         enabled: Filter by enabled status.
         source: Filter by source type.
         
     Returns:
-        Dictionary with middlewares list and total count.
+        Dictionary with middlewares list and pagination info.
     """
     try:
         collection = get_middleware_collection()
@@ -60,14 +117,14 @@ def ListMiddlewares(
         if enabled is not None:
             filter_dict["enabled"] = enabled
         if source is not None:
-            filter_dict["source"] = source
+            filter_dict["source.type"] = source
         
-        # Exclude soft-deleted middlewares
-        filter_dict["deleted_at"] = {"$exists": False}
+        # Calculate pagination
+        skip = page * page_size
         
         cursor = collection.find(
             filter_dict
-        ).sort(sort_by, 1).skip(offset).limit(limit)
+        ).sort(sort_by, 1).skip(skip).limit(page_size)
         
         middlewares = []
         for doc in cursor:
@@ -75,12 +132,16 @@ def ListMiddlewares(
             middlewares.append(doc)
         
         total = collection.count_documents(filter_dict)
+        total_pages = math.ceil(total / page_size) if total > 0 else 0
         
         return {
             "middlewares": middlewares,
-            "total": total,
-            "limit": limit,
-            "offset": offset
+            "pagination": {
+                "page": page,
+                "page_size": page_size,
+                "total": total,
+                "total_pages": total_pages
+            }
         }
     except PyMongoError as e:
         logger.error(f"Database error: {e}")
@@ -99,41 +160,53 @@ def AddMiddleware() -> tuple:
         
         middleware = MiddlewareCreate(**data)
         
-        existing = collection.find_one({"name": middleware.name})
-        if existing:
-            raise MiddlewareDuplicateName(f"Middleware with name '{middleware.name}' already exists")
+        # Derive name if not provided
+        name = middleware.name
+        if not name:
+            name = _derive_name_from_source(middleware.source)
         
-        class_path_str = (
-            middleware.class_path if isinstance(middleware.class_path, str)
-            else str(middleware.class_path)
-        )
-        existing_path = collection.find_one({"class_path": class_path_str})
-        if existing_path:
-            raise MiddlewareDuplicateClassPath(
-                f"Middleware with class_path '{class_path_str}' already exists"
-            )
+        # Check for duplicate name
+        if name:
+            existing = collection.find_one({"name": name})
+            if existing:
+                raise MiddlewareDuplicateName(
+                    f"Middleware with name '{name}' already exists"
+                )
         
-        if middleware.order is None:
-            max_doc = collection.find_one(sort=[("order", -1)])
-            order = (max_doc["order"] + 1) if max_doc else 0
-        else:
-            order = middleware.order
+        # Check for duplicate entry_point
+        entry_points = _extract_entry_points(middleware.source)
+        for entry_point in entry_points:
+            existing_ep = collection.find_one({"source.entry_point": entry_point})
+            if existing_ep:
+                raise BadRequest(
+                    f"Middleware with entry_point '{entry_point}' already exists"
+                )
+        
+        # Handle order assignment
+        order = middleware.order if middleware.order is not None else 0
+        
+        if order is not None:
+            # Shift existing middlewares at this position or higher
             collection.update_many(
                 {"order": {"$gte": order}},
                 {"$inc": {"order": 1}}
             )
         
-        source = "github" if middleware.github_url else "local"
         now = datetime.utcnow().isoformat() + "Z"
         
+        # Convert Pydantic model source to dict for MongoDB storage
+        source_data = middleware.source
+        if isinstance(source_data, list):
+            source_data = [s.model_dump() if hasattr(s, 'model_dump') else s for s in source_data]
+        elif hasattr(source_data, 'model_dump'):
+            source_data = source_data.model_dump()
+        
         doc = {
-            "name": middleware.name,
-            "class_path": middleware.class_path,
+            "name": name,
+            "source": source_data,
             "order": order,
             "enabled": middleware.enabled,
             "config": middleware.config,
-            "source": source,
-            "github_url": middleware.github_url,
             "created_at": now,
             "updated_at": now
         }
@@ -141,7 +214,7 @@ def AddMiddleware() -> tuple:
         result = collection.insert_one(doc)
         middleware_id = str(result.inserted_id)
         
-        logger.info(f"Created middleware: {middleware.name} (ID: {middleware_id})")
+        logger.info(f"Created middleware: {name} (ID: {middleware_id})")
         
         return {
             "_id": middleware_id,
@@ -149,7 +222,7 @@ def AddMiddleware() -> tuple:
             "message": "Middleware created successfully"
         }, 201
         
-    except BadRequest:
+    except (BadRequest, MiddlewareDuplicateName):
         raise
     except Exception as e:
         logger.error(f"Error creating middleware: {e}")
@@ -174,7 +247,9 @@ def GetMiddleware(middleware_id: str) -> dict:
         document = collection.find_one({"_id": ObjectId(middleware_id)})
 
         if document is None:
-            raise MiddlewareNotFound(f"Middleware with ID '{middleware_id}' not found")
+            raise MiddlewareNotFound(
+                f"Middleware with ID '{middleware_id}' not found"
+            )
         
         # Convert ObjectId to string for JSON serialization
         document["_id"] = str(document["_id"])
@@ -205,7 +280,9 @@ def UpdateMiddleware(middleware_id: str) -> dict:
         
         existing = collection.find_one({"_id": ObjectId(middleware_id)})
         if not existing:
-            raise MiddlewareNotFound(f"Middleware with ID '{middleware_id}' not found")
+            raise MiddlewareNotFound(
+                f"Middleware with ID '{middleware_id}' not found"
+            )
         
         data = request.json
         update_data = MiddlewareUpdate(**data)
@@ -213,10 +290,10 @@ def UpdateMiddleware(middleware_id: str) -> dict:
         update_dict = {}
         
         if update_data.name is not None:
-            if update_data.name != existing["name"]:
+            if update_data.name != existing.get("name"):
                 name_exists = collection.find_one({"name": update_data.name})
                 if name_exists:
-                    raise BadRequest(
+                    raise MiddlewareDuplicateName(
                         f"Middleware with name '{update_data.name}' already exists"
                     )
             update_dict["name"] = update_data.name
@@ -266,12 +343,11 @@ def UpdateMiddleware(middleware_id: str) -> dict:
         raise InternalServerError("Failed to update middleware")
 
 
-def DeleteMiddleware(middleware_id: str, force: bool = False) -> tuple:
-    """Delete middleware (soft or hard delete).
+def DeleteMiddleware(middleware_id: str) -> tuple:
+    """Delete middleware (hard delete only - soft delete removed).
     
     Args:
         middleware_id: Middleware identifier.
-        force: If True, perform hard delete.
         
     Returns:
         Empty tuple with status code 204.
@@ -284,27 +360,22 @@ def DeleteMiddleware(middleware_id: str, force: bool = False) -> tuple:
         
         middleware = collection.find_one({"_id": ObjectId(middleware_id)})
         if not middleware:
-            raise MiddlewareNotFound(f"Middleware with ID '{middleware_id}' not found")
+            raise MiddlewareNotFound(
+                f"Middleware with ID '{middleware_id}' not found"
+            )
         
-        if force:
-            deleted_order = middleware["order"]
-            collection.delete_one({"_id": ObjectId(middleware_id)})
-            collection.update_many(
-                {"order": {"$gt": deleted_order}},
-                {"$inc": {"order": -1}}
-            )
-            logger.info(f"Hard deleted middleware: {middleware_id}")
-        else:
-            collection.update_one(
-                {"_id": ObjectId(middleware_id)},
-                {
-                    "$set": {
-                        "enabled": False,
-                        "deleted_at": datetime.utcnow().isoformat() + "Z"
-                    }
-                }
-            )
-            logger.info(f"Soft deleted middleware: {middleware_id}")
+        deleted_order = middleware["order"]
+        
+        # Hard delete (soft delete feature removed per PR #1 review)
+        collection.delete_one({"_id": ObjectId(middleware_id)})
+        
+        # Shift down middlewares with higher order
+        collection.update_many(
+            {"order": {"$gt": deleted_order}},
+            {"$inc": {"order": -1}}
+        )
+        
+        logger.info(f"Deleted middleware: {middleware_id}")
         
         return "", 204
         
@@ -325,6 +396,7 @@ def ReorderMiddlewares() -> dict:
         collection = get_middleware_collection()
         data = request.json
         
+        # Use correct field name from OpenAPI spec
         middleware_ids = data.get("ordered_ids", [])
         
         if not middleware_ids:
@@ -333,12 +405,11 @@ def ReorderMiddlewares() -> dict:
         if len(middleware_ids) != len(set(middleware_ids)):
             raise BadRequest("Duplicate middleware IDs in array")
         
-        # Only count active (non-deleted) middlewares
-        active_filter = {"deleted_at": {"$exists": False}}
-        total_count = collection.count_documents(active_filter)
+        # Count total middlewares (no soft delete filter needed)
+        total_count = collection.count_documents({})
         if len(middleware_ids) != total_count:
             raise BadRequest(
-                f"Array must contain all {total_count} active middlewares"
+                f"Array must contain all {total_count} middlewares"
             )
         
         for middleware_id in middleware_ids:
@@ -347,7 +418,9 @@ def ReorderMiddlewares() -> dict:
             
             exists = collection.find_one({"_id": ObjectId(middleware_id)})
             if not exists:
-                raise MiddlewareNotFound(f"Middleware with ID '{middleware_id}' not found")
+                raise MiddlewareNotFound(
+                    f"Middleware with ID '{middleware_id}' not found"
+                )
         
         now = datetime.utcnow().isoformat() + "Z"
         for new_order, middleware_id in enumerate(middleware_ids):
@@ -375,56 +448,5 @@ def ReorderMiddlewares() -> dict:
         raise InternalServerError("Failed to reorder middlewares")
 
 
-def ValidateMiddleware() -> dict:
-    """Validate middleware code without creating it.
-    
-    Returns:
-        Validation results.
-    """
-    try:
-        data = request.json
-        
-        class_path = data.get("class_path")
-        code = data.get("code")
-        github_url = data.get("github_url")
-        
-        if not class_path and not code and not github_url:
-            raise BadRequest("Either class_path, code, or github_url must be provided")
-        
-        # Fetch code from GitHub if github_url is provided
-        if github_url and not code:
-            # Validate that the provided URL is a safe GitHub URL to prevent SSRF.
-            parsed = urlparse(github_url)
-            if not parsed.scheme or parsed.scheme.lower() != "https":
-                raise BadRequest("github_url must use https scheme")
-            if not parsed.hostname:
-                raise BadRequest("github_url must include a hostname")
-            allowed_github_hosts = {
-                "github.com",
-                "raw.githubusercontent.com",
-                "gist.github.com",
-            }
-            hostname = parsed.hostname.lower()
-            if hostname not in allowed_github_hosts:
-                raise BadRequest("github_url must point to a valid GitHub domain")
-
-            try:
-                import requests
-                response = requests.get(github_url, timeout=10)
-                response.raise_for_status()
-                code = response.text
-            except BadRequest:
-                # Re-raise explicit BadRequest raised by validation above
-                raise
-            except Exception as e:
-                raise MiddlewareCodeFetchError(f"Failed to fetch code from GitHub: {str(e)}")
-        
-        result = validate_middleware_code(code=code, class_path=class_path)
-        
-        return result
-        
-    except BadRequest:
-        raise
-    except Exception as e:
-        logger.error(f"Error validating middleware: {e}")
-        raise InternalServerError("Validation failed")
+# Note: ValidateMiddleware endpoint removed per PR #1 review comments
+# The validation endpoint was removed from the OpenAPI spec and should not be implemented

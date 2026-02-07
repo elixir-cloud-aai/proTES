@@ -53,8 +53,9 @@ db:
                 name: 1
               options:
                 "unique": True
+                "sparse": True
             - keys:
-                class_path: 1
+                source.entry_point: 1
               options:
                 "unique": True
 

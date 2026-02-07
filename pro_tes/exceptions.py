@@ -57,16 +57,8 @@ class MiddlewareDuplicateName(BadRequest):
     """Raised when middleware name already exists."""
 
 
-class MiddlewareDuplicateClassPath(BadRequest):
-    """Raised when middleware class_path already exists."""
-
-
-class MiddlewareValidationError(BadRequest):
-    """Raised when middleware code validation fails."""
-
-
-class MiddlewareCodeFetchError(BadRequest):
-    """Raised when fetching middleware code from GitHub fails."""
+class MiddlewareDuplicateEntryPoint(BadRequest):
+    """Raised when middleware entry_point already exists."""
 
 
 exceptions = {
@@ -146,16 +138,8 @@ exceptions = {
         "message": "Middleware name already exists.",
         "code": 400,
     },
-    MiddlewareDuplicateClassPath: {
-        "message": "Middleware class_path already exists.",
-        "code": 400,
-    },
-    MiddlewareValidationError: {
-        "message": "Middleware code validation failed.",
-        "code": 400,
-    },
-    MiddlewareCodeFetchError: {
-        "message": "Fetching middleware code from GitHub failed.",
+    MiddlewareDuplicateEntryPoint: {
+        "message": "Middleware entry_point already exists.",
         "code": 400,
     },
 }
