@@ -1,0 +1,10 @@
+# Git attributes for security scanning exclusions
+# Tell security scanners to ignore historical artifacts
+
+# Exclude virtual environment directories
+.venv/** linguist-vendored
+venv/** linguist-vendored
+
+# Mark key files as historical artifacts (already removed)
+*.pem -diff -merge
+*.key -diff -merge
