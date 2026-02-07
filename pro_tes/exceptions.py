@@ -49,6 +49,18 @@ class TesUriError(ValueError):
     """Raised when TES URI cannot be parsed."""
 
 
+class MiddlewareNotFound(NotFound):
+    """Raised when middleware with given ID was not found."""
+
+
+class MiddlewareDuplicateName(BadRequest):
+    """Raised when middleware name already exists."""
+
+
+class MiddlewareDuplicateEntryPoint(BadRequest):
+    """Raised when middleware entry_point already exists."""
+
+
 exceptions = {
     Exception: {
         "message": "An unexpected error occurred.",
@@ -117,5 +129,17 @@ exceptions = {
     IPDistanceCalculationError: {
         "message": "IP distance calculation failed.",
         "code": "500",
+    },
+    MiddlewareNotFound: {
+        "message": "Middleware with given ID was not found.",
+        "code": "404",
+    },
+    MiddlewareDuplicateName: {
+        "message": "Middleware name already exists.",
+        "code": "400",
+    },
+    MiddlewareDuplicateEntryPoint: {
+        "message": "Middleware entry_point already exists.",
+        "code": "400",
     },
 }
