@@ -337,10 +337,12 @@ def UpdateMiddleware(middleware_id: str) -> dict:
             update_dict["order"] = new_order  # type: ignore[assignment]
 
         if update_data.config is not None:
-            update_dict["config"] = update_data.config  # type: ignore[assignment]
+            # type: ignore[assignment]
+            update_dict["config"] = update_data.config
 
         if update_data.enabled is not None:
-            update_dict["enabled"] = update_data.enabled  # type: ignore[assignment]
+            # type: ignore[assignment]
+            update_dict["enabled"] = update_data.enabled
 
         update_dict["updated_at"] = datetime.utcnow().isoformat() + "Z"
 

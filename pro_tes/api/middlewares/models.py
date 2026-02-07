@@ -276,7 +276,12 @@ class MiddlewareOrder(BaseModel):
         ...,
         min_length=1,
         description="Array of middleware IDs in desired execution order",
-        json_schema_extra={"example": ["507f1f77bcf86cd799439011", "507f1f77bcf86cd799439012"]}
+        json_schema_extra={
+            "example": [
+                "507f1f77bcf86cd799439011",
+                "507f1f77bcf86cd799439012"
+            ]
+        }
     )
 
 

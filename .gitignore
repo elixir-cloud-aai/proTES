@@ -227,3 +227,9 @@ tests/output/*
 *.modified.yaml
 .netrc
 .idea/*
+
+# Security: Exclude all private key files
+*.pem
+*.key
+*.p12
+*.pfx
