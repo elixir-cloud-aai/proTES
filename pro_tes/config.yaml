@@ -47,17 +47,6 @@ db:
           indexes:
             - keys:
                 id: 1
-        middlewares:
-          indexes:
-            - keys:
-                name: 1
-              options:
-                "unique": True
-                "sparse": True
-            - keys:
-                source.entry_point: 1
-              options:
-                "unique": True
 
 # API configuration
 # Cf. https://foca.readthedocs.io/en/latest/modules/foca.models.html#foca.models.config.APIConfig
@@ -79,16 +68,6 @@ api:
         # current specs have inconsistency, therefore disabling response validation
         # see: https://github.com/ga4gh/task-execution-schemas/issues/136
         validate_responses: False
-        options:
-          swagger_ui: True
-          serve_spec: True
-    - path:
-        - api/middleware_management.yaml
-      add_operation_fields:
-        x-openapi-router-controller: pro_tes.api.middlewares.controllers
-      connexion:
-        strict_validation: True
-        validate_responses: True
         options:
           swagger_ui: True
           serve_spec: True
