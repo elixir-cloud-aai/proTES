@@ -56,12 +56,6 @@ paths:
             type: string
             enum: [order, name, created_at, updated_at]
             default: order
-        - name: enabled
-          in: query
-          description: Filter by enabled status
-          required: false
-          schema:
-            type: boolean
         - name: source
           in: query
           description: Filter by middleware source type
@@ -83,13 +77,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '401':
-          description: Unauthorized (authentication required)
+          description: Unauthorized (when authentication is configured)
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: Forbidden (insufficient permissions)
+          description: Forbidden (when authentication is configured and permissions are insufficient)
           content:
             application/json:
               schema:
@@ -186,13 +180,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '401':
-          description: Unauthorized (authentication required)
+          description: Unauthorized (when authentication is configured)
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: Forbidden (insufficient permissions)
+          description: Forbidden (when authentication is configured and permissions are insufficient)
           content:
             application/json:
               schema:
@@ -233,13 +227,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '401':
-          description: Unauthorized (authentication required)
+          description: Unauthorized (when authentication is configured)
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: Forbidden (insufficient permissions)
+          description: Forbidden (when authentication is configured and permissions are insufficient)
           content:
             application/json:
               schema:
@@ -294,13 +288,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '401':
-          description: Unauthorized (authentication required)
+          description: Unauthorized (when authentication is configured)
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: Forbidden (insufficient permissions)
+          description: Forbidden (when authentication is configured and permissions are insufficient)
           content:
             application/json:
               schema:
@@ -350,13 +344,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '401':
-          description: Unauthorized (authentication required)
+          description: Unauthorized (when authentication is configured)
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: Forbidden (insufficient permissions)
+          description: Forbidden (when authentication is configured and permissions are insufficient)
           content:
             application/json:
               schema:
@@ -411,13 +405,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '401':
-          description: Unauthorized (authentication required)
+          description: Unauthorized (when authentication is configured)
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: Forbidden (insufficient permissions)
+          description: Forbidden (when authentication is configured and permissions are insufficient)
           content:
             application/json:
               schema:
@@ -526,8 +520,6 @@ components:
           type: string
           description: Package version (optional, for pypi or github tag/branch)
           example: "1.0.0"
-      discriminator:
-        propertyName: type
 
     MiddlewareCreate:
       type: object
