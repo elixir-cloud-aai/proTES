@@ -62,7 +62,7 @@ paths:
           required: false
           schema:
             type: string
-            enum: [local, github, pypi]
+            enum: [local, git, pypi]
       responses:
         '200':
           description: Successful response with list of middlewares
@@ -99,9 +99,9 @@ paths:
       summary: Add a new middleware
       description: |
         Add a new middleware to the execution stack. Middleware can be loaded from:
-        - GitHub repositories: Git repositories containing setup.py or pyproject.toml (recommended)
+        - Git repositories: Git repositories containing setup.py or pyproject.toml (recommended)
         - PyPI packages: Packages from PyPI or other package registries (recommended)
-        - Local packages: Installed Python packages (**deprecated** - for development only)
+        - Local packages: Installed Python packages or local file paths (**deprecated** - for development only)
         
         If order is not specified, defaults to 0. If a middleware already exists at that 
         position, existing middlewares at that position or higher are shifted up by one.
@@ -110,7 +110,7 @@ paths:
         
         Fallback groups can be created by providing an array of source configurations.
         If the first middleware in the group fails, the system tries the next one in the 
-        fallback group, allowing mixed sources (GitHub, PyPI, local) in a single entry.
+        fallback group, allowing mixed sources (Git, PyPI, local) in a single entry.
       operationId: AddMiddleware
       tags:
         - Middleware Management
@@ -119,28 +119,26 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/MiddlewareCreate'
+              $ref: '#/components/schemas/Middleware'
             examples:
-              github_middleware:
-                summary: Add middleware from GitHub
+              git_middleware:
+                summary: Add middleware from Git repository
                 value:
                   name: "Custom Load Balancer"
                   source:
-                    type: "github"
-                    repository: "https://github.com/user/repo.git"
+                    type: "git"
+                    package_location: "https://github.com/user/repo.git"
                     entry_point: "custom_middleware.LoadBalancer"
                   order: 0
-                  enabled: true
               pypi_middleware:
                 summary: Add middleware from PyPI
                 value:
                   name: "Third-party Middleware"
                   source:
                     type: "pypi"
-                    package: "protes-middleware-custom"
+                    package_location: "protes-middleware-custom"
                     entry_point: "custom.Middleware"
                     version: "1.0.0"
-                  enabled: true
               local_middleware:
                 summary: Add local middleware (deprecated - development only)
                 value:
@@ -149,23 +147,30 @@ paths:
                     type: "local"
                     entry_point: "pro_tes.plugins.middlewares.task_distribution.distance.TaskDistributionDistance"
                   order: 0
-                  enabled: true
+              local_middleware_with_path:
+                summary: Add local middleware with file path
+                value:
+                  name: "Custom Local Middleware"
+                  source:
+                    type: "local"
+                    package_location: "/opt/middleware/custom"
+                    entry_point: "custom.Middleware"
+                  order: 0
               fallback_group:
                 summary: Add fallback group with mixed sources
                 value:
                   name: "Load Balancing Group"
                   source:
-                    - type: "github"
-                      repository: "https://github.com/org/primary.git"
+                    - type: "git"
+                      package_location: "https://github.com/org/primary.git"
                       entry_point: "primary.DistanceRouter"
-                    - type: "github"
-                      repository: "https://github.com/org/fallback.git"
+                    - type: "git"
+                      package_location: "https://github.com/org/fallback.git"
                       entry_point: "fallback.RandomRouter"
                     - type: "pypi"
-                      package: "protes-fallback"
+                      package_location: "protes-fallback"
                       entry_point: "fallback.LastResort"
                   order: 0
-                  enabled: true
       responses:
         '201':
           description: Middleware created successfully
@@ -219,7 +224,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MiddlewareConfig'
+                $ref: '#/components/schemas/Middleware'
         '400':
           description: Bad request (invalid middleware ID format)
           content:
@@ -254,7 +259,7 @@ paths:
     put:
       summary: Update middleware configuration
       description: |
-        Update middleware configuration. Only name, order, config, and enabled fields
+        Update middleware configuration. Only name, order, and config fields
         can be updated. Source configuration (package type, repository, entry point) 
         cannot be modified for security reasons.
       operationId: UpdateMiddleware
@@ -280,7 +285,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MiddlewareConfig'
+                $ref: '#/components/schemas/Middleware'
         '400':
           description: Invalid request (invalid middleware ID format, invalid parameters)
           content:
@@ -320,9 +325,7 @@ paths:
 
     delete:
       summary: Remove a middleware
-      description: |
-        Permanently remove a middleware from the execution stack and database.
-        To temporarily disable a middleware, use the UPDATE endpoint to set enabled=false.
+      description: Permanently remove a middleware from the execution stack and database.
       operationId: DeleteMiddleware
       tags:
         - Middleware Management
@@ -397,7 +400,7 @@ paths:
                   middlewares:
                     type: array
                     items:
-                      $ref: '#/components/schemas/MiddlewareConfig'
+                      $ref: '#/components/schemas/Middleware'
         '400':
           description: Invalid request (missing IDs, invalid IDs, duplicate IDs)
           content:
@@ -425,16 +428,11 @@ paths:
 
 components:
   schemas:
-    MiddlewareConfig:
+    Middleware:
       type: object
-      description: Complete middleware configuration object
+      description: Middleware configuration object used for both requests and responses
       required:
-        - _id
         - source
-        - order
-        - enabled
-        - created_at
-        - updated_at
       properties:
         _id:
           type: string
@@ -445,6 +443,8 @@ components:
           type: string
           description: Human-readable name for the middleware. If not provided, derived from package or repository name.
           nullable: true
+          minLength: 1
+          maxLength: 255
           example: "Distance-based Router"
         source:
           oneOf:
@@ -455,17 +455,18 @@ components:
                 $ref: '#/components/schemas/MiddlewareSource'
               minItems: 2
               example:
-                - type: "github"
-                  repository: "https://github.com/org/primary.git"
+                - type: "git"
+                  package_location: "https://github.com/org/primary.git"
                   entry_point: "primary.DistanceRouter"
-                - type: "github"
-                  repository: "https://github.com/org/fallback.git"
+                - type: "git"
+                  package_location: "https://github.com/org/fallback.git"
                   entry_point: "fallback.RandomRouter"
         order:
           type: integer
-          description: Execution order (0 = first)
+          description: Execution order (0 = first). If omitted in request, middleware is appended to end.
           minimum: 0
           default: 0
+          nullable: true
           example: 0
         config:
           type: object
@@ -475,10 +476,6 @@ components:
           example:
             timeout: 30
             retries: 3
-        enabled:
-          type: boolean
-          description: Whether the middleware is active
-          example: true
         created_at:
           type: string
           format: date-time
@@ -502,73 +499,68 @@ components:
         type:
           type: string
           description: Source type for the middleware package
-          enum: [local, github, pypi]
+          enum: [local, git, pypi]
         entry_point:
           type: string
           description: Class path entry point (e.g., 'package.module.ClassName')
           example: "pro_tes.plugins.middlewares.task_distribution.distance.TaskDistributionDistance"
-        package:
-          type: string
-          description: Package name (required for pypi type)
-          example: "protes-middleware-custom"
-        repository:
-          type: string
-          description: Git repository URL (required for github type)
-          pattern: '^https://github\.com/.+\.git$'
-          example: "https://github.com/user/repo.git"
         version:
           type: string
-          description: Package version (optional, for pypi or github tag/branch)
+          description: Package version (optional, for pypi or git tag/branch)
           example: "1.0.0"
-
-    MiddlewareCreate:
-      type: object
-      description: Request body for creating a middleware
-      required:
-        - source
-      properties:
-        name:
+        package_location:
           type: string
-          description: Human-readable name for the middleware. If not provided, will be derived from package or repository name.
-          minLength: 1
-          maxLength: 255
-          nullable: true
-          example: "Distance-based Router"
-        source:
-          oneOf:
-            - $ref: '#/components/schemas/MiddlewareSource'
-            - type: array
-              description: Fallback group (array of middleware sources)
-              items:
-                $ref: '#/components/schemas/MiddlewareSource'
-              minItems: 2
-              example:
-                - type: "github"
-                  repository: "https://github.com/org/primary.git"
-                  entry_point: "primary.DistanceRouter"
-                - type: "github"
-                  repository: "https://github.com/org/fallback.git"
-                  entry_point: "fallback.RandomRouter"
-        order:
-          type: integer
-          description: Execution order (omit to append to end)
-          minimum: 0
-          default: 0
-          nullable: true
-          example: 0
-        config:
-          type: object
-          description: Middleware-specific configuration
-          nullable: true
-          additionalProperties: true
-          example:
-            timeout: 30
-            retries: 3
-        enabled:
-          type: boolean
-          description: Whether the middleware should be active
-          default: true
-          example: true
+          description: The location of the package (format and requirement vary by type).
+      discriminator:
+        propertyName: type
+        mapping:
+          local: '#/components/schemas/MiddlewareLocal'
+          git: '#/components/schemas/MiddlewareGit'
+          pypi: '#/components/schemas/MiddlewarePyPi'
+      oneOf:
+        - $ref: '#/components/schemas/MiddlewareLocal'
+        - $ref: '#/components/schemas/MiddlewareGit'
+        - $ref: '#/components/schemas/MiddlewarePyPi'
+
+    MiddlewareLocal:
+      allOf:
+        - $ref: '#/components/schemas/MiddlewareSource'
+        - type: object
+          properties:
+            package_location:
+              type: string
+              description: >
+                Local file path to directory containing package. 
+                Optional if the package is already installed in the environment.
+              pattern: '^/.*'
+              example: "/path/to/my/middleware/package"
+
+    MiddlewareGit:
+      allOf:
+        - $ref: '#/components/schemas/MiddlewareSource'
+        - type: object
+          required:
+            - package_location
+          properties:
+            package_location:
+              type: string
+              format: uri
+              description: Git repository URL (must end in .git).
+              pattern: '^https://github\.com/.+\.git$'
+              example: "https://github.com/user/repo.git"
+
+    MiddlewarePyPi:
+      allOf:
+        - $ref: '#/components/schemas/MiddlewareSource'
+        - type: object
+          required:
+            - package_location
+          properties:
+            package_location:
+              type: string
+              description: The registered name of the package on PyPi.
+              pattern: '^[a-zA-Z0-9\-_.]+$'
+              example: "protes-middleware-custom"
 
     MiddlewareUpdate:
       type: object
@@ -593,10 +585,6 @@ components:
           example:
             timeout: 60
             retries: 5
-        enabled:
-          type: boolean
-          description: Whether the middleware is active
-          example: false
 
     MiddlewareList:
       type: object
@@ -609,7 +597,7 @@ components:
           type: array
           description: Array of middleware configurations
           items:
-            $ref: '#/components/schemas/MiddlewareConfig'
+            $ref: '#/components/schemas/Middleware'
         pagination:
           type: object
           description: Pagination information following GA4GH guidelines
