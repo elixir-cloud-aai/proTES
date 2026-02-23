@@ -25,7 +25,7 @@ paths:
     get:
       summary: List all middlewares
       description: |
-        Retrieve all configured middlewares with their order, metadata, and status.
+        Retrieve all configured middlewares with their order and metadata.
         Results are sorted by execution order (ascending) by default.
       operationId: ListMiddlewares
       tags:
@@ -111,6 +111,11 @@ paths:
         Fallback groups can be created by providing an array of source configurations.
         If the first middleware in the group fails, the system tries the next one in the 
         fallback group, allowing mixed sources (Git, PyPI, local) in a single entry.
+        
+        **Note:** Fallback groups are managed as atomic units. To modify the middlewares 
+        within a fallback group (add/remove/reorder sources), you must delete and recreate 
+        the entire fallback group. Individual middlewares within a group cannot be modified 
+        separately due to security constraints on source configuration changes.
       operationId: AddMiddleware
       tags:
         - Middleware Management
@@ -325,7 +330,10 @@ paths:
 
     delete:
       summary: Remove a middleware
-      description: Permanently remove a middleware from the execution stack and database.
+      description: |
+        Permanently remove a middleware from the execution stack and database.
+        This operation works for both individual middlewares and fallback groups (which are 
+        removed as a single unit).
       operationId: DeleteMiddleware
       tags:
         - Middleware Management
