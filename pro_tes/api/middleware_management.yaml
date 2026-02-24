@@ -1,0 +1,685 @@
+openapi: 3.0.3
+info:
+  title: proTES Middleware Management API
+  description: |
+    API for dynamically managing middleware in proTES (GA4GH Task Execution Service Proxy).
+    This API allows runtime configuration of middleware components that process task execution requests.
+  version: 1.0.0
+  contact:
+    name: ELIXIR Cloud & AAI
+    url: https://github.com/elixir-cloud-aai/proTES
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0.html
+
+servers:
+  - url: /protes/v1
+    description: proTES Middleware Management API base path
+
+tags:
+  - name: Middleware Management
+    description: Operations for managing middleware stack
+
+paths:
+  /middlewares:
+    get:
+      summary: List all middlewares
+      description: |
+        Retrieve all configured middlewares with their order and metadata.
+        Results are sorted by execution order (ascending) by default.
+      operationId: ListMiddlewares
+      tags:
+        - Middleware Management
+      parameters:
+        - name: page_size
+          in: query
+          description: Maximum number of results to return per page
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+        - name: page
+          in: query
+          description: Page number to retrieve (0-indexed)
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: sort_by
+          in: query
+          description: Field to sort by
+          required: false
+          schema:
+            type: string
+            enum: [order, name, created_at, updated_at]
+            default: order
+        - name: sort_order
+          in: query
+          description: Sort order direction
+          required: false
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: asc
+        - name: source
+          in: query
+          description: Filter by middleware source type
+          required: false
+          schema:
+            type: string
+            enum: [local, git, pypi]
+      responses:
+        '200':
+          description: Successful response with list of middlewares
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MiddlewareList'
+        '400':
+          description: Bad request (invalid parameters)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized (when authentication is configured)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden (when authentication is configured and permissions are insufficient)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    post:
+      summary: Add a new middleware
+      description: |
+        Add a new middleware to the execution stack. Middleware can be loaded from:
+        - Git repositories: Git repositories containing setup.py or pyproject.toml (recommended)
+        - PyPI packages: Packages from PyPI or other package registries (recommended)
+        - Local packages: Installed Python packages or local file paths (**deprecated** - for development only)
+        
+        The middleware will be appended to the end of the execution stack. To change the execution 
+        order, use the PUT /middlewares/reorder endpoint after creation.
+        
+        If name is not provided, it will be derived from the package or repository name.
+        
+        Fallback groups can be created by providing an array of source configurations.
+        If the first middleware in the group fails, the system tries the next one in the 
+        fallback group, allowing mixed sources (Git, PyPI, local) in a single entry.
+        
+        **Note:** Fallback groups are managed as atomic units. To modify the middlewares 
+        within a fallback group (add/remove/reorder sources), you must delete and recreate 
+        the entire fallback group. Individual middlewares within a group cannot be modified 
+        separately due to security constraints on source configuration changes.
+      operationId: AddMiddleware
+      tags:
+        - Middleware Management
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Middleware'
+            examples:
+              git_middleware:
+                summary: Add middleware from Git repository
+                value:
+                  name: "Custom Load Balancer"
+                  source:
+                    type: "git"
+                    package_location: "https://github.com/user/repo.git"
+                    entry_point: "custom_middleware.LoadBalancer"
+              pypi_middleware:
+                summary: Add middleware from PyPI
+                value:
+                  name: "Third-party Middleware"
+                  source:
+                    type: "pypi"
+                    package_location: "protes-middleware-custom"
+                    entry_point: "custom.Middleware"
+                    version: "1.0.0"
+              local_middleware:
+                summary: Add local middleware (deprecated - development only)
+                value:
+                  name: "Distance-based Router"
+                  source:
+                    type: "local"
+                    entry_point: "pro_tes.plugins.middlewares.task_distribution.distance.TaskDistributionDistance"
+              local_middleware_with_path:
+                summary: Add local middleware with file path
+                value:
+                  name: "Custom Local Middleware"
+                  source:
+                    type: "local"
+                    package_location: "/opt/middleware/custom"
+                    entry_point: "custom.Middleware"
+              fallback_group:
+                summary: Add fallback group with mixed sources
+                value:
+                  name: "Load Balancing Group"
+                  source:
+                    - type: "git"
+                      package_location: "https://github.com/org/primary.git"
+                      entry_point: "primary.DistanceRouter"
+                    - type: "git"
+                      package_location: "https://github.com/org/fallback.git"
+                      entry_point: "fallback.RandomRouter"
+                    - type: "pypi"
+                      package_location: "protes-fallback"
+                      entry_point: "fallback.LastResort"
+      responses:
+        '201':
+          description: Middleware created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MiddlewareCreateResponse'
+        '400':
+          description: Invalid request (duplicate name/entry_point, invalid source, validation failed)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized (when authentication is configured)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden (when authentication is configured and permissions are insufficient)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /middlewares/{middleware_id}:
+    get:
+      summary: Get middleware details
+      description: Retrieve detailed information about a specific middleware by ID
+      operationId: GetMiddleware
+      tags:
+        - Middleware Management
+      parameters:
+        - name: middleware_id
+          in: path
+          description: Unique identifier of the middleware
+          required: true
+          schema:
+            type: string
+            pattern: '^[a-f0-9]{24}$'
+      responses:
+        '200':
+          description: Successful response with middleware details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Middleware'
+        '400':
+          description: Bad request (invalid middleware ID format)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized (when authentication is configured)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden (when authentication is configured and permissions are insufficient)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Middleware not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    patch:
+      summary: Update middleware configuration
+      description: |
+        Partially update middleware configuration. Only name and config fields
+        can be updated. Source configuration and execution order cannot be modified.
+        Use PUT /middlewares/reorder to change execution order.
+      operationId: UpdateMiddleware
+      tags:
+        - Middleware Management
+      parameters:
+        - name: middleware_id
+          in: path
+          description: Unique identifier of the middleware
+          required: true
+          schema:
+            type: string
+            pattern: '^[a-f0-9]{24}$'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MiddlewareUpdate'
+      responses:
+        '200':
+          description: Middleware updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Middleware'
+        '400':
+          description: Invalid request (invalid middleware ID format, invalid parameters)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized (when authentication is configured)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden (when authentication is configured and permissions are insufficient)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Middleware not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Conflict (e.g., duplicate name)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      summary: Remove a middleware
+      description: |
+        Permanently remove a middleware from the execution stack and database.
+        This operation works for both individual middlewares and fallback groups (which are 
+        removed as a single unit).
+      operationId: DeleteMiddleware
+      tags:
+        - Middleware Management
+      parameters:
+        - name: middleware_id
+          in: path
+          description: Unique identifier of the middleware
+          required: true
+          schema:
+            type: string
+            pattern: '^[a-f0-9]{24}$'
+      responses:
+        '204':
+          description: Middleware deleted successfully
+        '400':
+          description: Bad request (invalid middleware ID format)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized (when authentication is configured)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden (when authentication is configured and permissions are insufficient)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Middleware not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /middlewares/reorder:
+    put:
+      summary: Reorder middleware stack
+      description: |
+        Reorder the entire middleware execution stack by providing an ordered array
+        of middleware IDs. All middleware IDs must be provided in the desired execution order.
+      operationId: ReorderMiddlewares
+      tags:
+        - Middleware Management
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MiddlewareOrder'
+      responses:
+        '200':
+          description: Middlewares reordered successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Middleware stack reordered successfully"
+                  middlewares:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Middleware'
+        '400':
+          description: Invalid request (missing IDs, invalid IDs, duplicate IDs)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized (when authentication is configured)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden (when authentication is configured and permissions are insufficient)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+    Middleware:
+      type: object
+      description: Middleware configuration object used for both requests and responses
+      required:
+        - source
+      properties:
+        id:
+          type: string
+          description: Unique identifier
+          readOnly: true
+          example: "507f1f77bcf86cd799439011"
+        name:
+          type: string
+          description: Human-readable name for the middleware. If not provided, derived from package or repository name.
+          nullable: true
+          minLength: 1
+          maxLength: 255
+          example: "Distance-based Router"
+        source:
+          oneOf:
+            - $ref: '#/components/schemas/MiddlewareSource'
+            - type: array
+              description: Fallback group (array of middleware sources)
+              items:
+                $ref: '#/components/schemas/MiddlewareSource'
+              minItems: 2
+              example:
+                - type: "git"
+                  package_location: "https://github.com/org/primary.git"
+                  entry_point: "primary.DistanceRouter"
+                - type: "git"
+                  package_location: "https://github.com/org/fallback.git"
+                  entry_point: "fallback.RandomRouter"
+        order:
+          type: integer
+          description: Execution order (0 = first). Assigned by system on creation or via /middlewares/reorder endpoint.
+          minimum: 0
+          readOnly: true
+          example: 0
+        config:
+          type: object
+          description: Middleware-specific configuration
+          nullable: true
+          additionalProperties: true
+          example:
+            timeout: 30
+            retries: 3
+        created_at:
+          type: string
+          format: date-time
+          description: Creation timestamp (set by system)
+          readOnly: true
+          example: "2026-01-24T10:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Last update timestamp (set by system)
+          readOnly: true
+          example: "2026-01-24T10:30:00Z"
+
+    MiddlewareSource:
+      type: object
+      description: Middleware package source configuration
+      required:
+        - type
+        - entry_point
+      properties:
+        type:
+          type: string
+          description: Source type for the middleware package
+          enum: [local, git, pypi]
+        entry_point:
+          type: string
+          description: Class path entry point (e.g., 'package.module.ClassName')
+          example: "pro_tes.plugins.middlewares.task_distribution.distance.TaskDistributionDistance"
+        version:
+          type: string
+          description: Package version (optional, for pypi or git tag/branch)
+          example: "1.0.0"
+        package_location:
+          type: string
+          description: The location of the package (format and requirement vary by type).
+      discriminator:
+        propertyName: type
+        mapping:
+          local: '#/components/schemas/MiddlewareLocal'
+          git: '#/components/schemas/MiddlewareGit'
+          pypi: '#/components/schemas/MiddlewarePyPi'
+      oneOf:
+        - $ref: '#/components/schemas/MiddlewareLocal'
+        - $ref: '#/components/schemas/MiddlewareGit'
+        - $ref: '#/components/schemas/MiddlewarePyPi'
+
+    MiddlewareLocal:
+      allOf:
+        - $ref: '#/components/schemas/MiddlewareSource'
+        - type: object
+          properties:
+            package_location:
+              type: string
+              description: >
+                Local file path to directory containing package. 
+                Optional if the package is already installed in the environment.
+              pattern: '^/.*'
+              example: "/path/to/my/middleware/package"
+
+    MiddlewareGit:
+      allOf:
+        - $ref: '#/components/schemas/MiddlewareSource'
+        - type: object
+          required:
+            - package_location
+          properties:
+            package_location:
+              type: string
+              format: uri
+              description: Git repository URL (must end in .git).
+              pattern: '^https://github\.com/.+\.git$'
+              example: "https://github.com/user/repo.git"
+
+    MiddlewarePyPi:
+      allOf:
+        - $ref: '#/components/schemas/MiddlewareSource'
+        - type: object
+          required:
+            - package_location
+          properties:
+            package_location:
+              type: string
+              description: The registered name of the package on PyPi.
+              pattern: '^[a-zA-Z0-9\-_.]+$'
+              example: "protes-middleware-custom"
+
+    MiddlewareUpdate:
+      type: object
+      description: Request body for updating a middleware (partial update)
+      properties:
+        name:
+          type: string
+          description: Human-readable name for the middleware
+          minLength: 1
+          maxLength: 255
+          example: "Distance-based Router v2"
+        config:
+          type: object
+          description: Middleware-specific configuration
+          nullable: true
+          additionalProperties: true
+          example:
+            timeout: 60
+            retries: 5
+
+    MiddlewareList:
+      type: object
+      description: Paginated list of middlewares
+      required:
+        - middlewares
+        - pagination
+      properties:
+        middlewares:
+          type: array
+          description: Array of middleware configurations
+          items:
+            $ref: '#/components/schemas/Middleware'
+        pagination:
+          type: object
+          description: Pagination information following GA4GH guidelines
+          required:
+            - page
+            - page_size
+            - total
+          properties:
+            page:
+              type: integer
+              description: Current page number (0-indexed)
+              example: 0
+            page_size:
+              type: integer
+              description: Number of results per page
+              example: 50
+            total:
+              type: integer
+              description: Total number of middlewares available
+              example: 5
+            total_pages:
+              type: integer
+              description: Total number of pages available
+              example: 1
+
+    MiddlewareCreateResponse:
+      type: object
+      description: Response after creating a middleware
+      required:
+        - id
+        - order
+        - message
+      properties:
+        id:
+          type: string
+          description: Unique identifier of created middleware
+          example: "507f1f77bcf86cd799439011"
+        order:
+          type: integer
+          description: Assigned execution order
+          example: 0
+        message:
+          type: string
+          description: Success message
+          example: "Middleware added successfully"
+
+    MiddlewareOrder:
+      type: object
+      description: Request body for reordering middlewares
+      required:
+        - ordered_ids
+      properties:
+        ordered_ids:
+          type: array
+          description: Array of middleware IDs in desired execution order
+          items:
+            type: string
+            pattern: '^[a-f0-9]{24}$'
+          minItems: 1
+          example:
+            - "507f1f77bcf86cd799439011"
+            - "507f1f77bcf86cd799439012"
+            - "507f1f77bcf86cd799439013"
+
+    ErrorResponse:
+      type: object
+      description: Standard error response
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: integer
+          description: HTTP status code
+          example: 404
+        message:
+          type: string
+          description: Human-readable error message
+          example: "Middleware with ID '507f1f77bcf86cd799439011' not found"
