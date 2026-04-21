@@ -18,6 +18,8 @@ ENV USER=ipython
 WORKDIR /app
 COPY ./requirements.txt /app/requirements.txt
 RUN pip install -r requirements.txt
+# Patch py-tes timestampconv to treat empty-string timestamps as None (Funnel compat)
+RUN python3 -c "import pathlib; f=pathlib.Path('/usr/local/lib/python3.10/site-packages/tes/models.py'); t=f.read_text(); t=t.replace('    if value is None:\n        return value\n', '    if not value:\n        return None\n'); f.write_text(t)"
 COPY ./ .
 RUN pip install -e .
 

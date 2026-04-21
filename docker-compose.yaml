@@ -51,3 +51,9 @@ services:
     command: flower --broker=amqp://guest:guest@rabbitmq:5672// --port=5555
     ports:
       - "5555:5555"
+
+networks:
+  default:
+    driver: bridge
+    driver_opts:
+      com.docker.network.driver.mtu: "1400"
