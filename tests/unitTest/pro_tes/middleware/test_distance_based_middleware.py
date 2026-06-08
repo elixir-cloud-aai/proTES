@@ -8,7 +8,7 @@ import mongomock
 import pytest
 
 import pro_tes
-from pro_tes.exceptions import MiddlewareException
+from pro_tes.exceptions import InputUriError, TesUriError
 from pro_tes.plugins.middlewares.task_distribution.distance import (
     calculate_distance,
     get_uri_combination,
@@ -91,18 +91,18 @@ class TestDistanceBasedTaskDistribution(unittest.TestCase):
     def test_ip_combination_invalid_input_uri(self):
         """Test ip_combination with invalid input URI.
 
-        Ensures that a MiddlewareException is raised when an invalid input URI is
+        Ensures that an InputUriError is raised when an invalid input URI is
         passed to ip_combination.
         """
-        with pytest.raises(MiddlewareException):
+        with pytest.raises(InputUriError):
             ip_combination(invalid_input_uri, mock_input_uri)
 
     def test_ip_combination_invalid_tes_url(self):
         """Test ip_combination with invalid TES URI.
 
-        Raises: MiddlewareException
+        Raises: TesUriError
         """
-        with pytest.raises(MiddlewareException):
+        with pytest.raises(TesUriError):
             ip_combination(mock_tes_url, invalid_tes_url)
 
     @pytest.mark.run(order=3)
