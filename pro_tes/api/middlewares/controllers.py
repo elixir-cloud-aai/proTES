@@ -174,7 +174,7 @@ def UpdateMiddleware(
     middleware_id: str,
     body: Dict[str, Any],
 ) -> Dict[str, Any]:
-    """Partially update middleware (only `name` and `config`)."""
+    """Update middleware partially (only `name` and `config`)."""
     if not isinstance(body, dict):
         raise BadRequest("Request body must be an object")
     allowed = {"name", "config"}
