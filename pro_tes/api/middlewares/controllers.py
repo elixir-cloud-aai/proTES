@@ -237,6 +237,9 @@ def ReorderMiddlewares(body: Dict[str, Any]) -> Dict[str, Any]:
     existing = list(coll.find({}, {"_id": True}))
     existing_ids = {str(d["_id"]): d for d in existing}
 
+    if len(ordered_ids) != len(set(ordered_ids)):
+        raise BadRequest("`ordered_ids` must not contain duplicate ids")
+
     if set(ordered_ids) != set(existing_ids.keys()):
         raise BadRequest(
             "`ordered_ids` must contain exactly all middleware ids"
