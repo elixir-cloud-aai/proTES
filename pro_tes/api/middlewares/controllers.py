@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional
 
 from bson.objectid import ObjectId
 from flask import current_app
-from werkzeug.exceptions import BadRequest, NotFound, Conflict
+from werkzeug.exceptions import BadRequest, NotFound
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +32,15 @@ def _doc_to_response(doc: Dict[str, Any]) -> Dict[str, Any]:
     return result
 
 
+def _utc_now() -> str:
+    return (
+        datetime.now(timezone.utc)
+        .replace(microsecond=0)
+        .isoformat()
+        .replace("+00:00", "Z")
+    )
+
+
 def ListMiddlewares(page_size: int = 50,
                     page: int = 0,
                     sort_by: str = "order",
@@ -50,10 +59,21 @@ def ListMiddlewares(page_size: int = 50,
         query["source.type"] = source
 
     total = coll.count_documents(query)
-    # sort
     direction = 1 if sort_order == "asc" else -1
-    cursor = coll.find(query, {"_id": True, "name": True, "source": True, "order": True, "config": True, "created_at": True, "updated_at": True})
-    cursor = cursor.sort(sort_by, direction).skip(page * page_size).limit(page_size)
+    cursor = coll.find(
+        query,
+        {
+            "_id": True,
+            "name": True,
+            "source": True,
+            "order": True,
+            "config": True,
+            "created_at": True,
+            "updated_at": True,
+        },
+    )
+    cursor = cursor.sort(sort_by, direction)
+    cursor = cursor.skip(page * page_size).limit(page_size)
 
     middlewares = [_doc_to_response(doc) for doc in cursor]
 
@@ -77,7 +97,7 @@ def AddMiddleware(body: Dict[str, Any]) -> Dict[str, Any]:
     coll = _collection()
 
     # Prepare document
-    now = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    now = _utc_now()
     doc: Dict[str, Any] = {}
     doc.update(body)
     doc["created_at"] = now
@@ -94,7 +114,7 @@ def AddMiddleware(body: Dict[str, Any]) -> Dict[str, Any]:
     # Insert
     try:
         res = coll.insert_one(doc)
-    except Exception as exc:
+    except Exception:
         logger.exception("Failed to insert middleware")
         raise
 
@@ -113,18 +133,34 @@ def GetMiddleware(middleware_id: str) -> Dict[str, Any]:
         raise BadRequest("Invalid middleware id")
 
     coll = _collection()
-    doc = coll.find_one({"_id": oid}, {"_id": True, "name": True, "source": True, "order": True, "config": True, "created_at": True, "updated_at": True})
+    doc = coll.find_one(
+        {"_id": oid},
+        {
+            "_id": True,
+            "name": True,
+            "source": True,
+            "order": True,
+            "config": True,
+            "created_at": True,
+            "updated_at": True,
+        },
+    )
     if doc is None:
         raise NotFound(f"Middleware with ID '{middleware_id}' not found")
     return _doc_to_response(doc)
 
 
-def UpdateMiddleware(middleware_id: str, body: Dict[str, Any]) -> Dict[str, Any]:
+def UpdateMiddleware(
+    middleware_id: str,
+    body: Dict[str, Any],
+) -> Dict[str, Any]:
     """Partially update middleware (only `name` and `config`)."""
     if not isinstance(body, dict):
         raise BadRequest("Request body must be an object")
     allowed = {"name", "config"}
-    update_fields = {k: v for (k, v) in body.items() if k in allowed}
+    update_fields = {
+        k: v for (k, v) in body.items() if k in allowed
+    }
     if not update_fields:
         raise BadRequest("Only `name` and `config` can be updated")
 
@@ -133,12 +169,20 @@ def UpdateMiddleware(middleware_id: str, body: Dict[str, Any]) -> Dict[str, Any]
     except Exception:
         raise BadRequest("Invalid middleware id")
 
-    update_fields["updated_at"] = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    update_fields["updated_at"] = _utc_now()
     coll = _collection()
     updated = coll.find_one_and_update(
         {"_id": oid},
         {"$set": update_fields},
-        projection={"_id": True, "name": True, "source": True, "order": True, "config": True, "created_at": True, "updated_at": True},
+        projection={
+            "_id": True,
+            "name": True,
+            "source": True,
+            "order": True,
+            "config": True,
+            "created_at": True,
+            "updated_at": True,
+        },
         return_document=True,
     )
     if updated is None:
@@ -162,7 +206,7 @@ def DeleteMiddleware(middleware_id: str) -> tuple:
 
 
 def ReorderMiddlewares(body: Dict[str, Any]) -> Dict[str, Any]:
-    """Reorder middleware stack by provided ordered list of IDs."""
+    """Reorder middleware stack by ordered IDs."""
     if not isinstance(body, dict) or "ordered_ids" not in body:
         raise BadRequest("Request body must contain `ordered_ids` array")
     ordered_ids = body["ordered_ids"]
@@ -170,23 +214,37 @@ def ReorderMiddlewares(body: Dict[str, Any]) -> Dict[str, Any]:
         raise BadRequest("`ordered_ids` must be a non-empty array of ids")
 
     coll = _collection()
-    # Fetch existing ids
     existing = list(coll.find({}, {"_id": True}))
     existing_ids = {str(d["_id"]): d for d in existing}
 
     if set(ordered_ids) != set(existing_ids.keys()):
-        raise BadRequest("`ordered_ids` must contain exactly all middleware ids")
+        raise BadRequest(
+            "`ordered_ids` must contain exactly all middleware ids"
+        )
 
-    # Apply new order
     updated_docs: List[Dict[str, Any]] = []
-    now = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    now = _utc_now()
     for idx, mid in enumerate(ordered_ids):
         try:
             oid = ObjectId(mid)
         except Exception:
             raise BadRequest(f"Invalid id in ordered_ids: {mid}")
-        coll.update_one({"_id": oid}, {"$set": {"order": idx, "updated_at": now}})
-        doc = coll.find_one({"_id": oid}, {"_id": True, "name": True, "source": True, "order": True, "config": True, "created_at": True, "updated_at": True})
+        coll.update_one(
+            {"_id": oid},
+            {"$set": {"order": idx, "updated_at": now}},
+        )
+        doc = coll.find_one(
+            {"_id": oid},
+            {
+                "_id": True,
+                "name": True,
+                "source": True,
+                "order": True,
+                "config": True,
+                "created_at": True,
+                "updated_at": True,
+            },
+        )
         updated_docs.append(_doc_to_response(doc))
 
     return {
