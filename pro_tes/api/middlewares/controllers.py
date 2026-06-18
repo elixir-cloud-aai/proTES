@@ -100,6 +100,23 @@ def AddMiddleware(body: Dict[str, Any]) -> Dict[str, Any]:
     now = _utc_now()
     doc: Dict[str, Any] = {}
     doc.update(body)
+    doc.pop("_id", None)
+    doc.pop("id", None)
+
+    source_val = doc.get("source")
+    if isinstance(source_val, dict) and source_val.get("entry_point"):
+        doc["class_path"] = source_val["entry_point"]
+    elif isinstance(source_val, list):
+        entry_points = [
+            s.get("entry_point")
+            for s in source_val
+            if isinstance(s, dict) and s.get("entry_point")
+        ]
+        doc["class_path"] = "|".join(entry_points) if entry_points else None
+
+    if not doc.get("class_path"):
+        raise BadRequest("`source.entry_point` is required")
+
     doc["created_at"] = now
     doc["updated_at"] = now
 
