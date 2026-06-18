@@ -40,8 +40,5 @@ The middleware management controller layer is now implemented in
 and wired through the OpenAPI configuration in
 [`pro_tes/config.yaml`](../pro_tes/config.yaml).
 
-Validated with:
-
-```bash
-pytest tests/unitTest/pro_tes/api/middlewares/test_controllers.py -v
-```
+Unit tests for the middleware management controllers are expected under
+tests/unitTest/pro_tes/api/middlewares/ (e.g. test_controllers.py).
