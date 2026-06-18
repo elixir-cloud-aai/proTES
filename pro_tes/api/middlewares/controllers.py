@@ -146,7 +146,7 @@ def AddMiddleware(body: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def GetMiddleware(middleware_id: str) -> Dict[str, Any]:
-    """Return middleware details by id."""
+    """Retrieve middleware details by id."""
     try:
         oid = ObjectId(middleware_id)
     except Exception:
