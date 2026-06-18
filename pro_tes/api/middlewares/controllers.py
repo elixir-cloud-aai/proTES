@@ -135,11 +135,14 @@ def AddMiddleware(body: Dict[str, Any]) -> Dict[str, Any]:
         logger.exception("Failed to insert middleware")
         raise
 
-    return {
-        "id": str(res.inserted_id),
-        "order": doc["order"],
-        "message": "Middleware added successfully",
-    }
+    return (
+        {
+            "id": str(res.inserted_id),
+            "order": doc["order"],
+            "message": "Middleware added successfully",
+        },
+        201,
+    )
 
 
 def GetMiddleware(middleware_id: str) -> Dict[str, Any]:
