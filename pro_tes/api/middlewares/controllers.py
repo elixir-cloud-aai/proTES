@@ -89,7 +89,7 @@ def ListMiddlewares(page_size: int = 50,
     }
 
 
-def AddMiddleware(body: Dict[str, Any]) -> Dict[str, Any]:
+def AddMiddleware(body: Dict[str, Any]) -> tuple:
     """Add a middleware to the end of the execution stack."""
     if not isinstance(body, dict):
         raise BadRequest("Request body must be an object")
@@ -108,7 +108,7 @@ def AddMiddleware(body: Dict[str, Any]) -> Dict[str, Any]:
         doc["class_path"] = source_val["entry_point"]
     elif isinstance(source_val, list):
         entry_points = [
-            s.get("entry_point")
+            s["entry_point"]
             for s in source_val
             if isinstance(s, dict) and s.get("entry_point")
         ]
