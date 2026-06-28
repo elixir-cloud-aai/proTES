@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from bson.objectid import ObjectId
+from pymongo.errors import DuplicateKeyError
 from flask import current_app
 from werkzeug.exceptions import BadRequest, NotFound
 
@@ -17,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 def _collection():
     return (
-        current_app.config.foca.db.dbs["taskStore"]  # type: ignore
+        current_app.config.foca.db.dbs["taskStore"] 
         .collections["middlewares"]
         .client
     )
@@ -39,6 +40,44 @@ def _utc_now() -> str:
         .isoformat()
         .replace("+00:00", "Z")
     )
+
+
+def _derive_name(body: Dict[str, Any]) -> Optional[str]:
+    if body.get("name"):
+        return body["name"]
+
+    source_val = body.get("source")
+    entry_point = None
+    if isinstance(source_val, dict):
+        entry_point = source_val.get("entry_point")
+    elif isinstance(source_val, list):
+        for item in source_val:
+            if isinstance(item, dict) and item.get("entry_point"):
+                entry_point = item["entry_point"]
+                break
+
+    if not entry_point:
+        return None
+
+    name = entry_point.split(".")[-1]
+    name = name.split(":")[-1]
+    return name
+
+
+def _validate_duplicates(
+    coll,
+    name: Optional[str],
+    class_path: Optional[str],
+    exclude_id: Optional[ObjectId] = None,
+) -> None:
+    if name:
+        existing = coll.find_one({"name": name})
+        if existing and (exclude_id is None or existing["_id"] != exclude_id):
+            raise BadRequest(f"Middleware name '{name}' already exists")
+    if class_path:
+        existing = coll.find_one({"class_path": class_path})
+        if existing and (exclude_id is None or existing["_id"] != exclude_id):
+            raise BadRequest(f"Middleware class_path '{class_path}' already exists")
 
 
 def ListMiddlewares(page_size: int = 50,
@@ -96,7 +135,6 @@ def AddMiddleware(body: Dict[str, Any]) -> tuple:
 
     coll = _collection()
 
-    # Prepare document
     now = _utc_now()
     doc: Dict[str, Any] = {}
     doc.update(body)
@@ -117,10 +155,14 @@ def AddMiddleware(body: Dict[str, Any]) -> tuple:
     if not doc.get("class_path"):
         raise BadRequest("`source.entry_point` is required")
 
+    if not doc.get("name"):
+        first = str(doc.get("class_path")).split("|")[0]
+        derived = first.split(".")[-1].split("/")[-1]
+        doc["name"] = derived
+
     doc["created_at"] = now
     doc["updated_at"] = now
 
-    # assign order = max(order)+1
     last = coll.find({}, {"order": True}).sort("order", -1).limit(1)
     try:
         last_doc = next(last, None)
@@ -128,9 +170,16 @@ def AddMiddleware(body: Dict[str, Any]) -> tuple:
         last_doc = None
     doc["order"] = 0 if not last_doc else int(last_doc.get("order", 0)) + 1
 
-    # Insert
+    if coll.find_one({"name": doc.get("name")}):
+        raise BadRequest("Middleware with this name already exists")
+    if coll.find_one({"class_path": doc.get("class_path")}):
+        raise BadRequest("Middleware with this entry_point already exists")
+
     try:
         res = coll.insert_one(doc)
+    except DuplicateKeyError as e:
+        logger.warning("Duplicate key error inserting middleware: %s", e)
+        raise BadRequest("Duplicate middleware (name or entry_point)")
     except Exception:
         logger.exception("Failed to insert middleware")
         raise
@@ -184,6 +233,14 @@ def UpdateMiddleware(
     if not update_fields:
         raise BadRequest("Only `name` and `config` can be updated")
 
+    if "name" in update_fields:
+        _validate_duplicates(
+            _collection(),
+            name=update_fields.get("name"),
+            class_path=None,
+            exclude_id=ObjectId(middleware_id) if middleware_id else None,
+        )
+
     try:
         oid = ObjectId(middleware_id)
     except Exception:
@@ -221,7 +278,6 @@ def DeleteMiddleware(middleware_id: str) -> tuple:
     res = coll.delete_one({"_id": oid})
     if res.deleted_count == 0:
         raise NotFound(f"Middleware with ID '{middleware_id}' not found")
-    # Return empty body with 204 status code (Connexion will use this)
     return ("", 204)
 
 
