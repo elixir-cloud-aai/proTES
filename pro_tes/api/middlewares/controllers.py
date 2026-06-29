@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 def _collection():
     return (
-        current_app.config.foca.db.dbs["taskStore"] 
+        current_app.config.foca.db.dbs["taskStore"]
         .collections["middlewares"]
         .client
     )
@@ -77,7 +77,9 @@ def _validate_duplicates(
     if class_path:
         existing = coll.find_one({"class_path": class_path})
         if existing and (exclude_id is None or existing["_id"] != exclude_id):
-            raise BadRequest(f"Middleware class_path '{class_path}' already exists")
+            raise BadRequest(
+                f"Middleware class_path '{class_path}' already exists"
+            )
 
 
 def ListMiddlewares(page_size: int = 50,
