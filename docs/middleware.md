@@ -32,3 +32,13 @@ pro_tes/
 docs/
 └── middleware.md                           (This documentation)
 ```
+
+## Implementation Status
+
+The middleware management controller layer is now implemented in
+[`pro_tes/api/middlewares/controllers.py`](../pro_tes/api/middlewares/controllers.py)
+and wired through the OpenAPI configuration in
+[`pro_tes/config.yaml`](../pro_tes/config.yaml).
+
+Unit tests for the middleware management controllers are expected under
+tests/unitTest/pro_tes/api/middlewares/ (e.g. test_controllers.py).
