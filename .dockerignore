@@ -1,5 +1,11 @@
-.git
-.gitignore
-deployment/
-images/
-tests/
+# Only send the files needed at runtime to the build context
+*
+!pro_tes/
+!LICENSE
+!pyproject.toml
+!README.md
+
+# Exclude caches and local files within the included paths
+**/__pycache__
+**/*.py[cod]
+**/*.egg-info
