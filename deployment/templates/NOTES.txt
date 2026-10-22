@@ -1,4 +1,4 @@
-Elixir Cloud proTES is being deployed!
+proTES is being deployed!
 
 Once deployed:
 
