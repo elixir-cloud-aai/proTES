@@ -5,8 +5,9 @@ custom:
   tes:
     service_list:
       - "http://fake-tes:8080"
+  # a list of middlewares, each a list of alternatives
   middlewares:
-    - "pro_tes.plugins.middlewares.task_distribution.random.TaskDistributionRandom"
+    - - "pro_tes.plugins.middlewares.task_distribution.random.TaskDistributionRandom"
   controllers:
     post_task:
       polling:
