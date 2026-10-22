@@ -6,7 +6,7 @@ info:
     This API allows runtime configuration of middleware components that process task execution requests.
   version: 1.0.0
   contact:
-    name: ELIXIR Cloud & AAI
+    name: ELIXIR On-Cloud
     url: https://github.com/elixir-cloud-aai/proTES
   license:
     name: Apache 2.0
