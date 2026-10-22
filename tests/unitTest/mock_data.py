@@ -45,8 +45,7 @@ CONTROLLER_CONFIG = {
 
 SERVICE_INFO_CONFIG = {
     "doc": (
-        "Proxy TES for distributing tasks across a list      of service TES"
-        " instances"
+        "Proxy TES for distributing tasks across a list      of service TES instances"
     ),
     "name": "proTES",
     "storage": ["file:///path/to/local/storage"],
@@ -72,9 +71,7 @@ MOCK_HEADERS = {
     "Content-Type": "application/json",
 }
 
-TASK_PAYLOAD_200 = {
-    "executors": [{"image": "alpine", "command": ["echo", "hello"]}]
-}
+TASK_PAYLOAD_200 = {"executors": [{"image": "alpine", "command": ["echo", "hello"]}]}
 
 MOCK_TASK_MINIMAL1 = {"task_log": {"id": "task-53ef00fd", "state": "COMPLETE"}}
 

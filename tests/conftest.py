@@ -25,9 +25,7 @@ register_mongodb.MongoClient = (  # type: ignore[misc]
 def mongo_client(monkeypatch: pytest.MonkeyPatch) -> mongomock.MongoClient:
     """In-memory MongoDB client, used by all apps created in a test."""
     client: mongomock.MongoClient = mongomock.MongoClient()
-    monkeypatch.setattr(
-        register_mongodb, "MongoClient", lambda *args, **kwargs: client
-    )
+    monkeypatch.setattr(register_mongodb, "MongoClient", lambda *args, **kwargs: client)
     return client
 
 

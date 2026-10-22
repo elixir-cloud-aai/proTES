@@ -285,12 +285,10 @@ class TesResources(CustomBaseModel):
     ram_gb: Optional[float] = Field(
         default=None,
         description="Requested RAM required in gigabytes (GB)",
-        examples=[8]
+        examples=[8],
     )
     disk_gb: Optional[float] = Field(
-        default=None,
-        description="Requested disk size in gigabytes (GB)",
-        examples=[40]
+        default=None, description="Requested disk size in gigabytes (GB)", examples=[40]
     )
     zones: Optional[list[str]] = Field(
         default=None,
@@ -380,8 +378,7 @@ class Metadata(CustomBaseModel):
     forwarded_to: Optional[list[TesForward]] = Field(
         default=None,
         description=(
-            "TES servers to which the task was forwarded, in the order of"
-            " forwarding."
+            "TES servers to which the task was forwarded, in the order of forwarding."
         ),
     )
 
@@ -406,25 +403,17 @@ class Metadata(CustomBaseModel):
         forward: Any = value
         while isinstance(forward, dict):
             forwards.append(
-                {
-                    key: val
-                    for key, val in forward.items()
-                    if key != "forwarded_to"
-                }
+                {key: val for key, val in forward.items() if key != "forwarded_to"}
             )
             forward = forward.get("forwarded_to")
         return forwards
 
 
 class TesTaskLog(CustomBaseModel):
-    logs: list[TesExecutorLog] = Field(
-        ..., description="Logs for each executor"
-    )
+    logs: list[TesExecutorLog] = Field(..., description="Logs for each executor")
     metadata: Optional[Metadata] = Field(
         default=None,
-        description=(
-            "Arbitrary logging metadata included by the implementation."
-        ),
+        description=("Arbitrary logging metadata included by the implementation."),
         examples=[{"host": "worker-001", "slurmm_id": 123456}],
     )
     start_time: Optional[str] = Field(
@@ -467,10 +456,7 @@ class TesTask(CustomBaseModel):
         examples=["job-0012345"],
     )
     state: Optional[TesState] = None
-    name: Optional[str] = Field(
-        default=None,
-        description="User-provided task name."
-    )
+    name: Optional[str] = Field(default=None, description="User-provided task name.")
     description: Optional[str] = Field(
         default=None,
         description=(
@@ -485,10 +471,7 @@ class TesTask(CustomBaseModel):
             "    downloaded\nand mounted into the executor container as"
             " defined by                 the task request\ndocument."
         ),
-        examples=[[{
-                    "url": "s3://my-object-store/file1",
-                    "path": "/data/file1"
-                }]]
+        examples=[[{"url": "s3://my-object-store/file1", "path": "/data/file1"}]],
     )
     outputs: Optional[list[TesOutput]] = Field(
         default=None,

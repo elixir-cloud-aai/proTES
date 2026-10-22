@@ -197,13 +197,10 @@ class TaskDistributionDistance(TaskDistributionBaseClass):
         for url, instance in self.task_summary.tes_instances.items():
             if instance.stats.total_distance is None:
                 raise MiddlewareException(
-                    "Total distance not available for TES instance at URL:"
-                    f" {url}"
+                    f"Total distance not available for TES instance at URL: {url}"
                 )
             distances[url] = instance.stats.total_distance
-        return list(
-            dict(sorted(distances.items(), key=lambda item: item[1])).keys()
-        )
+        return list(dict(sorted(distances.items(), key=lambda item: item[1])).keys())
 
     @staticmethod
     def _get_ips(*args: str) -> dict[str, str]:

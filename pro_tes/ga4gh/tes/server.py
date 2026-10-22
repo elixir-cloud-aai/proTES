@@ -16,7 +16,9 @@ logger = logging.getLogger(__name__)
 # POST /tasks/{id}:cancel
 @log_traffic
 def CancelTask(
-    id, *args, **kwargs  # pylint: disable=redefined-builtin
+    id,  # pylint: disable=redefined-builtin
+    *args,
+    **kwargs,
 ) -> dict:
     """Cancel unfinished task.
 
