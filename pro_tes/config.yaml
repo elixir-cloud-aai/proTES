@@ -118,24 +118,29 @@ jobs:
 
 # Service info, served at `GET /service-info` by FOCA, according to the GA4GH
 # `Service` schema (validated on startup); `version` defaults to the version
-# of the installed package (`package`)
+# of the installed package (`package`). Deployments set their own `id`,
+# `name`, `description`, `organization`, `contactUrl` and `environment` (and
+# `storage`, the storage locations of their TES backends); `id` and
+# `organization` are placeholders with reserved example domains (RFC 2606),
+# which the app warns of on startup
 # Cf. https://foca.readthedocs.io/en/latest/configuration/service-info/
 service_info:
   package: pro-tes
   service:
-    id: v1.proTes.ga4gh.org.example
+    id: org.example.protes
     name: proTES
     type:
       group: org.ga4gh
       artifact: tes
       version: 1.0.0
     description: >-
-      Proxy TES for distributing tasks across a list of service TES instances
+      Proxy for GA4GH Task Execution Service (TES) instances, distributing
+      tasks across them.
     organization:
-      name: elixir
-      url: "https://default.org"
-    storage:
-      - file:///path/to/local/storage
+      name: Example Organization
+      url: "https://example.org"
+    documentationUrl: "https://github.com/elixir-cloud-aai/proTES"
+    environment: dev
 
 # Exception handling: problem details of exceptions, sent with the media type
 # of error responses of the GA4GH specifications (instead of FOCA's default
