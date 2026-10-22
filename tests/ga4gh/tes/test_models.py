@@ -18,7 +18,7 @@ from pro_tes.ga4gh.tes.models import (
 from pro_tes.ga4gh.tes.task_runs import TaskRuns
 from pro_tes.utils.models import TaskModelConverter
 
-ADDITIONS = Path(__file__).parents[1] / "pro_tes" / "api" / "additions.openapi.yaml"
+ADDITIONS = Path(__file__).parents[3] / "pro_tes" / "api" / "additions.openapi.yaml"
 
 
 def test_executor_defaults() -> None:
