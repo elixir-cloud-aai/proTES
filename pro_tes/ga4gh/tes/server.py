@@ -5,7 +5,6 @@ import logging
 from connexion import request  # type: ignore
 from foca.utils.logging import log_traffic  # type: ignore
 
-from pro_tes.ga4gh.tes.service_info import ServiceInfo
 from pro_tes.ga4gh.tes.task_runs import TaskRuns
 
 # pragma pylint: disable=invalid-name,unused-argument
@@ -42,20 +41,6 @@ def CreateTask(*args, **kwargs) -> dict:
     """
     task_runs = TaskRuns()
     response = task_runs.create_task(request=request, **kwargs)
-    return response
-
-
-# GET /tasks/service-info
-@log_traffic
-def GetServiceInfo(*args, **kwargs) -> dict:
-    """Get service info.
-
-    Args:
-        *args: Variable length argument list.
-        **kwargs: Arbitrary keyword arguments.
-    """
-    service_info = ServiceInfo()
-    response = service_info.get_service_info(**kwargs)
     return response
 
 

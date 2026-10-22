@@ -115,6 +115,10 @@ class DbDocumentConnector:
             projection=projection,
             return_document=ReturnDocument.AFTER,
         )
+        if document_unvalidated is None:
+            raise ValueError(
+                f"No database document with worker ID '{self.worker_id}'"
+            )
         try:
             document: DbDocument = DbDocument(**document_unvalidated)
         except Exception as exc:

@@ -4,8 +4,6 @@ import random
 
 import flask
 
-from pydantic import HttpUrl  # pragma pylint: disable=no-name-in-module
-
 from pro_tes.plugins.middlewares.task_distribution.base import (
     TaskDistributionBaseClass,
 )
@@ -21,7 +19,7 @@ class TaskDistributionRandom(TaskDistributionBaseClass):
 
     def _set_tes_urls(
         self,
-        tes_urls: list[HttpUrl],
+        tes_urls: list[str],
         request: flask.Request,
     ) -> None:
         """Set TES URIs.

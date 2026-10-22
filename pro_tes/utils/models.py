@@ -156,6 +156,7 @@ class TaskModelConverter:
                     stdout=executor.stdout,
                     stderr=executor.stderr,
                     env=executor.env,
+                    ignore_error=executor.ignore_error,
                 )
                 for executor in self.task.executors
             ]

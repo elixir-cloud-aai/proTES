@@ -1,9 +1,8 @@
 """Custom app config models."""
 
 from typing import List, Optional
-import string
-from pydantic import BaseModel  # pylint: disable=no-name-in-module
-from pro_tes.ga4gh.tes.models import TesServiceInfo
+
+from pydantic import BaseModel, RootModel  # pylint: disable=no-name-in-module
 
 
 # pragma pylint: disable=too-few-public-methods
@@ -34,7 +33,7 @@ class TaskID(BaseModel):
         length: Length of the generated task ID.
     """
 
-    charset: str = string.ascii_uppercase + string.digits
+    charset: str = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
     length: int = 6
 
 
@@ -188,17 +187,17 @@ class StoreLogs(BaseModel):
     execution_trace: bool = True
 
 
-class Middlewares(BaseModel):
+class Middlewares(RootModel[List[List[str]]]):
     """Middleware configuration.
 
     Args:
-        __root__: A list of middleware class paths.
+        root: A list of middleware class paths.
 
     Attributes:
-        __root__: A list of middleware class paths.
+        root: A list of middleware class paths.
     """
 
-    __root__: List[List[str]] = [
+    root: List[List[str]] = [
         [
             (
                 "pro_tes.plugins.middlewares.task_distribution.distance."
@@ -220,18 +219,15 @@ class CustomConfig(BaseModel):
         tes: TES service list and defaults.
         store_logs: Logging preferences.
         middlewares: Middleware class paths.
-        service_info: Metadata about the service.
 
     Attributes:
         controllers: All controller-related config.
         tes: TES service list and defaults.
         store_logs: Logging preferences.
         middlewares: Middleware class paths.
-        service_info: Metadata about the service.
     """
 
     controllers: Controllers = Controllers()
     tes: Tes = Tes()
     storeLogs: StoreLogs = StoreLogs()
     middlewares: Middlewares = Middlewares()
-    service_info: TesServiceInfo

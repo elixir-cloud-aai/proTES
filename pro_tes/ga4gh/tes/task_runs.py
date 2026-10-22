@@ -1,14 +1,15 @@
 """Class implementing TES API-server-side controller methods."""
 
 from copy import deepcopy
-from datetime import datetime
+from datetime import datetime, timezone
 import logging
 from typing import Optional, Sequence
 
 from bson.objectid import ObjectId  # type: ignore
 from celery import uuid
 from dateutil.parser import parse as parse_time
-from flask import current_app, request
+from flask import request
+from foca import get_collection, get_config
 from foca.models.config import Config  # type: ignore
 from foca.utils.misc import generate_id  # type: ignore
 from pymongo.collection import Collection  # type: ignore
@@ -16,8 +17,11 @@ from pymongo.errors import DuplicateKeyError, PyMongoError  # type: ignore
 import requests
 import tes  # type: ignore
 from tes.models import Task  # type: ignore
+from werkzeug.datastructures import Authorization
+
 from pro_tes.ga4gh.tes.models import Metadata
 
+from pro_tes.config_models import CustomConfig
 from pro_tes.exceptions import (
     BadRequest,
     NoTesInstancesAvailable,
@@ -30,13 +34,13 @@ from pro_tes.ga4gh.tes.models import (
     TesState,
     TesTask,
     TesTaskLog,
-    TesNextTes,
+    TesForward,
 )
 from pro_tes.ga4gh.tes.states import States
 from pro_tes.middleware.middleware_handler import MiddlewareHandler
 from pro_tes.tasks.track_task_progress import task__track_task_progress
 from pro_tes.utils.db import DbDocumentConnector
-from pro_tes.utils.misc import strip_auth
+from pro_tes.utils.misc import get_custom_config, strip_auth
 from pro_tes.utils.models import TaskModelConverter
 
 # pragma pylint: disable=invalid-name,redefined-builtin,unused-argument
@@ -51,6 +55,7 @@ class TaskRuns:
 
     Attributes:
         foca_config: FOCA configuration.
+        custom_config: Custom configuration of the app.
         db_client: Database collection storing task objects.
         document: Document to be inserted into the collection. Note that it is
             built up iteratively.
@@ -58,11 +63,10 @@ class TaskRuns:
 
     def __init__(self) -> None:
         """Construct object instance."""
-        self.foca_config: Config = current_app.config.foca  # type: ignore
-        self.db_client: Collection = (
-            self.foca_config.db.dbs["taskStore"].collections["tasks"].client
-        )
-        self.store_logs = self.foca_config.custom.storeLogs.execution_trace
+        self.foca_config: Config = get_config()
+        self.custom_config: CustomConfig = get_custom_config()
+        self.db_client: Collection = get_collection("taskStore", "tasks")
+        self.store_logs = self.custom_config.storeLogs.execution_trace
 
     def create_task(  # pylint: disable=too-many-statements,too-many-branches
         self, **kwargs
@@ -86,7 +90,7 @@ class TaskRuns:
         # apply middlewares
         mw_handler = MiddlewareHandler()
         mw_handler.set_middlewares(
-            paths=self.foca_config.custom.middlewares.__root__
+            paths=self.custom_config.middlewares.root
         )
         logger.debug(f"Middlewares registered: {mw_handler.middlewares}")
         request_modified = mw_handler.apply_middlewares(request=request)
@@ -268,7 +272,7 @@ class TaskRuns:
         """
         page_size = kwargs.get(
             "page_size",
-            self.foca_config.custom.controllers.list_tasks.default_page_size,
+            self.custom_config.controllers.list_tasks.default_page_size,
             )
         page_token = kwargs.get("page_token")
         filter_dict = {}
@@ -387,9 +391,10 @@ class TaskRuns:
 
             if self.store_logs:
                 assert (
-                    _metadata.forwarded_to is not None
-                ), "link to next TES is None"
-                task_id = _metadata.forwarded_to.id
+                    _metadata.forwarded_to
+                ), "link to next TES is missing"
+                # the TES server that proTES forwarded the task to
+                task_id = _metadata.forwarded_to[-1].id
             else:
                 task_id = _metadata["remote_task_id"]   # type: ignore
 
@@ -428,7 +433,7 @@ class TaskRuns:
         Returns:
             Tuple of task id and worker id.
         """
-        controller_config = self.foca_config.custom.controllers.post_task
+        controller_config = self.custom_config.controllers.post_task
         charset = controller_config.task_id.charset
         length = controller_config.task_id.length
 
@@ -440,7 +445,9 @@ class TaskRuns:
             )
             document.worker_id = uuid()
             try:
-                self.db_client.insert_one(document.dict(exclude_none=True))
+                self.db_client.insert_one(
+                    document.model_dump(mode="json", exclude_none=True)
+                )
             except DuplicateKeyError:
                 continue
             assert document is not None
@@ -607,7 +614,7 @@ class TaskRuns:
 
         db_document = db_connector.upsert_fields_in_root_object(
             root="task",
-            **db_document.dict()["task"],
+            **db_document.model_dump(mode="json")["task"],
         )
         logger.debug(f"Task '{db_document.task}' inserted to database ")
         return db_document
@@ -617,7 +624,8 @@ class TaskRuns:
     ) -> DbDocument:
         """Update the task metadata.
 
-        Set TES endpoint and remote task identifier in `TesTask.logs.metadata`.
+        Append the TES endpoint, the remote task identifier and the time of
+        forwarding to the forwards in `TesTask.logs.metadata.forwarded_to`.
 
         Args:
             db_document: The document in the database to be updated.
@@ -629,15 +637,20 @@ class TaskRuns:
         """
         assert db_document.task.logs is not None
         logs: list[TesTaskLog] = db_document.task.logs
+        forward = TesForward(
+            id=remote_task_id,
+            url=tes_url,
+            forward_time=datetime.now(timezone.utc).isoformat(),
+        )
         for log in logs:
             assert log.metadata is not None
-            tesNextTes_obj = TesNextTes(id=remote_task_id, url=tes_url)
             if log.metadata.forwarded_to is None:
-                log.metadata.forwarded_to = tesNextTes_obj
+                log.metadata.forwarded_to = []
+            log.metadata.forwarded_to.append(forward)
         return db_document
 
     @staticmethod
-    def parse_basic_auth(auth: Optional[dict[str, str]]) -> BasicAuth:
+    def parse_basic_auth(auth: Optional[Authorization]) -> BasicAuth:
         """Parse basic auth header.
 
         Args:

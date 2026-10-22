@@ -3,11 +3,10 @@
 from copy import deepcopy
 
 import flask
-from flask import current_app
-from pydantic import HttpUrl  # pragma pylint: disable=no-name-in-module
 
 from pro_tes.exceptions import MiddlewareException
 from pro_tes.middleware.abstract_middleware import AbstractMiddleware
+from pro_tes.utils.misc import get_custom_config
 
 # pragma pylint: disable=too-few-public-methods
 
@@ -21,7 +20,7 @@ class TaskDistributionBaseClass(AbstractMiddleware):
 
     def __init__(self) -> None:
         """Class constructor."""
-        self.tes_urls: list[HttpUrl] = []
+        self.tes_urls: list[str] = []
 
     def apply_middleware(self, request: flask.Request) -> flask.Request:
         """Apply middleware to reque object.
@@ -38,9 +37,7 @@ class TaskDistributionBaseClass(AbstractMiddleware):
         if request.json is None:
             raise MiddlewareException("Request has no JSON payload.")
         self._set_tes_urls(
-            tes_urls=deepcopy(
-                current_app.config.foca.custom.tes.service_list  # type: ignore
-            ),
+            tes_urls=deepcopy(get_custom_config().tes.service_list),
             request=request,
         )
         request.json["tes_urls"] = self.tes_urls
@@ -48,7 +45,7 @@ class TaskDistributionBaseClass(AbstractMiddleware):
 
     def _set_tes_urls(
         self,
-        tes_urls: list[HttpUrl],
+        tes_urls: list[str],
         request: flask.Request,  # pylint: disable=unused-argument
     ) -> None:
         """Set TES URIs.

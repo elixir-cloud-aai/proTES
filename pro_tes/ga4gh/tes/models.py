@@ -9,12 +9,11 @@
 
 from __future__ import annotations
 
-from datetime import datetime
 from enum import Enum
 from typing import Optional
 
 # pragma pylint: disable=no-name-in-module
-from pydantic import AnyUrl, BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 # pragma pylint: disable=too-few-public-methods
 
@@ -22,10 +21,7 @@ from pydantic import AnyUrl, BaseModel, Field
 class CustomBaseModel(BaseModel):
     """Base model that all other models derive from."""
 
-    class Config:
-        """Configuration class."""
-
-        use_enum_values = True
+    model_config = ConfigDict(use_enum_values=True)
 
 
 class TesCancelTaskResponse(CustomBaseModel):
@@ -49,7 +45,7 @@ class TesExecutor(CustomBaseModel):
         examples=["ubuntu:20.04"],
     )
     command: list[str] = Field(
-        default=[""],
+        default_factory=list,
         description=(
             "A sequence of program arguments to execute, where the            "
             " first argument\nis the program to execute (i.e. argv).          "
@@ -337,144 +333,6 @@ class TesResources(CustomBaseModel):
     )
 
 
-class Artifact(Enum):
-    tes = "tes"
-
-
-class ServiceType(CustomBaseModel):
-    group: str = Field(
-        ...,
-        description=(
-            "Namespace in reverse domain name format. Use `org.ga4gh`         "
-            "    for implementations compliant with official GA4GH"
-            " specifications.            For services with custom APIs not"
-            " standardized by GA4GH, or             implementations diverging"
-            " from official GA4GH specifications,            use a different"
-            " namespace (e.g. your organization's reverse domain              "
-            "  name)."
-        ),
-        examples=["org.ga4gh"],
-    )
-    artifact: Enum = Field(
-        ...,
-        description=(
-            "Name of the API or GA4GH specification implemented.            "
-            " Official GA4GH types should be assigned as part of standards    "
-            "         approval process. Custom artifacts are supported."
-        ),
-        examples=["beacon"],
-    )
-    version: str = Field(
-        ...,
-        description=(
-            "Version of the API or specification. GA4GH specifications        "
-            "    use semantic versioning."
-        ),
-        examples=["1.0.0"],
-    )
-
-
-class Organization(CustomBaseModel):
-    name: str = Field(
-        ...,
-        description="Name of the organization responsible for the service",
-        examples=["My organization"],
-    )
-    url: AnyUrl = Field(
-        ...,
-        description="URL of the website of the organization (RFC 3986 format)",
-        examples=["https://example.com"],
-    )
-
-
-class Service(CustomBaseModel):
-    id: str = Field(
-        ...,
-        description=(
-            "Unique ID of this service. Reverse domain name notation          "
-            "   is recommended, though not required. The identifier should"
-            " attempt            to be globally unique so it can be used in"
-            " downstream aggregator             services e.g. Service"
-            " Registry."
-        ),
-        examples=["org.ga4gh.myservice"],
-    )
-    name: str = Field(
-        ...,
-        description="Name of this service. Should be human readable.",
-        examples=["My project"],
-    )
-    type: Optional[ServiceType]
-    description: Optional[str] = Field(
-        default=None,
-        description=(
-            "Description of the service. Should be human readable and         "
-            "    provide information about the service."
-        ),
-        examples=["This service provides..."],
-    )
-    organization: Organization = Field(
-        ..., description="Organization providing the service"
-    )
-    contactUrl: Optional[AnyUrl] = Field(
-        default=None,
-        description=(
-            "URL of the contact for the provider of this service, e.g.        "
-            "    a link to a contact form (RFC 3986 format), or an email      "
-            "           (RFC 2368 format)."
-        ),
-        examples=["mailto:support@example.com"],
-    )
-    documentationUrl: Optional[AnyUrl] = Field(
-        default=None,
-        description=(
-            "URL of the documentation of this service             (RFC 3986"
-            " format).This should help someone learn how             to use"
-            " your service, including any specifics required to            "
-            " access data, e.g. authentication."
-        ),
-        examples=["https://docs.myservice.example.com"],
-    )
-    createdAt: Optional[datetime] = Field(
-        default=None,
-        description=(
-            "Timestamp describing when the service was first deployed         "
-            "   and available (RFC 3339 format)"
-        ),
-        examples=["2019-06-04T12:58:19Z"],
-    )
-    updatedAt: Optional[datetime] = Field(
-        default=None,
-        description=(
-            "Timestamp describing when the service was last updated           "
-            " (RFC 3339 format)"
-        ),
-        examples=["2019-06-04T12:58:19Z"],
-    )
-    environment: Optional[str] = Field(
-        default=None,
-        description=(
-            "Environment the service is running in. Use this to            "
-            " distinguish between production, development and testing/staging "
-            "                deployments. Suggested values are prod, test,"
-            " dev, staging.                 However this is advised and not"
-            " enforced."
-        ),
-        examples=["test"],
-    )
-    version: str = Field(
-        ...,
-        description=(
-            "Version of the service being described. Semantic           "
-            " versioning is recommended, but other identifiers, such as dates"
-            " or                commit hashes, are also allowed. The version"
-            " should be changed                whenever the service is"
-            " updated."
-        ),
-        examples=["1.0.0"],
-    )
-
-
 class TesState(Enum):
     UNKNOWN = "UNKNOWN"
     QUEUED = "QUEUED"
@@ -489,14 +347,9 @@ class TesState(Enum):
     CANCELING = "CANCELING"
 
 
-class TesNextTes(CustomBaseModel):
-    """Create model instance for next TESNextTes."""
+class TesForward(CustomBaseModel):
+    """TES server to which a task was forwarded."""
 
-    url: str = Field(
-        ...,
-        description="TES server to which the task was forwarded.",
-        examples=["https://my.tes.instance/"],
-    )
     id: str = Field(
         ...,
         description=(
@@ -505,15 +358,27 @@ class TesNextTes(CustomBaseModel):
         ),
         examples=["job-0012345"],
     )
-    forwarded_to: Optional[TesNextTes] = None
+    url: str = Field(
+        ...,
+        description="TES server to which the task was forwarded.",
+        examples=["https://my.tes.instance/"],
+    )
+    forward_time: str = Field(
+        ...,
+        description="When the task was forwarded, in RFC 3339 format.",
+        examples=["2020-10-02T10:00:00-05:00"],
+    )
 
 
 class Metadata(CustomBaseModel):
     """Create model instance for metadata."""
 
-    forwarded_to: Optional[TesNextTes] = Field(
+    forwarded_to: Optional[list[TesForward]] = Field(
         default=None,
-        description="TaskLog describes logging information related to a Task",
+        description=(
+            "TES servers to which the task was forwarded, in the order of"
+            " forwarding."
+        ),
     )
 
 
@@ -559,25 +424,6 @@ class TesTaskLog(CustomBaseModel):
             " are             only included in the FULL task view."
         ),
     )
-
-
-class TesServiceType(ServiceType):
-    artifact: Artifact = Field(..., examples=["tes"])
-
-
-class TesServiceInfo(Service):
-    storage: Optional[list[str]] = Field(
-        default=None,
-        description=(
-            "Lists some, but not necessarily all, storage locations           "
-            "  supported\nby the service."
-        ),
-        examples=[
-            "file:///path/to/local/funnel-storage",
-            "s3://ohsu-compbio-funnel/storage",
-        ],
-    )
-    type: Optional[TesServiceType] = None
 
 
 class TesTask(CustomBaseModel):
@@ -626,7 +472,7 @@ class TesTask(CustomBaseModel):
     )
     resources: Optional[TesResources] = None
     executors: list[TesExecutor] = Field(
-        default=[TesExecutor()],
+        default_factory=list,
         description=(
             "An array of executors to be run. Each of the executors           "
             " will run one\nat a time sequentially. Each executor is a"
@@ -680,11 +526,6 @@ class TesTask(CustomBaseModel):
         ),
         examples=["2020-10-02T10:00:00-05:00"],
     )
-
-    class Config:
-        """Pydantic configuration for model."""
-
-        use_enum_values = True
 
 
 class TesListTasksResponse(CustomBaseModel):
@@ -772,16 +613,8 @@ class DbDocument(CustomBaseModel):
     """
 
     task: TesTask = TesTask()
-    task_original: TesTask = TesTask(executors=[])  # type: ignore
+    task_original: TesTask = TesTask()
     user_id: Optional[str] = None
     worker_id: str = ""
     basic_auth: BasicAuth = BasicAuth()
     tes_endpoint: TesEndpoint = TesEndpoint()
-
-    class Config:
-        """Pydantic configuration for model."""
-
-        use_enum_values = True
-
-
-TesNextTes.update_forward_refs()
