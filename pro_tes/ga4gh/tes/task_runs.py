@@ -619,6 +619,9 @@ class TaskRuns:
 
         Returns:
             The updated database document.
+
+        Raises:
+            ValueError: The task has no logs.
         """
         time_now = datetime.now().strftime("%m-%d-%Y %H:%M:%S")
         tes_endpoint_dict: dict[str, Any] = {"host": tes_url, "base_path": ""}
@@ -667,6 +670,9 @@ class TaskRuns:
 
         Returns:
             The updated database document.
+
+        Raises:
+            ValueError: The task has no logs.
         """
         if db_document.task.logs is None:
             raise ValueError(f"Task '{db_document.task.id}' has no logs")
