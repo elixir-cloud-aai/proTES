@@ -1,0 +1,60 @@
+# API
+
+proTES implements the [GA4GH Task Execution Service (TES)
+API](https://github.com/ga4gh/task-execution-schemas), version 1.0
+([specification](https://github.com/elixir-cloud-aai/proTES/blob/dev/pro_tes/api/9e9c5aa.task_execution_service.openapi.yaml)),
+at `/ga4gh/tes/v1/`. A deployment's Swagger UI (`/ga4gh/tes/v1/ui/`) shows
+the endpoints and lets you try them; the specification is served at
+`/ga4gh/tes/v1/openapi.json`.
+
+| Endpoint | Description |
+| --- | --- |
+| `GET /service-info` | The service info of the deployment (see [Service info](configuration.md#service-info)). |
+| `POST /tasks` | Create a task: proTES forwards it to a TES instance (see [Tasks](#tasks)) and returns its own identifier of the task. |
+| `GET /tasks` | List the tasks, newest first, one page at a time (`page_size`, `page_token`), optionally only those whose name starts with `name_prefix`. |
+| `GET /tasks/{id}` | Get a task, with its state as last tracked from the TES instance. |
+| `POST /tasks/{id}:cancel` | Cancel a task that has not finished yet, at the TES instance that runs it. |
+
+`GET /tasks` and `GET /tasks/{id}` return the views `MINIMAL` (identifier and
+state), `BASIC` (the default; without the contents of inputs, the system logs
+and the executors' standard output and error) and `FULL` (`view`), as the TES
+specification describes.
+
+## Tasks
+
+For `POST /tasks`, proTES:
+
+1. stores the task as received, with a new identifier
+   (see [Tasks](configuration.md#tasks) for its format);
+2. applies the [middlewares](middlewares.md), which select the TES instances
+   to try and their order (and may change the task);
+3. forwards the task to the first of these TES instances that accepts it,
+   and returns its own identifier of the task; if no TES instance accepts it,
+   the task's state is set to `SYSTEM_ERROR`, and the request fails with
+   `500 Internal Server Error`;
+4. tracks the task at the TES instance in the background (a Celery worker
+   polls its state until it has finished; see [Tasks](configuration.md#tasks)),
+   and updates its state and logs.
+
+proTES keeps the task as received (`task_original`) as well as the task as
+forwarded, and, if `custom.storeLogs.execution_trace` is set, records the TES
+instance and the remote identifier of the task in its logs
+(`logs[].metadata.forwarded_to`).
+
+## Errors
+
+Errors are [problem details](https://www.rfc-editor.org/rfc/rfc9457) (with
+`title`, `status` and `detail`), sent as `application/json`, as the GA4GH
+specification declares: `400 Bad Request` for invalid requests (e.g.,
+invalid tasks or query parameters), `404 Not Found` for unknown tasks,
+`413 Content Too Large` for request bodies over the [size
+limit](configuration.md#request-size-limit), and `500 Internal Server Error`
+if a task could not be forwarded or no middleware could be applied. The
+mapping of exceptions to problem details is
+`exceptions` in
+[`pro_tes.exceptions`](reference.md#pro_tes.exceptions).
+
+## Middleware management API
+
+The [middleware management API](middlewares.md#middleware-management-api) is
+specified, but not served yet.

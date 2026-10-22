@@ -2,11 +2,32 @@
 
 # proTES
 
-proTES is a gateway for the [GA4GH Task Execution Service (TES)
-API](https://github.com/ga4gh/task-execution-schemas), brought to you by
-[ELIXIR On-Cloud](https://elixir-on.cloud/) (see the
-[README](https://github.com/elixir-cloud-aai/proTES/blob/dev/README.md) for
-an introduction and a quick start).
+--8<-- "README.md:synopsis"
+
+## Known deployments
+
+--8<-- "README.md:deployments"
+
+## Contents
+
+- [Getting started](getting-started.md): run proTES with Docker Compose and
+  send the first requests.
+- [Configuration](configuration.md): the base config, overlays, the TES
+  instances, the middlewares, the task settings, the request size limit, the
+  server and the service info.
+- [API](api.md): the endpoints, how tasks are forwarded, and errors.
+- [Middlewares](middlewares.md): the built-in middlewares, how to write your
+  own, and the middleware management API.
+- [Access control](access-control.md): authentication and credentials.
+- [Deployment](deployment.md): the Helm chart for Kubernetes.
+- [Operations](operations.md): the Celery workers, Flower and logs.
+- [Upgrading](upgrading.md): changes to existing deployments and data.
+- [Development](development.md): development setup, checks, documentation,
+  versioning and releases.
+- [Contributing](contributing.md): how to contribute, the code of conduct,
+  pull requests, commit messages and the Python guidelines.
+- [API reference](reference.md): the code, generated from its docstrings.
+- [Changelog](changelog.md): release notes.
 
 ## Architecture
 
@@ -15,21 +36,16 @@ operated TES instances: it can serve, for example, as a compatibility layer,
 a load balancer, a public entry point to an enclave of independent compute
 nodes, or a means of collecting telemetry.
 
-When proTES receives a task, it applies the configured middlewares before
-forwarding the task to a TES instance of the network. A plugin system makes
-it easy to write middlewares for specific requirements, such as access
-control, request or response processing or validation, or the selection of
-suitable TES instances considering data use restrictions and client
-preferences. Two middlewares are shipped with proTES, as proofs of concept
-for different ways of distributing tasks:
-
-- **Load balancing:**
-  `pro_tes.plugins.middlewares.task_distribution.random.TaskDistributionRandom`
-  distributes tasks randomly across the TES instances.
-- **Bringing compute to the data:**
-  `pro_tes.plugins.middlewares.task_distribution.distance.TaskDistributionDistance`
-  selects the TES instances such that the distance that the task's input
-  data has to travel across the network is minimized.
+When proTES receives a task, it applies the configured
+[middlewares](middlewares.md) before forwarding the task to a TES instance of
+the network. A plugin system makes it easy to write middlewares for specific
+requirements, such as access control, request or response processing or
+validation, or the selection of suitable TES instances considering data use
+restrictions and client preferences. Two middlewares are shipped with proTES,
+as proofs of concept for different ways of distributing tasks (see
+[Built-in middlewares](middlewares.md#built-in-middlewares)): randomly, for
+load balancing, and to the TES instances closest to the task's input data, to
+bring compute to the data.
 
 proTES is a [Flask](https://flask.palletsprojects.com/) app built with
 [FOCA](https://github.com/elixir-cloud-aai/foca), configured declaratively in
