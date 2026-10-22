@@ -81,13 +81,25 @@ jobs:
         run: |
           pip install --upgrade pip==24.0
           pip install -e ".[dev]"
-      - name: Run tests
-        run: pytest -W ignore::DeprecationWarning
+      - name: Calculate unit test coverage
+        run: |
+          coverage run -m pytest -W ignore::DeprecationWarning
+          coverage xml
+      # Upload errors fail the workflow only on pushes, because pull requests
+      # from forks and Dependabot get no access to the Codecov token
+      - name: Submit Report to Codecov
+        if: matrix.python-version == '3.12'
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage.xml
+          fail_ci_if_error: ${{ github.event_name == 'push' }}
+          verbose: true
   # The other test jobs use mongomock; this one runs all tests against
   # MongoDB (`MONGODB_TEST_URI`, see `tests/conftest.py`), the version of
   # `docker-compose.yaml` (8.0 doesn't start on some kernels of the runners:
   # https://jira.mongodb.org/browse/SERVER-121912). One Python version (that
-  # of the Dockerfile) suffices
+  # of the Dockerfile) suffices; coverage is reported by `test`
   test_mongodb:
     name: Run tests (MongoDB 7.0)
     runs-on: ubuntu-latest

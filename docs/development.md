@@ -12,8 +12,14 @@ pip install -e ".[dev]"  # the app, with the dev dependencies
 pre-commit install  # run the checks on every commit
 pre-commit run --all-files  # ruff, mypy, semgrep, ast-grep, actionlint
 pre-commit run --all-files --hook-stage manual gitleaks-all  # secrets
-pytest
+coverage run -m pytest  # the tests, with coverage
+coverage report  # fails below 100%
 ```
+
+Coverage of `pro_tes` is kept at 100%, which is enforced: `coverage report`
+(and CI) fails below 100% (`fail_under` in `pyproject.toml`), and so do
+Codecov's checks of the whole code and of the changes of a pull request
+(`codecov.yml`). Add tests that fail without your change.
 
 The tests in `tests/` mirror the package (`pro_tes/`). They need neither a
 database nor TES backends: they use an in-memory database
