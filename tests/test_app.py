@@ -4,10 +4,17 @@
 
 from importlib.metadata import version
 
+from pathlib import Path
+from typing import Any
+
 from connexion import FlaskApp
 from flask.testing import FlaskClient
 from foca import get_config
 import mongomock
+import pytest
+import yaml
+
+from pro_tes.app import init_app
 
 BASE_PATH = "/ga4gh/tes/v1"
 
@@ -33,7 +40,12 @@ def test_service_info(client: FlaskClient) -> None:
         "artifact": "tes",
         "version": "1.0.0",
     }
-    assert service_info["storage"] == ["file:///path/to/local/storage"]
+    assert service_info["id"] == "org.example.protes"
+    assert service_info["organization"] == {
+        "name": "Example Organization",
+        "url": "https://example.org",
+    }
+    assert "storage" not in service_info
 
 
 def test_service_info_not_stored(
@@ -72,3 +84,50 @@ def test_request_body_size_limit(client: FlaskClient) -> None:
         content_type="application/json",
     )
     assert response.status_code == 413
+
+
+@pytest.mark.parametrize(
+    "service, fields",
+    [
+        ({}, "`id`, `organization`"),
+        ({"id": "org.example.tes-proxy"}, "`organization`"),
+        ({"organization": {"name": "My org"}}, "`id`, `organization`"),
+        (
+            {"organization": {"name": "My org", "url": "https://my.example.org"}},
+            "`id`",
+        ),
+        (
+            {
+                "id": "org.example.tes-proxy",
+                "organization": {"name": "My org", "url": "https://my.example.org"},
+            },
+            None,
+        ),
+    ],
+)
+def test_placeholder_service_info(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    mongo_client: mongomock.MongoClient,  # pylint: disable=unused-argument
+    capsys: pytest.CaptureFixture[str],
+    service: dict[str, Any],
+    fields: str | None,
+) -> None:
+    """The app warns of placeholders in the service info, naming the fields.
+
+    The fields are `id`, and `organization` while its name or URL is the
+    placeholder's; there is no warning once both are set.
+    """
+    overlay = tmp_path / "overlay.yaml"
+    overlay.write_text(
+        yaml.safe_dump({"service_info": {"service": service}}), encoding="utf-8"
+    )
+    monkeypatch.setenv("FOCA_CONFIG_OVERLAY", str(overlay))
+    init_app()
+    # FOCA configures logging to stderr
+    err = capsys.readouterr().err
+    if fields is None:
+        assert "placeholder values" not in err
+    else:
+        assert err.count("placeholder values") == 1
+        assert f"placeholder values; set {fields} to" in err
