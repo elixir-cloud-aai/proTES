@@ -1,5 +1,18 @@
-##### BASE IMAGE #####
+##### BUILD STAGE #####
 ## Pinned by digest, so that rebuilds use the same base image
+FROM elixircloud/foca:0.15.0-py3.12@sha256:0d21e23d67f8b84a0bf4e2ee893024ac82344aec41a09f9f4b6440d1e108e570 AS build
+
+## Build wheels of the dependencies: some have no wheels for Python 3.12
+## (e.g., `typed-ast`, required by `ip2geotools`), and the FOCA image has no
+## compiler
+USER root
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends gcc libc6-dev \
+  && rm -rf /var/lib/apt/lists/*
+COPY ./requirements.txt /tmp/requirements.txt
+RUN pip wheel --no-cache-dir --wheel-dir /tmp/wheels -r /tmp/requirements.txt
+
+##### BASE IMAGE #####
 FROM elixircloud/foca:0.15.0-py3.12@sha256:0d21e23d67f8b84a0bf4e2ee893024ac82344aec41a09f9f4b6440d1e108e570
 
 ##### METADATA #####
@@ -20,7 +33,9 @@ ENV USER=ipython
 WORKDIR /app
 USER root
 COPY ./requirements.txt /app/requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
+RUN --mount=type=bind,from=build,source=/tmp/wheels,target=/tmp/wheels \
+  pip install --no-cache-dir --no-index --find-links /tmp/wheels \
+    -r requirements.txt
 COPY ./ .
 RUN pip install --no-cache-dir -e .
 USER 1000
