@@ -3,7 +3,10 @@
 # Automatically validated via FOCA
 # Cf. https://foca.readthedocs.io/en/latest/configuration/
 
-# Server configuration
+# Server configuration; `host` and `port` apply to Flask's development server
+# only (`python -m pro_tes.app`): the image serves the app with Gunicorn, on
+# the address set in `pro_tes/gunicorn_config.py` (port 8080; change it via
+# `GUNICORN_CMD_ARGS`, together with the published port and health check)
 # Cf. https://foca.readthedocs.io/en/latest/configuration/server/
 server:
   host: "0.0.0.0"

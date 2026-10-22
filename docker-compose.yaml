@@ -1,55 +1,122 @@
-version: '3.6'
+# Local development and testing; NOT for deployments (see
+# `deployment/README.md`). `docker compose up --build --wait` starts proTES,
+# the Celery worker, MongoDB and RabbitMQ; `--profile monitoring` adds Flower.
+# Only proTES (and Flower) are published, on the host's loopback interface;
+# to publish them on other interfaces, or to reach MongoDB or RabbitMQ from
+# the host, override `ports` in a `docker-compose.override.yaml`
+
+# Settings shared by the app and the Celery worker (same image)
+x-protes: &protes
+    image: protes:local
+    # Always build locally instead of pulling an image of that name
+    pull_policy: build
+    build:
+        context: .
+        dockerfile: Dockerfile
+        # App version (the build gets no Git metadata); `0.0.0.dev0` if unset
+        args:
+            SETUPTOOLS_SCM_PRETEND_VERSION: ${SETUPTOOLS_SCM_PRETEND_VERSION:-}
+    restart: unless-stopped
+    depends_on:
+        mongodb:
+            condition: service_healthy
+        rabbitmq:
+            condition: service_healthy
+
+# Message broker URL with the RabbitMQ credentials, which default to
+# `protes:protes` (RabbitMQ is not published); set `RABBITMQ_DEFAULT_USER`
+# and `RABBITMQ_DEFAULT_PASS` on the host to change them, with URL-safe
+# characters only (letters, digits, `-`, `.`, `_`, `~`), as they are used
+# both as is and in the URL. RabbitMQ creates the user on its first start
+# only: to change the credentials later, remove its volume (`docker compose
+# down --volumes`, which also removes the database)
+x-broker-url: &broker-url "pyamqp://${RABBITMQ_DEFAULT_USER:-protes}:${RABBITMQ_DEFAULT_PASS:-protes}@rabbitmq:5672//"
+
 services:
 
-  protes-worker:
-    image: protes:latest
-    build:
-      context: .
-      dockerfile: Dockerfile
-    restart: unless-stopped
-    links:
-      - mongodb
-      - rabbitmq
-    command: bash -c "cd /app/pro_tes; celery -A celery_worker worker -E --loglevel=info"
-    volumes:
-      - ${PROTES_DATA_DIR:-../data/pro_tes}:/data
+    protes:
+        <<: *protes
+        # Longer than Gunicorn's graceful timeout (20 seconds), which idle
+        # keep-alive connections (e.g., of browsers) use up on shutdown
+        stop_grace_period: 30s
+        ports:
+            - "127.0.0.1:8080:8080"
+        # The image's command serves the app with Gunicorn; options from the
+        # host's `GUNICORN_CMD_ARGS` (e.g., `--workers 2`) override its settings
+        # (not `--bind`, which would break the published port and health check)
+        environment:
+            CELERY_BROKER_URL: *broker-url
+            GUNICORN_CMD_ARGS: ${GUNICORN_CMD_ARGS:-}
 
-  protes:
-    image: protes:latest
-    build:
-      context: .
-      dockerfile: Dockerfile
-    restart: unless-stopped
-    links:
-      - mongodb
-    command: bash -c "cd /app/pro_tes; gunicorn -c gunicorn.py wsgi:app"
-    ports:
-      - "8080:8080"
+    protes-worker:
+        <<: *protes
+        command: ["celery", "--app", "pro_tes.celery_worker", "worker", "--task-events", "--loglevel=info"]
+        environment:
+            CELERY_BROKER_URL: *broker-url
+        # Replaces the image's health check, which probes the app
+        healthcheck:
+            test: ["CMD-SHELL", "celery --app pro_tes.celery_worker inspect ping --destination celery@$$HOSTNAME --timeout 10"]
+            interval: 30s
+            timeout: 20s
+            retries: 3
+            start_period: 30s
 
-  rabbitmq:
-    image: "rabbitmq:3-management"
-    hostname: "rabbitmq"
-    restart: unless-stopped
-    links:
-      - mongodb
-    ports:
-      - "5672:5672"
+    rabbitmq:
+        image: rabbitmq:4.1
+        hostname: rabbitmq
+        restart: unless-stopped
+        environment:
+            RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-protes}
+            RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:-protes}
+        volumes:
+            - rabbitmq-data:/var/lib/rabbitmq
+        healthcheck:
+            test: ["CMD", "rabbitmq-diagnostics", "--quiet", "ping"]
+            interval: 5s
+            timeout: 10s
+            retries: 12
+            start_period: 10s
 
-  mongodb:
-    # MongoDB 8.0 refuses to start on Linux kernels 6.19 to 7.0.13
-    # (https://jira.mongodb.org/browse/SERVER-121912)
-    image: mongo:7.0
-    restart: unless-stopped
-    volumes:
-      - ${PROTES_DATA_DIR:-../data/pro_tes}/db:/data/db
-    ports:
-      - "27017:27017"
+    mongodb:
+        # MongoDB 8.0 refuses to start on Linux kernels 6.19 to 7.0.13
+        # (https://jira.mongodb.org/browse/SERVER-121912)
+        image: mongo:7.0
+        restart: unless-stopped
+        volumes:
+            - mongodb-data:/data/db
+        healthcheck:
+            test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+            interval: 5s
+            timeout: 5s
+            retries: 12
+            start_period: 10s
 
-  flower:
-    image: mher/flower:0.9.7
-    restart: unless-stopped
-    links:
-      - protes-worker
-    command: flower --broker=amqp://guest:guest@rabbitmq:5672// --port=5555
-    ports:
-      - "5555:5555"
+    # Monitoring of the Celery worker (opt-in: `--profile monitoring`), which
+    # shows task arguments; requires basic authentication, set on the host as
+    # `FLOWER_BASIC_AUTH=<user>:<password>`
+    flower:
+        image: mher/flower:2.0.1
+        profiles: [monitoring]
+        # Not restarted endlessly if `FLOWER_BASIC_AUTH` is unset
+        restart: on-failure:3
+        depends_on:
+            rabbitmq:
+                condition: service_healthy
+        entrypoint:
+            - sh
+            - -c
+            - >-
+              test -n "$${FLOWER_BASIC_AUTH}"
+              || { echo "Set FLOWER_BASIC_AUTH (<user>:<password>)" >&2; exit 1; };
+              exec celery flower --port=5555
+        environment:
+            CELERY_BROKER_URL: *broker-url
+            FLOWER_BASIC_AUTH: ${FLOWER_BASIC_AUTH:-}
+        ports:
+            - "127.0.0.1:5555:5555"
+
+# Named volumes; data of earlier versions of this file, in
+# `PROTES_DATA_DIR` (default `../data/pro_tes`), is not migrated
+volumes:
+    mongodb-data:
+    rabbitmq-data:

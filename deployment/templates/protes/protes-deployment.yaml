@@ -37,9 +37,8 @@ spec:
       - name: protes
         image: {{ .Values.protes.image }}
         imagePullPolicy: Always
-        workingDir: '/app/pro_tes'
         command: [ 'gunicorn' ]
-        args: [ '--log-level', 'debug', '-c', 'gunicorn.py', 'wsgi:app' ]
+        args: [ '--config', 'python:pro_tes.gunicorn_config', '--log-level', 'debug', 'pro_tes.app:init_app()' ]
         env:
         - name: MONGO_HOST
           value: {{ .Values.mongodb.appName }}
