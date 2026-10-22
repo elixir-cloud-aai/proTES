@@ -1,6 +1,6 @@
 """Custom app config models."""
 
-from pydantic import BaseModel, RootModel
+from pydantic import BaseModel, Field, PositiveInt, RootModel, model_validator
 
 
 class DB(BaseModel):
@@ -92,14 +92,42 @@ class PostTask(BaseModel):
 class ListTasks(BaseModel):
     """Configuration for GET /tasks.
 
+    Defaults are those of the TES specification (pages of fewer than 2048
+    tasks).
+
     Args:
-        default_page_size: Default pagination size.
+        default_page_size: Number of tasks per page if the request sets no
+            page size.
+        max_page_size: Maximum number of tasks per page, at most 2047;
+            larger requested page sizes are reduced to it.
 
     Attributes:
-        default_page_size: Default pagination size.
+        default_page_size: Number of tasks per page if the request sets no
+            page size.
+        max_page_size: Maximum number of tasks per page; larger requested
+            page sizes are reduced to it.
     """
 
-    default_page_size: int = 5
+    default_page_size: PositiveInt = 256
+    # the TES specification allows pages of fewer than 2048 tasks
+    max_page_size: PositiveInt = Field(default=2047, le=2047)
+
+    @model_validator(mode="after")
+    def check_default_page_size(self) -> "ListTasks":
+        """Check that the default page size is at most the maximum.
+
+        Returns:
+            The validated configuration.
+
+        Raises:
+            ValueError: The default page size exceeds the maximum.
+        """
+        if self.default_page_size > self.max_page_size:
+            raise ValueError(
+                f"default_page_size ({self.default_page_size}) exceeds"
+                f" max_page_size ({self.max_page_size})"
+            )
+        return self
 
 
 class Monitor(BaseModel):

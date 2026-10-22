@@ -1,17 +1,24 @@
 """Tests of the TES API endpoints, with fake TES backends."""
 
 from copy import deepcopy
+from datetime import datetime, timedelta, timezone
 from typing import Any, ClassVar
+from unittest.mock import ANY
 
 from connexion import FlaskApp
 from flask.testing import FlaskClient
+from pydantic import ValidationError
 from pymongo import MongoClient
 import pytest
 import requests
 import tes
 
+from pro_tes.config_models import ListTasks
 from pro_tes.ga4gh.tes import task_runs
 from pro_tes.ga4gh.tes.models import TesTask
+from pro_tes.plugins.middlewares.task_distribution.random import (
+    TaskDistributionRandom,
+)
 from pro_tes.tasks import track_task_progress
 from pro_tes.utils.misc import get_custom_config
 from tests.conftest import DB
@@ -175,7 +182,11 @@ def test_create_task(
     ((url, task),) = relayed(backend)
     assert task.executors[0].ignore_error is True
     document = stored(mongo_client, task_id)
-    assert document["tes_endpoint"] == {"host": url, "base_path": ""}
+    assert document["tes_endpoint"] == {
+        "host": url,
+        "base_path": "",
+        "task_id": "remote-1",
+    }
     assert tracked == [
         {
             "worker_id": document["worker_id"],
@@ -450,3 +461,336 @@ def test_cancel_task_nested_forwards(
     response = client.post(f"{BASE_PATH}/tasks/{task_id}:cancel")
     assert response.status_code == 200
     assert backend.canceled == ["remote-1"]
+
+
+# Listing (#165), name prefixes, relay to backends, timestamps (#208)
+
+
+def create_tasks(client: FlaskClient, names: list[str]) -> list[str]:
+    """Create tasks with names, in order.
+
+    Returns:
+        The task identifiers, newest first (as listed).
+    """
+    ids = []
+    for name in names:
+        response = client.post(f"{BASE_PATH}/tasks", json={**TASK, "name": name})
+        assert response.status_code == 200
+        ids.append(response.get_json()["id"])
+    return list(reversed(ids))
+
+
+def list_tasks(client: FlaskClient, **query: Any) -> dict[str, Any]:
+    """List tasks (view `MINIMAL`), checking the status."""
+    response = client.get(
+        f"{BASE_PATH}/tasks", query_string={"view": "MINIMAL", **query}
+    )
+    assert response.status_code == 200
+    body: dict[str, Any] = response.get_json()
+    return body
+
+
+def test_list_tasks_empty(client: FlaskClient) -> None:
+    """Without tasks, an empty page is listed, without next page (#165)."""
+    assert list_tasks(client) == {"tasks": [], "next_page_token": ""}
+
+
+@pytest.mark.parametrize("page_size", [1, 2, 5, 6])
+def test_list_tasks_pages(
+    client: FlaskClient, backend: type[FakeBackend], page_size: int
+) -> None:
+    """Paging lists all tasks once, newest first, and ends (#165).
+
+    Only the last page has an empty `next_page_token`.
+    """
+    ids = create_tasks(client, [f"task{index}" for index in range(5)])
+    listed: list[str] = []
+    tokens: list[str] = []
+    token = None
+    while True:
+        query = {"page_size": page_size}
+        if token is not None:
+            query["page_token"] = token
+        page = list_tasks(client, **query)
+        assert 0 < len(page["tasks"]) <= page_size
+        listed.extend(task["id"] for task in page["tasks"])
+        token = page["next_page_token"]
+        tokens.append(token)
+        if not token:
+            break
+        assert len(tokens) <= 5
+    assert listed == ids
+    assert len(tokens) == -(-5 // page_size)
+
+
+def test_list_tasks_empty_token(client: FlaskClient, task_id: str) -> None:
+    """An empty page token (of a last page) lists the first page."""
+    assert [task["id"] for task in list_tasks(client, page_token="")["tasks"]] == [
+        task_id
+    ]
+
+
+@pytest.mark.parametrize("token", ["invalid", "0" * 23, "g" * 24])
+def test_list_tasks_invalid_token(client: FlaskClient, token: str) -> None:
+    """Invalid page tokens are rejected (`400`)."""
+    response = client.get(f"{BASE_PATH}/tasks", query_string={"page_token": token})
+    assert response.status_code == 400
+    assert response.get_json()["status"] == 400
+
+
+@pytest.mark.parametrize("page_size", [0, -1])
+def test_list_tasks_invalid_page_size(client: FlaskClient, page_size: int) -> None:
+    """Page sizes must be positive (`400`)."""
+    response = client.get(f"{BASE_PATH}/tasks", query_string={"page_size": page_size})
+    assert response.status_code == 400
+
+
+def test_list_tasks_page_sizes(
+    app: FlaskApp, client: FlaskClient, backend: type[FakeBackend]
+) -> None:
+    """Pages have the default size, and at most the maximum size."""
+    with app.app.app_context():
+        config = get_custom_config().controllers.list_tasks
+        config.default_page_size = 2
+        config.max_page_size = 3
+    create_tasks(client, ["a", "b", "c", "d"])
+    assert len(list_tasks(client)["tasks"]) == 2
+    assert len(list_tasks(client, page_size=100)["tasks"]) == 3
+
+
+def test_page_size_config() -> None:
+    """The default page size must not exceed the maximum."""
+    assert ListTasks().default_page_size == 256
+    assert ListTasks().max_page_size == 2047
+    with pytest.raises(ValidationError, match="exceeds max_page_size"):
+        ListTasks(default_page_size=10, max_page_size=5)
+    assert ListTasks(default_page_size=5, max_page_size=5).max_page_size == 5
+    with pytest.raises(ValidationError):
+        ListTasks(default_page_size=0)
+    with pytest.raises(ValidationError):
+        ListTasks(max_page_size=0)
+    with pytest.raises(ValidationError):
+        ListTasks(max_page_size=2048)
+
+
+def test_default_view(client: FlaskClient, task_id: str) -> None:
+    """Without a `view`, tasks are returned in the `MINIMAL` view."""
+    minimal = {"id": task_id, "state": ANY}
+    assert client.get(f"{BASE_PATH}/tasks/{task_id}").get_json() == minimal
+    assert client.get(f"{BASE_PATH}/tasks").get_json()["tasks"] == [minimal]
+
+
+@pytest.mark.parametrize(
+    "prefix, names",
+    [
+        ("a.b", ["a.bc", "a.b"]),
+        (".*", [".*x"]),
+        ("[", ["[x"]),
+        ("(", []),
+        ("b", ["b"]),
+        ("", ["b", "[x", ".*x", "axb", "a.bc", "a.b"]),
+    ],
+)
+def test_list_tasks_name_prefix(
+    client: FlaskClient, backend: type[FakeBackend], prefix: str, names: list[str]
+) -> None:
+    """Names match the prefix literally, not as a regular expression."""
+    ids = create_tasks(client, ["a.b", "a.bc", "axb", ".*x", "[x", "b"])
+    by_id = dict(zip(ids, ["b", "[x", ".*x", "axb", "a.bc", "a.b"], strict=True))
+    tasks = list_tasks(client, name_prefix=prefix, page_size=10)["tasks"]
+    assert [by_id[task["id"]] for task in tasks] == names
+
+
+def test_list_tasks_name_prefix_null(client: FlaskClient) -> None:
+    """Name prefixes with null characters are rejected."""
+    response = client.get(f"{BASE_PATH}/tasks", query_string={"name_prefix": "a\x00"})
+    assert response.status_code == 400
+
+
+@pytest.mark.parametrize("view", ["BASIC", "FULL"])
+def test_views_logs(
+    client: FlaskClient,
+    task_id: str,
+    mongo_client: MongoClient[dict[str, Any]],
+    view: str,
+) -> None:
+    """`BASIC` has no system logs and executor outputs, `FULL` has them."""
+    mongo_client[DB]["tasks"].update_one(
+        {"task.id": task_id},
+        {
+            "$set": {
+                "task.logs.0.system_logs": ["started"],
+                "task.logs.0.logs": [
+                    {"exit_code": 0, "stdout": "out", "stderr": "err"}
+                ],
+            }
+        },
+    )
+    for task in (
+        client.get(
+            f"{BASE_PATH}/tasks/{task_id}", query_string={"view": view}
+        ).get_json(),
+        list_tasks(client, view=view)["tasks"][0],
+    ):
+        (log,) = task["logs"]
+        (executor_log,) = log["logs"]
+        assert executor_log["exit_code"] == 0
+        if view == "BASIC":
+            assert "system_logs" not in log
+            assert "stdout" not in executor_log
+            assert "stderr" not in executor_log
+        else:
+            assert log["system_logs"] == ["started"]
+            assert (executor_log["stdout"], executor_log["stderr"]) == ("out", "err")
+
+
+@pytest.fixture
+def in_order(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Tasks are relayed to the backends in the configured order."""
+
+    def ordered(
+        self: TaskDistributionRandom, tes_urls: list[str], request: Any
+    ) -> None:
+        """Keep the order."""
+        self.tes_urls = list(tes_urls)
+
+    monkeypatch.setattr(TaskDistributionRandom, "_set_tes_urls", ordered)
+
+
+# Inputs with credentials in URLs
+TASK_CREDENTIALS: dict[str, Any] = {
+    **TASK_FILES,
+    "inputs": [
+        {"url": "ftp://user:secret@ftp.example.org/in", "path": "/in", "type": "FILE"},
+        {"content": "hello", "path": "/greeting", "type": "FILE"},
+    ],
+}
+
+
+def test_create_task_inputs_kept(
+    client: FlaskClient, backend: type[FakeBackend], in_order: None
+) -> None:
+    """Other backends get inputs and outputs as objects, without credentials.
+
+    Inputs with content are kept.
+    """
+    response = client.post(f"{BASE_PATH}/tasks", json=TASK_CREDENTIALS)
+    assert response.status_code == 200
+    ((_, task),) = relayed(backend)
+    assert [(item.url, item.path, item.content) for item in task.inputs] == [
+        ("ftp://ftp.example.org/in", "/in", None),
+        (None, "/greeting", "hello"),
+    ]
+    assert [(item.url, item.path) for item in task.outputs] == [
+        ("s3://bucket/out", "/out")
+    ]
+
+
+def test_create_task_payload_per_backend(
+    client: FlaskClient, backend: type[FakeBackend], in_order: None
+) -> None:
+    """Each backend gets the task as received, without changes for others.
+
+    The first backend (credentials removed) rejects the task, the next one
+    (Funnel) gets the credentials.
+    """
+    backend.failing.add(BACKENDS[0])
+    backend.funnel.add(BACKENDS[1])
+    response = client.post(f"{BASE_PATH}/tasks", json=TASK_CREDENTIALS)
+    assert response.status_code == 200
+    ((url, task),) = relayed(backend)
+    assert url == BACKENDS[1]
+    assert task.inputs[0].url == "ftp://user:secret@ftp.example.org/in"
+
+
+def test_timestamps(
+    client: FlaskClient,
+    backend: type[FakeBackend],
+    mongo_client: MongoClient[dict[str, Any]],
+) -> None:
+    """Times are set by proTES, in UTC, in RFC 3339 format.
+
+    Also the creation time, which clients can't set (`400`).
+    """
+    response = client.post(
+        f"{BASE_PATH}/tasks",
+        json={**TASK, "creation_time": "2000-01-01T00:00:00Z"},
+    )
+    assert response.status_code == 400
+    before = datetime.now(timezone.utc)
+    response = client.post(f"{BASE_PATH}/tasks", json=TASK)
+    after = datetime.now(timezone.utc)
+    task = stored(mongo_client, response.get_json()["id"])["task"]
+    (log,) = task["logs"]
+    times = [task["creation_time"], log["start_time"], log["end_time"]]
+    times.append(log["metadata"]["forwarded_to"][0]["forward_time"])
+    for value in times:
+        parsed = datetime.fromisoformat(value)
+        assert parsed.utcoffset() == timedelta(0)
+        assert before <= parsed <= after
+    ((_, relayed_task),) = relayed(backend)
+    # the TES instance sets its own creation time
+    assert relayed_task.creation_time is None
+
+
+def test_cancel_task_without_trace(
+    app: FlaskApp,
+    client: FlaskClient,
+    backend: type[FakeBackend],
+    mongo_client: MongoClient[dict[str, Any]],
+) -> None:
+    """Tasks are canceled without forwards in their logs (`execution_trace`)."""
+    with app.app.app_context():
+        get_custom_config().storeLogs.execution_trace = False
+    response = client.post(f"{BASE_PATH}/tasks", json=TASK)
+    task_id = response.get_json()["id"]
+    assert stored(mongo_client, task_id)["task"]["logs"][0]["metadata"] == {}
+    set_state(mongo_client, task_id, "RUNNING")
+    assert client.post(f"{BASE_PATH}/tasks/{task_id}:cancel").status_code == 200
+    assert backend.canceled == ["remote-1"]
+
+
+def test_cancel_task_legacy(
+    client: FlaskClient,
+    task_id: str,
+    backend: type[FakeBackend],
+    mongo_client: MongoClient[dict[str, Any]],
+) -> None:
+    """Tasks stored by earlier versions are canceled at their last forward."""
+    mongo_client[DB]["tasks"].update_one(
+        {"task.id": task_id}, {"$unset": {"tes_endpoint.task_id": ""}}
+    )
+    set_state(mongo_client, task_id, "RUNNING")
+    assert client.post(f"{BASE_PATH}/tasks/{task_id}:cancel").status_code == 200
+    assert backend.canceled == ["remote-1"]
+    # without an execution trace
+    mongo_client[DB]["tasks"].update_one(
+        {"task.id": task_id},
+        {
+            "$set": {
+                "task.logs.0.metadata": {"remote_task_id": "remote-2"},
+                "task.state": "RUNNING",
+            }
+        },
+    )
+    assert client.post(f"{BASE_PATH}/tasks/{task_id}:cancel").status_code == 200
+    assert backend.canceled == ["remote-1", "remote-2"]
+
+
+def test_cancel_task_no_remote_id(
+    client: FlaskClient,
+    task_id: str,
+    backend: type[FakeBackend],
+    mongo_client: MongoClient[dict[str, Any]],
+) -> None:
+    """Cancelable tasks without a remote identifier can't be canceled (`500`)."""
+    mongo_client[DB]["tasks"].update_one(
+        {"task.id": task_id},
+        {
+            "$unset": {"tes_endpoint.task_id": ""},
+            "$set": {"task.logs.0.metadata": {}, "task.state": "RUNNING"},
+        },
+    )
+    assert client.post(f"{BASE_PATH}/tasks/{task_id}:cancel").status_code == 500
+    assert backend.canceled == []
+    assert stored(mongo_client, task_id)["task"]["state"] == "RUNNING"

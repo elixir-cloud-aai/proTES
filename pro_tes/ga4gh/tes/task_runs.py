@@ -1,14 +1,13 @@
 """Class implementing TES API-server-side controller methods."""
 
-from collections.abc import Sequence
 from copy import deepcopy
-from datetime import datetime, timezone
 import logging
+import re
 from typing import Any
 
+from bson.errors import InvalidId
 from bson.objectid import ObjectId
 from celery import uuid
-from dateutil.parser import parse as parse_time
 from flask import request
 from foca import get_collection
 from foca.utils.misc import generate_id
@@ -40,10 +39,13 @@ from pro_tes.ga4gh.tes.states import States
 from pro_tes.middleware.middleware_handler import MiddlewareHandler
 from pro_tes.tasks.track_task_progress import task__track_task_progress
 from pro_tes.utils.db import DbDocumentConnector
-from pro_tes.utils.misc import get_custom_config, strip_auth
+from pro_tes.utils.misc import get_custom_config, strip_auth, utc_now
 from pro_tes.utils.models import TaskModelConverter
 
 logger = logging.getLogger(__name__)
+
+# view of `GET /tasks` and `GET /tasks/{id}` if none is given, as in the spec
+DEFAULT_VIEW = "MINIMAL"
 
 
 def flatten_forwards(task: dict[str, Any]) -> dict[str, Any]:
@@ -98,7 +100,7 @@ class TaskRuns:
                 the JSON body.
         """
         # create task document
-        start_time = datetime.now().strftime("%m-%d-%Y %H:%M:%S")
+        start_time = utc_now()
         db_document: DbDocument = DbDocument()
         db_document.basic_auth = self.parse_basic_auth(request.authorization)
         if request.json is None:
@@ -118,6 +120,8 @@ class TaskRuns:
         payload: dict[str, Any] = request_modified.json
         tes_urls = deepcopy(payload["tes_urls"])
         del payload["tes_urls"]
+        # set by the server (TES), not by clients
+        payload["creation_time"] = start_time
         db_document.task = TesTask(**payload)
 
         # create database document
@@ -138,7 +142,9 @@ class TaskRuns:
             db_document.worker_id,
         )
 
-        # validate request
+        # validate request; the TES instance sets its own creation time (TES
+        # servers may reject tasks that set it, as proTES does)
+        payload.pop("creation_time", None)
         payload = self._sanitize_request(payload=payload)
         try:
             payload_marshalled = tes.Task(**payload)
@@ -181,33 +187,6 @@ class TaskRuns:
                 )
                 continue
 
-            # fix for FTP URLs with credentials on non-Funnel services
-            def strip_none_items(_seq: Sequence[Any]) -> list[Any]:
-                """Remove empty items from Sequence.
-
-                Args:
-                    _seq: Sequence of items.
-
-                Returns:
-                    List of none empty items.
-                """
-                return [item for item in _seq if item is not None]
-
-            def remove_auth(_list: list[Any]) -> list[str]:
-                """Forward the list to 'remove_auth_from_url'.
-
-                Args:
-                    _list: List
-
-                Returns:
-                    List of items without basic authentication information.
-                """
-                return [
-                    strip_auth(item.url)
-                    for item in _list
-                    if getattr(item, "url", None) is not None
-                ]
-
             is_funnel = False
             try:
                 response = cli.get_service_info()
@@ -215,17 +194,14 @@ class TaskRuns:
                     is_funnel = True
             except requests.exceptions.HTTPError:
                 pass
+            # each backend gets the task as validated, without changes made
+            # for other backends
+            task_relayed = deepcopy(payload_marshalled)
             if not is_funnel:
-                if payload_marshalled.inputs is not None:
-                    inputs = strip_none_items(payload_marshalled.inputs)
-                    payload_marshalled.inputs = remove_auth(inputs)
-
-                if payload_marshalled.outputs is not None:
-                    outputs = strip_none_items(payload_marshalled.outputs)
-                    payload_marshalled.outputs = remove_auth(outputs)
+                self._strip_credentials(task=task_relayed)
 
             try:
-                remote_task_id = cli.create_task(payload_marshalled)
+                remote_task_id = cli.create_task(task_relayed)
             except requests.HTTPError as exc:
                 logger.warning(
                     "Task '%s' could not be sent to TES endpoint hosted at: %s."
@@ -301,27 +277,39 @@ class TaskRuns:
 
         Returns:
             Response object according to TES API schema . Cf.
-            https://github.com/ga4gh/task-execution-schemas/blob/9e9c5aa2648d683d5574f9dbd63a025b4aea285d/openapi/task_execution_service.openapi.yaml
+            https://github.com/ga4gh/task-execution-schemas/blob/9e9c5aa2648d683d5574f9dbd63a025b4aea285d/openapi/task_execution_service.openapi.yaml;
+            tasks are listed newest first, and `next_page_token` is empty on
+            the last page.
+
+        Raises:
+            pro_tes.exceptions.BadRequest: The page size is not positive, or
+                the page token is invalid.
         """
-        page_size = kwargs.get(
-            "page_size",
-            self.custom_config.controllers.list_tasks.default_page_size,
-        )
-        page_token = kwargs.get("page_token")
+        page_size = self._page_size(page_size=kwargs.get("page_size"))
         filter_dict: dict[str, Any] = {}
 
         user_id = kwargs.get("user_id")
         if user_id is not None:
             filter_dict["user_id"] = user_id
 
-        if page_token is not None:
-            filter_dict["_id"] = {"$lt": ObjectId(page_token)}
-        view = kwargs.get("view", "BASIC")
+        # an empty token (of the last page) is taken as no token
+        page_token = kwargs.get("page_token")
+        if page_token:
+            try:
+                filter_dict["_id"] = {"$lt": ObjectId(page_token)}
+            except (InvalidId, TypeError) as exc:
+                raise BadRequest(f"Invalid page token: {page_token!r}") from exc
+        view = kwargs.get("view", DEFAULT_VIEW)
         projection = self._set_projection(view=view)
 
+        # matched literally, as a prefix
         name_prefix = kwargs.get("name_prefix")
         if name_prefix is not None:
-            filter_dict["task_original.name"] = {"$regex": f"^{name_prefix}"}
+            # MongoDB rejects regular expressions with null characters
+            if "\x00" in name_prefix:
+                raise BadRequest("Invalid name prefix: null character")
+            pattern = "^" + re.escape(name_prefix)
+            filter_dict["task_original.name"] = {"$regex": pattern}
 
         cursor = (
             self.db_client.find(filter=filter_dict, projection=projection)
@@ -331,22 +319,19 @@ class TaskRuns:
         tasks_list = list(cursor)
 
         logger.debug("Tasks list: %s", tasks_list)
+        next_page_token = ""
         if len(tasks_list) > page_size:
-            next_page_token = str(tasks_list[page_size - 1]["_id"])
             tasks_list = tasks_list[:page_size]
-        else:
             next_page_token = str(tasks_list[-1]["_id"])
 
         tasks_lists = []
         for task in tasks_list:
             del task["_id"]
             if view == "MINIMAL":
-                task["id"] = task["task"]["id"]
-                task["state"] = task["task"]["state"]
-                tasks_lists.append({"id": task["id"], "state": task["state"]})
-            if view == "BASIC":
-                tasks_lists.append(flatten_forwards(task["task"]))
-            if view == "FULL":
+                tasks_lists.append(
+                    {"id": task["task"]["id"], "state": task["task"]["state"]}
+                )
+            else:
                 tasks_lists.append(flatten_forwards(task["task"]))
 
         return {"next_page_token": next_page_token, "tasks": tasks_lists}
@@ -366,7 +351,7 @@ class TaskRuns:
             pro_tes.exceptions.TaskNotFound: The requested task is not
                 available.
         """
-        projection = self._set_projection(view=kwargs.get("view", "BASIC"))
+        projection = self._set_projection(view=kwargs.get("view", DEFAULT_VIEW))
         document = self.db_client.find_one(
             filter={"task.id": id}, projection=projection
         )
@@ -390,6 +375,8 @@ class TaskRuns:
                 to access the resource.
             pro_tes.exceptions.TaskNotFound: The requested task is not
                 available.
+            ValueError: The task is cancelable, but its identifier at its
+                TES instance is unknown.
         """
         document = self.db_client.find_one(
             filter={"task.id": id},
@@ -410,22 +397,11 @@ class TaskRuns:
                 f"{db_document.tes_endpoint.base_path.strip('/')}"
             )
 
-            _logs = db_document.task.logs
-            if not _logs:
-                raise ValueError(f"Task '{id}' has no logs")
-
-            _metadata = _logs[0].metadata
-            if not isinstance(_metadata, Metadata):
-                raise ValueError(f"Task '{id}' has no metadata")
-
-            if self.store_logs:
-                if not _metadata.forwarded_to:
-                    raise ValueError(f"Task '{id}' was not forwarded")
-                # the TES server that proTES forwarded the task to
-                task_id = _metadata.forwarded_to[-1].id
-            else:
-                # Not subscriptable; fixed with #208
-                task_id = _metadata["remote_task_id"]  # type: ignore[index]
+            task_id = self._remote_task_id(document=document, db_document=db_document)
+            if task_id is None:
+                # tasks get cancelable states only from the TES instance they
+                # were forwarded to, which proTES records
+                raise ValueError(f"No remote identifier of task '{id}'")
 
             logger.info(
                 "Trying to cancel task with task identifier '%s' and worker job"
@@ -491,9 +467,6 @@ class TaskRuns:
         Returns:
             Sanitized request payload.
         """
-        time_now = datetime.now().strftime("%m-%d-%Y %H:%M:%S")
-        if "creation_time" not in payload:
-            payload["creation_time"] = parse_time(time_now)
         if "inputs" in payload:
             payload["inputs"] = [
                 tes.models.Input(**input) for input in payload["inputs"]
@@ -532,9 +505,9 @@ class TaskRuns:
         elif view == "BASIC":
             projection = {
                 "task.inputs.content": False,
-                "task.system_logs": False,
-                "task.logs.stdout": False,
-                "task.logs.stderr": False,
+                "task.logs.system_logs": False,
+                "task.logs.logs.stdout": False,
+                "task.logs.logs.stderr": False,
                 "tes_endpoint": False,
             }
         elif view == "FULL":
@@ -623,8 +596,12 @@ class TaskRuns:
         Raises:
             ValueError: The task has no logs.
         """
-        time_now = datetime.now().strftime("%m-%d-%Y %H:%M:%S")
-        tes_endpoint_dict: dict[str, Any] = {"host": tes_url, "base_path": ""}
+        time_now = utc_now()
+        tes_endpoint_dict: dict[str, Any] = {
+            "host": tes_url,
+            "base_path": "",
+            "task_id": remote_task_id,
+        }
         db_document = db_connector.upsert_fields_in_root_object(
             root="tes_endpoint",
             **tes_endpoint_dict,
@@ -643,10 +620,6 @@ class TaskRuns:
                 tes_url=tes_url,
                 remote_task_id=remote_task_id,
             )
-        else:
-            for logs in task_logs:
-                # Not a `Metadata` model; fixed with #208
-                logs.metadata = {"remote_task_id": remote_task_id}  # type: ignore[assignment]
 
         db_document = db_connector.upsert_fields_in_root_object(
             root="task",
@@ -680,7 +653,7 @@ class TaskRuns:
         forward = TesForward(
             id=remote_task_id,
             url=tes_url,
-            forward_time=datetime.now(timezone.utc).isoformat(),
+            forward_time=utc_now(),
         )
         for log in logs:
             if log.metadata is None:
@@ -689,6 +662,71 @@ class TaskRuns:
                 log.metadata.forwarded_to = []
             log.metadata.forwarded_to.append(forward)
         return db_document
+
+    def _page_size(self, page_size: int | None) -> int:
+        """Get the size of a page of tasks.
+
+        Args:
+            page_size: Page size of the request, if any.
+
+        Returns:
+            The page size of the request, at most the maximum page size of
+            the config; the default page size of the config if none is
+            requested.
+
+        Raises:
+            pro_tes.exceptions.BadRequest: The page size is not positive.
+        """
+        config = self.custom_config.controllers.list_tasks
+        if page_size is None:
+            return config.default_page_size
+        if page_size < 1:
+            raise BadRequest(f"Page size must be positive: {page_size}")
+        return min(page_size, config.max_page_size)
+
+    @staticmethod
+    def _strip_credentials(task: tes.Task) -> None:
+        """Remove user names and passwords from the URLs of inputs and outputs.
+
+        Inputs and outputs are kept otherwise, also inputs without URL
+        (with `content`).
+
+        Args:
+            task: Task to be relayed; changed in place.
+        """
+        for item in [*(task.inputs or []), *(task.outputs or [])]:
+            if item is not None and item.url is not None:
+                item.url = strip_auth(item.url)
+
+    @staticmethod
+    def _remote_task_id(
+        document: dict[str, Any], db_document: DbDocument
+    ) -> str | None:
+        """Get the identifier of a task at the TES backend it was relayed to.
+
+        Tasks stored by earlier versions have it only in their logs: in the
+        last forward with an execution trace, else as `remote_task_id`.
+
+        Args:
+            document: Stored task, as stored.
+            db_document: Stored task, as model.
+
+        Returns:
+            The identifier of the task at its TES backend, or `None` if the
+            task was not forwarded.
+        """
+        if db_document.tes_endpoint.task_id is not None:
+            return db_document.tes_endpoint.task_id
+        logs = db_document.task.logs or []
+        metadata = logs[0].metadata if logs else None
+        if metadata is not None and metadata.forwarded_to:
+            # the TES server that proTES forwarded the task to
+            return metadata.forwarded_to[-1].id
+        # the metadata model drops `remote_task_id`, so it is read as stored
+        stored_logs = document.get("task", {}).get("logs") or [{}]
+        stored_metadata = stored_logs[0].get("metadata") or {}
+        remote_task_id = stored_metadata.get("remote_task_id")
+        return remote_task_id if isinstance(remote_task_id, str) else None
 
     @staticmethod
     def parse_basic_auth(auth: Authorization | None) -> BasicAuth:

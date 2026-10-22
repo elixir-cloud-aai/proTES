@@ -169,8 +169,11 @@ custom:
       polling:
         wait: 3
         attempts: 100
+    # Tasks per page of `GET /tasks` if the request sets no `page_size`, and
+    # at most (the TES specification requires fewer than 2048)
     list_tasks:
-      default_page_size: 5
+      default_page_size: 256
+      max_page_size: 2047
   celery:
     monitor:
       timeout: 0.1
