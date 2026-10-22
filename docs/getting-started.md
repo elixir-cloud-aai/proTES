@@ -16,6 +16,13 @@ The app is configured by
 the Docker Compose setup by
 [`docker-compose.yaml`](https://github.com/elixir-cloud-aai/proTES/blob/dev/docker-compose.yaml).
 
+Set the service info that proTES serves at `GET /ga4gh/tes/v1/service-info`
+(section `service_info.service` of the app configuration) to describe your
+deployment: at least `id` (e.g., `org.example.my-protes`) and `organization`
+(`name`, `url`), and preferably `name`, `description`, `contactUrl`,
+`environment` and `storage`. The defaults are placeholders, and proTES logs a
+warning on startup while `id` or `organization` still have them.
+
 ## Other useful commands
 
 To shut down the service, run:
