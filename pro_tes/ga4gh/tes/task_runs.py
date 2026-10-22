@@ -44,6 +44,9 @@ from pro_tes.utils.models import TaskModelConverter
 
 logger = logging.getLogger(__name__)
 
+# view of `GET /tasks` and `GET /tasks/{id}` if none is given, as in the spec
+DEFAULT_VIEW = "MINIMAL"
+
 
 def flatten_forwards(task: dict[str, Any]) -> dict[str, Any]:
     """Serve forwards nested by earlier versions as lists.
@@ -294,13 +297,14 @@ class TaskRuns:
                 filter_dict["_id"] = {"$lt": ObjectId(page_token)}
             except (InvalidId, TypeError) as exc:
                 raise BadRequest(f"Invalid page token: {page_token!r}") from exc
-        view = kwargs.get("view", "BASIC")
+        view = kwargs.get("view", DEFAULT_VIEW)
         projection = self._set_projection(view=view)
 
         # matched literally, as a prefix
         name_prefix = kwargs.get("name_prefix")
         if name_prefix is not None:
-            filter_dict["task_original.name"] = {"$regex": f"^{re.escape(name_prefix)}"}
+            pattern = "^" + re.escape(name_prefix)
+            filter_dict["task_original.name"] = {"$regex": pattern}
 
         cursor = (
             self.db_client.find(filter=filter_dict, projection=projection)
@@ -319,12 +323,10 @@ class TaskRuns:
         for task in tasks_list:
             del task["_id"]
             if view == "MINIMAL":
-                task["id"] = task["task"]["id"]
-                task["state"] = task["task"]["state"]
-                tasks_lists.append({"id": task["id"], "state": task["state"]})
-            if view == "BASIC":
-                tasks_lists.append(flatten_forwards(task["task"]))
-            if view == "FULL":
+                tasks_lists.append(
+                    {"id": task["task"]["id"], "state": task["task"]["state"]}
+                )
+            else:
                 tasks_lists.append(flatten_forwards(task["task"]))
 
         return {"next_page_token": next_page_token, "tasks": tasks_lists}
@@ -344,7 +346,7 @@ class TaskRuns:
             pro_tes.exceptions.TaskNotFound: The requested task is not
                 available.
         """
-        projection = self._set_projection(view=kwargs.get("view", "BASIC"))
+        projection = self._set_projection(view=kwargs.get("view", DEFAULT_VIEW))
         document = self.db_client.find_one(
             filter={"task.id": id}, projection=projection
         )

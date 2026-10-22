@@ -3,6 +3,7 @@
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from typing import Any, ClassVar
+from unittest.mock import ANY
 
 from connexion import FlaskApp
 from flask.testing import FlaskClient
@@ -563,8 +564,18 @@ def test_page_size_config() -> None:
     assert ListTasks().max_page_size == 2047
     with pytest.raises(ValidationError, match="exceeds max_page_size"):
         ListTasks(default_page_size=10, max_page_size=5)
+    assert ListTasks(default_page_size=5, max_page_size=5).max_page_size == 5
     with pytest.raises(ValidationError):
         ListTasks(default_page_size=0)
+    with pytest.raises(ValidationError):
+        ListTasks(max_page_size=0)
+
+
+def test_default_view(client: FlaskClient, task_id: str) -> None:
+    """Without a `view`, tasks are returned in the `MINIMAL` view."""
+    minimal = {"id": task_id, "state": ANY}
+    assert client.get(f"{BASE_PATH}/tasks/{task_id}").get_json() == minimal
+    assert client.get(f"{BASE_PATH}/tasks").get_json()["tasks"] == [minimal]
 
 
 @pytest.mark.parametrize(

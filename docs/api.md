@@ -26,16 +26,17 @@ and `end_time` of proTES's log of a task) are in UTC, in RFC 3339 format.
 For `POST /tasks`, proTES:
 
 1. stores the task as received, with a new identifier
-   (see [Tasks](configuration.md#tasks) for its format);
+   (see [Tasks](configuration.md#tasks) for its format) and its
+   `creation_time` (tasks that set `creation_time`, which the TES
+   specification marks read-only, are rejected with `400 Bad Request`);
 2. applies the [middlewares](middlewares.md), which select the TES instances
    to try and their order (and may change the task);
 3. forwards the task to the first of these TES instances that accepts it,
-   and returns its own identifier of the task (each TES instance gets the
-   task as received from the middlewares; TES instances other than Funnel get
-   the URLs of inputs and outputs without user names and passwords); if no
-   TES instance accepts it,
-   the task's state is set to `SYSTEM_ERROR`, and the request fails with
-   `500 Internal Server Error`;
+   and returns its own identifier of the task; if no TES instance accepts
+   it, the task's state is set to `SYSTEM_ERROR`, and the request fails with
+   `500 Internal Server Error`. Each TES instance gets its own copy of the
+   validated task; TES instances other than Funnel get the URLs of inputs
+   and outputs without user names and passwords;
 4. tracks the task at the TES instance in the background (a Celery worker
    polls its state until it has finished; see [Tasks](configuration.md#tasks)),
    and updates its state and logs.

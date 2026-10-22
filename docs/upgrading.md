@@ -28,12 +28,16 @@ instead of objects with `message` and `code`.
 served with their forwards as lists; they can be tracked and canceled as
 before.
 
+## Task times and remote identifiers
+
 Times of tasks (`creation_time`, and `start_time` and `end_time` of the
 logs) are in UTC, in RFC 3339 format (e.g.,
 `2026-10-22T12:34:56.789012+00:00`), instead of local-time strings such as
 `10-22-2026 14:34:56`; times of tasks stored by earlier versions are served
 as stored. proTES sets `creation_time`, and rejects tasks that set it
-(`400`), as the TES specification marks it read-only. The identifier of a
+(`400`), as the TES specification marks it read-only.
+
+The identifier of a
 task at its TES instance is also stored in `tes_endpoint.task_id` (not
 served), so that tasks can be canceled with
 `custom.storeLogs.execution_trace: False` too.
