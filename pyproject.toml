@@ -106,7 +106,7 @@ description = "Proxy for GA4GH Task Execution Service (TES) instances by ELIXIR 
 license = "Apache-2.0"
 dynamic = ["version"]
 dependencies = [
-    "connexion>=2.15.1,<3.0.0",
+    "connexion>=2.15.1,<4.0.0",
     # FOCA minors are bumped by hand, together with the base image in the
     # `Dockerfile` (`.github/dependabot.yml`)
     "foca>=0.15.0,<0.16",
