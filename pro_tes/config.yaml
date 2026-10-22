@@ -1,34 +1,41 @@
 # FOCA configuration
-# Available in app context as attributes of `current_app.config.foca`
+# Available as attributes of `foca.get_config()`
 # Automatically validated via FOCA
-# Cf. https://foca.readthedocs.io/en/latest/modules/foca.models.html
+# Cf. https://foca.readthedocs.io/en/latest/configuration/
 
 # Server configuration
-# Cf. https://foca.readthedocs.io/en/latest/modules/foca.models.html#foca.models.config.ServerConfig
+# Cf. https://foca.readthedocs.io/en/latest/configuration/server/
 server:
   host: "0.0.0.0"
   port: 8080
-  debug: True
-  environment: development
+  # Debug mode allows executing arbitrary code; only enable it for local
+  # development, on a loopback host
+  debug: False
   testing: False
-  use_reloader: False
+  # Size limit of request bodies, in bytes (1 MiB); larger requests (also
+  # chunked ones) are rejected with `413 Content Too Large` before
+  # authentication and parsing
+  max_content_length: 1048576
 
 # Security configuration
-# Cf. https://foca.readthedocs.io/en/latest/modules/foca.models.html#foca.models.config.SecurityConfig
+# Cf. https://foca.readthedocs.io/en/latest/configuration/auth/
+# Authentication is disabled for the TES API for now (`disable_auth` in
+# `api.specs`); it is enabled with LS Login tokens in a later version (#212)
 security:
   auth:
     add_key_to_claims: True
     algorithms:
       - RS256
     allow_expired: False
-    audience: null
-    validation_methods:
-      - userinfo
-      - public_key
-    validation_checks: any
+    # Trusted token issuers (`iss` claim); tokens of other issuers are
+    # rejected. None yet, as authentication is disabled: FOCA requires an
+    # `audience` with issuers, so LS Login
+    # (`https://login.aai.lifescience-ri.eu/oidc/`) and the audience are set
+    # when authentication is enabled (#212)
+    issuers: []
 
 # Database configuration
-# Cf. https://foca.readthedocs.io/en/latest/modules/foca.models.html#foca.models.config.DBConfig
+# Cf. https://foca.readthedocs.io/en/latest/configuration/db/
 db:
   host: mongodb
   port: 27017
@@ -43,10 +50,6 @@ db:
               options:
                 "unique": True
                 "sparse": True
-        service_info:
-          indexes:
-            - keys:
-                id: 1
         middlewares:
           indexes:
             - keys:
@@ -59,19 +62,21 @@ db:
                 "unique": True
 
 # API configuration
-# Cf. https://foca.readthedocs.io/en/latest/modules/foca.models.html#foca.models.config.APIConfig
+# Cf. https://foca.readthedocs.io/en/latest/configuration/api/
+# Spec paths are relative to this file
 api:
   specs:
     - path:
         - api/9e9c5aa.task_execution_service.openapi.yaml
-        - api/additional_logs.yaml
+        - api/additions.openapi.yaml
         - api/security_schemes.yaml
       add_operation_fields:
-        x-openapi-router-controller: ga4gh.tes.server
+        x-openapi-router-controller: pro_tes.ga4gh.tes.server
         security:
           - bearerAuth: []
       add_security_fields:
         x-bearerInfoFunc: foca.security.auth.validate_token
+      # Authentication is enabled in a later version (#212)
       disable_auth: True
       connexion:
         strict_validation: True
@@ -81,19 +86,11 @@ api:
         options:
           swagger_ui: True
           serve_spec: True
-    - path:
-        - api/middleware_management.yaml
-      add_operation_fields:
-        x-openapi-router-controller: pro_tes.api.middlewares.controllers
-      connexion:
-        strict_validation: True
-        validate_responses: True
-        options:
-          swagger_ui: True
-          serve_spec: True
+    # The middleware management API (`api/middleware_management.yaml`) is
+    # not served until its controllers are implemented (#194)
 
 # Logging configuration
-# Cf. https://foca.readthedocs.io/en/latest/modules/foca.models.html#foca.models.config.LogConfig
+# Cf. https://foca.readthedocs.io/en/latest/configuration/log/
 log:
   version: 1
   disable_existing_loggers: False
@@ -119,12 +116,34 @@ jobs:
   include:
     - pro_tes.tasks.track_task_progress
 
-# Exception configuration
-# Cf. https://foca.readthedocs.io/en/latest/modules/foca.models.html#foca.models.config.ExceptionConfig
+# Service info, served at `GET /service-info` by FOCA, according to the GA4GH
+# `Service` schema (validated on startup); `version` defaults to the version
+# of the installed package (`package`)
+# Cf. https://foca.readthedocs.io/en/latest/configuration/service-info/
+service_info:
+  package: pro-tes
+  service:
+    id: v1.proTes.ga4gh.org.example
+    name: proTES
+    type:
+      group: org.ga4gh
+      artifact: tes
+      version: 1.0.0
+    description: >-
+      Proxy TES for distributing tasks across a list of service TES instances
+    organization:
+      name: elixir
+      url: "https://default.org"
+    storage:
+      - file:///path/to/local/storage
+
+# Exception handling: problem details of exceptions, sent with the media type
+# of error responses of the GA4GH specifications (instead of FOCA's default
+# `application/problem+json`)
+# Cf. https://foca.readthedocs.io/en/latest/configuration/exceptions/
 exceptions:
-  required_members: [["message"], ["code"]]
-  status_member: ["code"]
-  exceptions: pro_tes.exceptions.exceptions
+  mapping: pro_tes.exceptions.exceptions
+  media_type: application/json
 
 # Custom configuration
 custom:
@@ -133,7 +152,7 @@ custom:
       db:
         insert_attempts: 10
       task_id:
-        charset: string.ascii_uppercase + string.digits
+        charset: ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789
         length: 6
       timeout:
         post: null
@@ -148,17 +167,6 @@ custom:
     monitor:
       timeout: 0.1
     message_maxsize: 16777216
-
-  service_info:
-    id: v1.proTes.ga4gh.org.example
-    organization:
-      name: elixir
-      url: "https://default.org"
-    version: 1.2.3
-    doc: Proxy TES for distributing tasks across a list of service TES instances
-    name: proTES
-    storage:
-      - file:///path/to/local/storage
 
   tes:
     service_list:

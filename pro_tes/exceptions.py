@@ -4,6 +4,7 @@ from connexion.exceptions import (  # type: ignore
     BadRequestProblem,
     ExtraParameterProblem,
     Forbidden,
+    OAuthProblem,
     Unauthorized,
 )
 from pydantic import ValidationError
@@ -12,6 +13,7 @@ from werkzeug.exceptions import (
     BadRequest,
     InternalServerError,
     NotFound,
+    RequestEntityTooLarge,
 )
 
 # pylint: disable="too-few-public-methods"
@@ -49,73 +51,101 @@ class TesUriError(ValueError):
     """Raised when TES URI cannot be parsed."""
 
 
+# problem details of exceptions (cf. `exceptions.mapping` in `config.yaml`)
 exceptions = {
     Exception: {
-        "message": "An unexpected error occurred.",
-        "code": "500",
+        "title": "Unknown error",
+        "detail": "An unexpected error occurred.",
+        "status": 500,
     },
     BadRequest: {
-        "message": "The request is malformed.",
-        "code": "400",
+        "title": "Bad request",
+        "detail": "The request is malformed.",
+        "status": 400,
     },
     BadRequestProblem: {
-        "message": "The request is malformed.",
-        "code": "400",
+        "title": "Bad request",
+        "detail": "The request is malformed.",
+        "status": 400,
     },
     ExtraParameterProblem: {
-        "message": "The request is malformed.",
-        "code": "400",
+        "title": "Bad request",
+        "detail": "The request is malformed.",
+        "status": 400,
     },
     ValidationError: {
-        "message": "The request is malformed.",
-        "code": "400",
+        "title": "Bad request",
+        "detail": "The request is malformed.",
+        "status": 400,
     },
     TesUriError: {
-        "message": "TES URI cannot be parsed",
-        "code": "400",
-        },
+        "title": "Bad request",
+        "detail": "TES URI cannot be parsed.",
+        "status": 400,
+    },
     InputUriError: {
-        "message": "Input URI cannot be parsed.",
-        "code": "400",
+        "title": "Bad request",
+        "detail": "Input URI cannot be parsed.",
+        "status": 400,
     },
     Unauthorized: {
-        "message": " The request is unauthorized.",
-        "code": "401",
+        "title": "Unauthorized",
+        "detail": "The request is unauthorized.",
+        "status": 401,
+    },
+    OAuthProblem: {
+        "title": "Unauthorized",
+        "detail": "The request is unauthorized.",
+        "status": 401,
     },
     Forbidden: {
-        "message": "The requester is not authorized to perform this action.",
-        "code": "403",
+        "title": "Forbidden",
+        "detail": "The requester is not authorized to perform this action.",
+        "status": 403,
     },
     NotFound: {
-        "message": "The requested resource wasn't found.",
-        "code": "404",
+        "title": "Not found",
+        "detail": "The requested resource wasn't found.",
+        "status": 404,
     },
     TaskNotFound: {
-        "message": "The requested task wasn't found.",
-        "code": "404",
+        "title": "Not found",
+        "detail": "The requested task wasn't found.",
+        "status": 404,
+    },
+    RequestEntityTooLarge: {
+        "title": "Content Too Large",
+        "detail": "The request body exceeds the size limit.",
+        "status": 413,
     },
     InternalServerError: {
-        "message": "An unexpected error occurred.",
-        "code": "500",
+        "title": "Internal server error",
+        "detail": "An unexpected error occurred.",
+        "status": 500,
     },
     IdsUnavailableProblem: {
-        "message": "No/few unique task identifiers available.",
-        "code": "500",
+        "title": "Internal server error",
+        "detail": "No/few unique task identifiers available.",
+        "status": 500,
     },
     NoTesInstancesAvailable: {
-        "message": "No valid TES instances available.",
-        "code": "500",
+        "title": "Internal server error",
+        "detail": "No valid TES instances available.",
+        "status": 500,
     },
     MiddlewareException: {
-        "message": "Middleware could not be applied.",
-        "code": "500",
+        "title": "Internal server error",
+        "detail": "Middleware could not be applied.",
+        "status": 500,
     },
     InvalidMiddleware: {
-        "message": "Middleware is invalid.",
-        "code": "500",
+        "title": "Internal server error",
+        "detail": "Middleware is invalid.",
+        "status": 500,
     },
     IPDistanceCalculationError: {
-        "message": "IP distance calculation failed.",
-        "code": "500",
+        "title": "Internal server error",
+        "detail": "IP distance calculation failed.",
+        "status": 500,
     },
 }

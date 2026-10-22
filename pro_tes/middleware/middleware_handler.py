@@ -2,7 +2,7 @@
 
 import importlib
 import logging
-from typing import Union
+from typing import Sequence, Union
 
 import flask
 
@@ -24,7 +24,7 @@ class MiddlewareHandler:
         """Class constructor."""
         self.middlewares: list[list[type[AbstractMiddleware]]] = []
 
-    def set_middlewares(self, paths: list[Union[str, list[str]]]) -> None:
+    def set_middlewares(self, paths: Sequence[Union[str, list[str]]]) -> None:
         """Import and set middlewares from paths.
 
         An example of aected input format:

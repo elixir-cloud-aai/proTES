@@ -11,9 +11,8 @@ from ip2geotools.errors import InvalidRequestError  # type: ignore
 from ip2geotools.databases.noncommercial import DbIpCity  # type: ignore
 from ip2geotools.models import IpLocation  # type: ignore
 from pydantic import (  # pragma pylint: disable=no-name-in-module
-    AnyUrl,
     BaseModel,
-    HttpUrl,
+    ConfigDict,
 )
 
 from pro_tes.exceptions import MiddlewareException
@@ -49,10 +48,7 @@ class TesInstance(BaseModel):
     location: Optional[IpLocation] = None
     stats: TesStats = TesStats()
 
-    class Config:
-        """Model configuration."""
-
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
 class TaskInput(BaseModel):
@@ -64,10 +60,7 @@ class TaskInput(BaseModel):
 
     location: Optional[IpLocation] = None
 
-    class Config:
-        """Model configuration."""
-
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
 class TaskSummary(BaseModel):
@@ -79,8 +72,8 @@ class TaskSummary(BaseModel):
             information.
     """
 
-    inputs: dict[AnyUrl, TaskInput] = {}
-    tes_instances: dict[HttpUrl, TesInstance] = {}
+    inputs: dict[str, TaskInput] = {}
+    tes_instances: dict[str, TesInstance] = {}
 
 
 class TaskDistributionDistance(TaskDistributionBaseClass):
@@ -104,7 +97,7 @@ class TaskDistributionDistance(TaskDistributionBaseClass):
 
     def _set_tes_urls(
         self,
-        tes_urls: list[HttpUrl],
+        tes_urls: list[str],
         request: flask.Request,
     ) -> None:
         """Set TES URIs.
@@ -119,7 +112,7 @@ class TaskDistributionDistance(TaskDistributionBaseClass):
         self._set_distances()
         self.tes_urls = self._rank_tes_instances()
 
-    def _set_tes_instances(self, tes_urls: list[HttpUrl]) -> None:
+    def _set_tes_instances(self, tes_urls: list[str]) -> None:
         """Set TES instances.
 
         Args:
@@ -156,8 +149,8 @@ class TaskDistributionDistance(TaskDistributionBaseClass):
         """Set IP locations for TES instances and task inputs."""
         tes_urls = list(self.task_summary.tes_instances.keys())
         input_uris = list(self.task_summary.inputs.keys())
-        uris_unique: list[AnyUrl] = list(set(tes_urls + input_uris))
-        ips: dict[AnyUrl, str] = self._get_ips(*uris_unique)
+        uris_unique: list[str] = list(set(tes_urls + input_uris))
+        ips: dict[str, str] = self._get_ips(*uris_unique)
         locations = self._get_ip_locations(*ips.values())
         for url in tes_urls:
             self.task_summary.tes_instances[url].location = locations[ips[url]]
@@ -189,7 +182,7 @@ class TaskDistributionDistance(TaskDistributionBaseClass):
             )
             instance.stats = TesStats(total_distance=sum(distances))
 
-    def _rank_tes_instances(self) -> list[HttpUrl]:
+    def _rank_tes_instances(self) -> list[str]:
         """Rank TES instances by physical proximity to the task's inputs.
 
         Returns:
@@ -200,7 +193,7 @@ class TaskDistributionDistance(TaskDistributionBaseClass):
             MiddlewareException: If total distance is not available for a TES
                 instance.
         """
-        distances: dict[HttpUrl, float] = {}
+        distances: dict[str, float] = {}
         for url, instance in self.task_summary.tes_instances.items():
             if instance.stats.total_distance is None:
                 raise MiddlewareException(
@@ -213,7 +206,7 @@ class TaskDistributionDistance(TaskDistributionBaseClass):
         )
 
     @staticmethod
-    def _get_ips(*args: AnyUrl) -> dict[AnyUrl, str]:
+    def _get_ips(*args: str) -> dict[str, str]:
         """Get IP addresses for one or more URIs.
 
         Args:
@@ -225,7 +218,7 @@ class TaskDistributionDistance(TaskDistributionBaseClass):
         Raises:
             MiddlewareException: If IP address cannot be determined for a URI.
         """
-        ips: dict[AnyUrl, str] = {}
+        ips: dict[str, str] = {}
         for uri in args:
             try:
                 ips[uri] = gethostbyname(urlparse(strip_auth(str(uri))).netloc)

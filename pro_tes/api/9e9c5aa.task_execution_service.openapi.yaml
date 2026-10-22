@@ -528,7 +528,10 @@ components:
       description: Resources describes the resources requested by a task.
     tesServiceType:
       allOf:
-      - $ref: 'https://raw.githubusercontent.com/ga4gh-discovery/ga4gh-service-info/v1.0.0/service-info.yaml#/components/schemas/ServiceType'
+      # Deviation from upstream: referenced the schema in
+      # https://raw.githubusercontent.com/ga4gh-discovery/ga4gh-service-info/v1.0.0/service-info.yaml
+      # (fetched at startup); copied to `additions.openapi.yaml`
+      - $ref: '#/components/schemas/ServiceType'
       - type: object
         required:
         - artifact
@@ -539,7 +542,10 @@ components:
             example: tes
     tesServiceInfo:
       allOf:
-      - $ref: 'https://raw.githubusercontent.com/ga4gh-discovery/ga4gh-service-info/v1.0.0/service-info.yaml#/components/schemas/Service'
+      # Deviation from upstream: referenced the schema in
+      # https://raw.githubusercontent.com/ga4gh-discovery/ga4gh-service-info/v1.0.0/service-info.yaml
+      # (fetched at startup); copied to `additions.openapi.yaml`
+      - $ref: '#/components/schemas/Service'
       - type: object
         properties:
           storage:

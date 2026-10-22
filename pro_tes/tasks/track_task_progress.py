@@ -3,16 +3,14 @@
 import logging
 from time import sleep
 
-from foca.database.register_mongodb import _create_mongo_client  # type: ignore
-from foca.models.config import Config  # type: ignore
-from flask import Flask
-from flask import current_app
+from foca import get_collection
 import tes  # type: ignore
 
 from pro_tes.ga4gh.tes.models import TesState, TesTask
 from pro_tes.utils.db import DbDocumentConnector
 from pro_tes.ga4gh.tes.states import States
 from pro_tes.celery_worker import celery
+from pro_tes.utils.misc import get_custom_config
 from pro_tes.utils.models import TaskModelConverter
 
 logger = logging.getLogger(__name__)
@@ -50,18 +48,11 @@ def task__track_task_progress(  # pylint: disable=too-many-arguments,R0917
         user: User-name for basic authentication.
         password: Password for basic authentication.
     """
-    foca_config: Config = current_app.config.foca   # type: ignore
-    controller_config: dict = foca_config.custom["controllers"]["post_task"]
+    polling = get_custom_config().controllers.post_task.polling
 
     # create database client
-    collection = _create_mongo_client(
-        app=Flask(__name__),
-        host=foca_config.db.host,
-        port=foca_config.db.port,
-        db="taskStore",
-    ).db["tasks"]
     db_client = DbDocumentConnector(
-        collection=collection,
+        collection=get_collection("taskStore", "tasks"),
         worker_id=worker_id,
     )
 
@@ -87,13 +78,13 @@ def task__track_task_progress(  # pylint: disable=too-many-arguments,R0917
     task_state: TesState = TesState.UNKNOWN
     attempt: int = 1
     while task_state not in States.FINISHED:
-        sleep(controller_config["polling"]["wait"])
+        sleep(polling.wait)
         try:
             response = cli.get_task(
                 task_id=remote_task_id,
             )
         except Exception as exc:  # pylint: disable=broad-except
-            if attempt <= controller_config["polling"]["attempts"]:
+            if attempt <= polling.attempts:
                 attempt += 1
                 logger.warning(exc, exc_info=True)
                 continue
@@ -117,4 +108,6 @@ def task__track_task_progress(  # pylint: disable=too-many-arguments,R0917
         document.task.logs[index].outputs = logs.outputs
 
     # updating the database
-    db_client.upsert_fields_in_root_object(root="task", **document.task.dict())
+    db_client.upsert_fields_in_root_object(
+        root="task", **document.task.model_dump(mode="json", exclude_none=True)
+    )

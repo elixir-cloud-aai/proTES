@@ -1,0 +1,131 @@
+paths:
+  # Served by FOCA from the config (`service_info`); the controller set here
+  # takes precedence over the one added to all operations (`api.specs` in
+  # `config.yaml`)
+  /service-info:
+    get:
+      x-openapi-router-controller: foca.api.service_info
+components:
+  schemas:
+    # GA4GH service info schemas (version 1.0.0), as in
+    # https://raw.githubusercontent.com/ga4gh-discovery/ga4gh-service-info/v1.0.0/service-info.yaml
+    Service:
+      description: 'GA4GH service'
+      type: object
+      required:
+        - id
+        - name
+        - type
+        - organization
+        - version
+      properties:
+        id:
+          type: string
+          description: 'Unique ID of this service. Reverse domain name notation is recommended, though not required. The identifier should attempt to be globally unique so it can be used in downstream aggregator services e.g. Service Registry.'
+          example: 'org.ga4gh.myservice'
+        name:
+          type: string
+          description: 'Name of this service. Should be human readable.'
+          example: 'My project'
+        type:
+          $ref: '#/components/schemas/ServiceType'
+        description:
+          type: string
+          description: 'Description of the service. Should be human readable and provide information about the service.'
+          example: 'This service provides...'
+        organization:
+          type: object
+          description: 'Organization providing the service'
+          required:
+            - name
+            - url
+          properties:
+            name:
+              type: string
+              description: 'Name of the organization responsible for the service'
+              example: 'My organization'
+            url:
+              type: string
+              format: uri
+              description: 'URL of the website of the organization (RFC 3986 format)'
+              example: 'https://example.com'
+        contactUrl:
+          type: string
+          format: uri
+          description: 'URL of the contact for the provider of this service, e.g. a link to a contact form (RFC 3986 format), or an email (RFC 2368 format).'
+          example: 'mailto:support@example.com'
+        documentationUrl:
+          type: string
+          format: uri
+          description: 'URL of the documentation of this service (RFC 3986 format). This should help someone learn how to use your service, including any specifics required to access data, e.g. authentication.'
+          example: 'https://docs.myservice.example.com'
+        createdAt:
+          type: string
+          format: date-time
+          description: 'Timestamp describing when the service was first deployed and available (RFC 3339 format)'
+          example: '2019-06-04T12:58:19Z'
+        updatedAt:
+          type: string
+          format: date-time
+          description: 'Timestamp describing when the service was last updated (RFC 3339 format)'
+          example: '2019-06-04T12:58:19Z'
+        environment:
+          type: string
+          description: 'Environment the service is running in. Use this to distinguish between production, development and testing/staging deployments. Suggested values are prod, test, dev, staging. However this is advised and not enforced.'
+          example: 'test'
+        version:
+          type: string
+          description: 'Version of the service being described. Semantic versioning is recommended, but other identifiers, such as dates or commit hashes, are also allowed. The version should be changed whenever the service is updated.'
+          example: '1.0.0'
+    ServiceType:
+      description: 'Type of a GA4GH service'
+      type: object
+      required:
+        - group
+        - artifact
+        - version
+      properties:
+        group:
+          type: string
+          description: 'Namespace in reverse domain name format. Use `org.ga4gh` for implementations compliant with official GA4GH specifications. For services with custom APIs not standardized by GA4GH, or implementations diverging from official GA4GH specifications, use a different namespace (e.g. your organization''s reverse domain name).'
+          example: 'org.ga4gh'
+        artifact:
+          type: string
+          description: 'Name of the API or GA4GH specification implemented. Official GA4GH types should be assigned as part of standards approval process. Custom artifacts are supported.'
+          example: 'beacon'
+        version:
+          type: string
+          description: 'Version of the API or specification. GA4GH specifications use semantic versioning.'
+          example: '1.0.0'
+    tesTaskLog:
+      properties:
+        metadata:
+          properties:
+            forwarded_to:
+              type: array
+              items:
+                $ref: '#/components/schemas/tesForward'
+              description: |-
+                TES servers to which the task was forwarded, in the order of
+                forwarding.
+    tesForward:
+      required:
+        - id
+        - url
+      type: object
+      properties:
+        id:
+          type: string
+          description: Task identifier assigned by the TES server to which the task was forwarded.
+          example: job-0012345
+        url:
+          type: string
+          description: TES server to which the task was forwarded.
+          example: https://my.tes.instance/
+        forward_time:
+          type: string
+          description: |-
+            When the task was forwarded, in RFC 3339 format; not set for
+            forwards logged by earlier versions of proTES.
+          example: 2020-10-02T10:00:00-05:00
+      description: Describes a TES server to which the task was forwarded.
