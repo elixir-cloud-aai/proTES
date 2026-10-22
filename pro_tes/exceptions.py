@@ -16,8 +16,6 @@ from werkzeug.exceptions import (
     RequestEntityTooLarge,
 )
 
-# pylint: disable="too-few-public-methods"
-
 
 class IdsUnavailableProblem(PyMongoError):
     """Raised when task identifier is unavailable."""

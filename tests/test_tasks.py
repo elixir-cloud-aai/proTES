@@ -1,7 +1,5 @@
 """Tests of the TES API endpoints, with a fake TES backend."""
 
-# pylint: disable=redefined-outer-name
-
 from typing import Any, ClassVar
 
 from flask.testing import FlaskClient

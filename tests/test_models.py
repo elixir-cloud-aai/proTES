@@ -32,9 +32,7 @@ def test_ignore_error_relayed(app: FlaskApp) -> None:
     """`ignore_error` of executors is relayed to TES backends (cf. #176)."""
     executor = {"image": "alpine", "command": ["true"], "ignore_error": True}
     with app.app.app_context():
-        payload = TaskRuns()._sanitize_request(  # pylint: disable=W0212
-            payload={"executors": [executor]}
-        )
+        payload = TaskRuns()._sanitize_request(payload={"executors": [executor]})
     assert payload["executors"][0].ignore_error is True
 
 
@@ -97,7 +95,7 @@ def test_forward_logged(app: FlaskApp) -> None:
         )
     )
     with app.app.app_context():
-        document = TaskRuns()._update_task_metadata(  # pylint: disable=W0212
+        document = TaskRuns()._update_task_metadata(
             db_document=document,
             tes_url="https://tes.example.org",
             remote_task_id="task-1",

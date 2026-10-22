@@ -8,8 +8,6 @@ from pro_tes.exceptions import MiddlewareException
 from pro_tes.middleware.abstract_middleware import AbstractMiddleware
 from pro_tes.utils.misc import get_custom_config
 
-# pragma pylint: disable=too-few-public-methods
-
 
 class TaskDistributionBaseClass(AbstractMiddleware):
     """Task distribution middleware base class.
@@ -46,7 +44,7 @@ class TaskDistributionBaseClass(AbstractMiddleware):
     def _set_tes_urls(
         self,
         tes_urls: list[str],
-        request: flask.Request,  # pylint: disable=unused-argument
+        request: flask.Request,
     ) -> None:
         """Set TES URIs.
 

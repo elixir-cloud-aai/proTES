@@ -13,7 +13,7 @@ from pro_tes.tasks import track_task_progress
 from pro_tes.utils.db import DbDocumentConnector
 
 
-class FakeClient:  # pylint: disable=too-few-public-methods
+class FakeClient:
     """TES client whose task is complete."""
 
     def __init__(self, url: str, **kwargs: Any) -> None:

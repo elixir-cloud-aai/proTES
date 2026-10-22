@@ -8,8 +8,6 @@ from foca.utils.logging import log_traffic
 
 from pro_tes.ga4gh.tes.task_runs import TaskRuns
 
-# pragma pylint: disable=invalid-name,unused-argument
-
 # Get logger instance
 logger = logging.getLogger(__name__)
 
@@ -17,7 +15,7 @@ logger = logging.getLogger(__name__)
 # POST /tasks/{id}:cancel
 @log_traffic
 def CancelTask(
-    id: str,  # pylint: disable=redefined-builtin
+    id: str,
     *args: Any,
     **kwargs: Any,
 ) -> dict[str, Any]:
@@ -49,7 +47,7 @@ def CreateTask(*args: Any, **kwargs: Any) -> dict[str, Any]:
 
 # GET /tasks/{id}
 @log_traffic
-def GetTask(id: str, *args: Any, **kwargs: Any) -> dict[str, Any]:  # pylint: disable=redefined-builtin
+def GetTask(id: str, *args: Any, **kwargs: Any) -> dict[str, Any]:
     """Get info for individual task.
 
     Args:

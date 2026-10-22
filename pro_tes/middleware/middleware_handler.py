@@ -80,7 +80,7 @@ class MiddlewareHandler:
                 instance = mw_class()
                 try:
                     request = instance.apply_middleware(request, *args, **kwargs)
-                except Exception as exc:  # pylint: disable=W0703
+                except Exception as exc:
                     logger.warning(
                         "Error occurred in middleware class '%s': %s", mw_class, exc
                     )

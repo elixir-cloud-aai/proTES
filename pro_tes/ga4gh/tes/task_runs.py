@@ -42,10 +42,6 @@ from pro_tes.utils.db import DbDocumentConnector
 from pro_tes.utils.misc import get_custom_config, strip_auth
 from pro_tes.utils.models import TaskModelConverter
 
-# pragma pylint: disable=invalid-name,redefined-builtin,unused-argument
-# pragma pylint: disable=too-many-locals
-# pylint: disable=unsubscriptable-object
-
 logger = logging.getLogger(__name__)
 
 
@@ -86,9 +82,7 @@ class TaskRuns:
         )
         self.store_logs = self.custom_config.storeLogs.execution_trace
 
-    def create_task(  # pylint: disable=too-many-statements,too-many-branches
-        self, **kwargs: Any
-    ) -> dict[str, Any]:
+    def create_task(self, **kwargs: Any) -> dict[str, Any]:
         """Start task.
 
         Args:

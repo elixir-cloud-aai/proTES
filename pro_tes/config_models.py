@@ -1,8 +1,6 @@
 """Custom app config models."""
 
-from pydantic import BaseModel, RootModel  # pylint: disable=no-name-in-module
-
-# pragma pylint: disable=too-few-public-methods
+from pydantic import BaseModel, RootModel
 
 
 class DB(BaseModel):

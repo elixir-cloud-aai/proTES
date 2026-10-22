@@ -39,13 +39,13 @@ def mongo_client(monkeypatch: pytest.MonkeyPatch) -> MongoClient[dict[str, Any]]
 
 @pytest.fixture
 def app(
-    mongo_client: MongoClient[dict[str, Any]],  # pylint: disable=unused-argument
+    mongo_client: MongoClient[dict[str, Any]],
 ) -> FlaskApp:
     """App created from `config.yaml`."""
     return init_app()
 
 
 @pytest.fixture
-def client(app: FlaskApp) -> FlaskClient:  # pylint: disable=redefined-outer-name
+def client(app: FlaskApp) -> FlaskClient:
     """Test client of the app."""
     return app.app.test_client()

@@ -8,8 +8,6 @@ from pro_tes.plugins.middlewares.task_distribution.base import (
     TaskDistributionBaseClass,
 )
 
-# pragma pylint: disable=too-few-public-methods
-
 
 class TaskDistributionRandom(TaskDistributionBaseClass):
     """Random task distribution middleware.

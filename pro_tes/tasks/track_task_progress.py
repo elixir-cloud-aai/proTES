@@ -17,16 +17,14 @@ from pro_tes.utils.models import TaskModelConverter
 logger = logging.getLogger(__name__)
 
 
-# pylint: disable-msg=too-many-locals
-# pylint: disable=unsubscriptable-object
 @celery.task(
     name="tasks.track_run_progress",
     bind=True,
     ignore_result=True,
     track_started=True,
 )
-def task__track_task_progress(  # pylint: disable=too-many-arguments,R0917
-    self: Any,  # pylint: disable=unused-argument
+def task__track_task_progress(
+    self: Any,
     worker_id: str,
     remote_host: str,
     remote_base_path: str,
@@ -85,7 +83,7 @@ def task__track_task_progress(  # pylint: disable=too-many-arguments,R0917
             response = cli.get_task(
                 task_id=remote_task_id,
             )
-        except Exception as exc:  # pylint: disable=broad-except
+        except Exception as exc:
             if attempt <= polling.attempts:
                 attempt += 1
                 logger.warning(exc, exc_info=True)

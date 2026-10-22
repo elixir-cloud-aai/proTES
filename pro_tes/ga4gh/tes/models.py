@@ -5,17 +5,12 @@
 #   timestamp: 2022-07-07T11:45:30+00:00
 # manually edited
 
-# pragma pylint: disable=missing-class-docstring,invalid-name
-
 from __future__ import annotations
 
 from enum import Enum
 from typing import Any
 
-# pragma pylint: disable=no-name-in-module
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-
-# pragma pylint: disable=too-few-public-methods
 
 
 class CustomBaseModel(BaseModel):

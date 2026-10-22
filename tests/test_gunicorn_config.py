@@ -76,7 +76,7 @@ def test_app_uri() -> None:
 
 
 def test_app_uri_loads(
-    mongo_client: MongoClient[dict[str, Any]],  # pylint: disable=unused-argument
+    mongo_client: MongoClient[dict[str, Any]],
 ) -> None:
     """Gunicorn gets a WSGI app from the image's command."""
     app = import_app(load_settings().app_uri)

@@ -1,7 +1,5 @@
 """Tests of the app created from `config.yaml`, with FOCA 0.15."""
 
-# pylint: disable=redefined-outer-name
-
 from importlib.metadata import version
 from pathlib import Path
 from typing import Any
@@ -105,7 +103,7 @@ def test_request_body_size_limit(client: FlaskClient) -> None:
 def test_placeholder_service_info(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
-    mongo_client: MongoClient[dict[str, Any]],  # pylint: disable=unused-argument
+    mongo_client: MongoClient[dict[str, Any]],
     capsys: pytest.CaptureFixture[str],
     service: dict[str, Any],
     fields: str | None,

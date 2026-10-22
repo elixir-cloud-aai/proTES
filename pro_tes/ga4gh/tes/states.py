@@ -2,8 +2,6 @@
 
 from typing import ClassVar
 
-# pragma pylint: disable=too-few-public-methods
-
 
 class States:
     """TES task states."""

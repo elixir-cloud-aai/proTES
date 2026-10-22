@@ -9,7 +9,7 @@ from geopy.distance import geodesic
 from ip2geotools.databases.noncommercial import DbIpCity
 from ip2geotools.errors import InvalidRequestError
 from ip2geotools.models import IpLocation
-from pydantic import (  # pragma pylint: disable=no-name-in-module
+from pydantic import (
     BaseModel,
     ConfigDict,
 )
@@ -21,8 +21,6 @@ from pro_tes.plugins.middlewares.task_distribution.base import (
 from pro_tes.utils.misc import strip_auth
 
 logger = logging.getLogger(__name__)
-
-# pragma pylint: disable=too-few-public-methods
 
 
 class TesStats(BaseModel):
