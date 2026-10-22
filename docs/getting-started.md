@@ -61,6 +61,14 @@ Set the [service info](configuration.md#service-info) to describe your
 deployment: the defaults are placeholders, and proTES logs a warning on
 startup while `id` or `organization` still have them.
 
+All endpoints except `GET /service-info`, the specification and the Swagger
+UI require an access token of a trusted identity provider (see [Access
+control](access-control.md)). The Docker Compose setup applies the config
+overlay [`config.dev.yaml`](https://github.com/elixir-cloud-aai/proTES/blob/dev/config.dev.yaml):
+set the issuer of your identity provider and map your groups to roles
+there. To try the API without an identity provider, use the Compose setup of
+the [smoke test](development.md), which brings a fake one.
+
 ## Troubleshooting: network MTU
 
 Sometimes containers cannot reach external hosts, such as the TES instances,

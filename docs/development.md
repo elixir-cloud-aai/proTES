@@ -40,9 +40,11 @@ docker stop mongodb-test
 ```
 
 CI also runs the app with Docker Compose, with a fake TES backend instead of
-the TES instances of the config (`tests/smoke/`), and checks that tasks are
-relayed to it and tracked until they are complete. To run it locally (with
-curl and jq):
+the TES instances of the config (`tests/smoke/`), which is also the identity
+provider (it issues access tokens at
+`http://fake-tes:8080/oidc/token?sub=<user>`, inside the Compose network),
+and checks that tasks are relayed to it and tracked until they are complete,
+and access control. To run it locally (with curl and jq):
 
 ```bash
 export COMPOSE_FILE=docker-compose.yaml:tests/smoke/compose.yaml
@@ -55,7 +57,9 @@ To try changes in the running app, rebuild it with
 `docker compose up --build -d`. `python -m pro_tes.app` runs the app with
 Flask's development server instead of Gunicorn (see
 [Server](configuration.md#server)); it needs a MongoDB at `db.host` and a
-RabbitMQ at `jobs.host` of the config.
+RabbitMQ at `jobs.host` of the config, and a config overlay with the
+security settings (e.g., `FOCA_CONFIG_OVERLAY=config.dev.yaml`; see [Access
+control](access-control.md#deployment-settings)), as do the Celery workers.
 
 Run `pre-commit` in the environment with the dev dependencies: the mypy and
 ast-grep hooks use the installed packages. The first run sets up the other

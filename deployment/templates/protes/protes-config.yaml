@@ -1,0 +1,9 @@
+---
+# App config overlay (`config` of the values), for the app and the worker
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.protes.appName }}-config
+data:
+  config.yaml: |
+{{ toYaml .Values.config | indent 4 }}

@@ -234,22 +234,42 @@ class Middlewares(RootModel[list[list[str]]]):
     ]
 
 
+class AccessControl(BaseModel):
+    """Access control settings of the app.
+
+    Args:
+        require_admin: Whether the app refuses to start unless a group is
+            mapped to the role `admin` (in
+            `security.access_control.group_mapping`).
+
+    Attributes:
+        require_admin: Whether the app refuses to start unless a group is
+            mapped to the role `admin` (in
+            `security.access_control.group_mapping`).
+    """
+
+    require_admin: bool = True
+
+
 class CustomConfig(BaseModel):
     """Custom app configuration.
 
     Args:
+        access_control: Access control settings of the app.
         controllers: All controller-related config.
         tes: TES service list and defaults.
         store_logs: Logging preferences.
         middlewares: Middleware class paths.
 
     Attributes:
+        access_control: Access control settings of the app.
         controllers: All controller-related config.
         tes: TES service list and defaults.
         store_logs: Logging preferences.
         middlewares: Middleware class paths.
     """
 
+    access_control: AccessControl = AccessControl()
     controllers: Controllers = Controllers()
     tes: Tes = Tes()
     storeLogs: StoreLogs = StoreLogs()

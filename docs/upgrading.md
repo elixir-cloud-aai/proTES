@@ -15,6 +15,23 @@ The service info is configured in `service_info.service` (see [Service
 info](configuration.md#service-info)); it is no longer stored in the
 database, so the `service_info` collection can be dropped.
 
+## Authentication
+
+The TES API requires access tokens of trusted issuers, and roles from groups
+of the identity provider (see [Access control](access-control.md)); before,
+anyone could create, list, read and cancel all tasks. Deployments must set
+the trusted issuers (`security.auth.issuers`), the audience
+(`security.auth.audience`) and the groups of the roles
+(`security.access_control.claim_groups` and `group_mapping`, at least one
+group of the role `admin`): proTES doesn't start without them (unless
+`custom.access_control.require_admin` is false). Clients send
+`Authorization: Bearer <token>` with each request. HTTP Basic credentials of
+requests are no longer passed through to TES instances, as the
+`Authorization` header carries the token: TES instances that require them
+can't be used until proTES has credentials of its own for them
+([#213](https://github.com/elixir-cloud-aai/proTES/issues/213)). The Helm
+chart sets the config overlay from the value `config`.
+
 ## Errors
 
 Errors are [problem details](api.md#errors) (`title`, `status`, `detail`)

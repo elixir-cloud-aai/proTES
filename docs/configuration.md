@@ -61,6 +61,13 @@ instance and the remote task identifier of each forwarded task in the task's
 logs (`logs[].metadata.forwarded_to`); proTES keeps them for cancellation
 either way.
 
+## Security
+
+The TES API requires access tokens of the trusted issuers
+(`security.auth`), and roles from groups (`security.access_control`); the
+issuers, the audience and the groups are deployment settings without
+defaults. See [Access control](access-control.md).
+
 ## Request size limit
 
 Request bodies are limited to `server.max_content_length` bytes (default:

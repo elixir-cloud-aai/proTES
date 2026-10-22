@@ -20,10 +20,13 @@ server:
   # authentication and parsing
   max_content_length: 1048576
 
-# Security configuration
+# Security configuration: the TES API requires access tokens of trusted
+# issuers (OpenID Connect), except for `GET /service-info`; who may do what
+# is decided by roles (`access_control`). Which identity provider is trusted,
+# for which audiences, and which groups have which role is deployment
+# configuration, without defaults: the app refuses to start without trusted
+# issuers and a group mapped to the role `admin` (see `docs/access-control.md`)
 # Cf. https://foca.readthedocs.io/en/latest/configuration/auth/
-# Authentication is disabled for the TES API for now (`disable_auth` in
-# `api.specs`); it is enabled with LS Login tokens in a later version (#212)
 security:
   auth:
     add_key_to_claims: True
@@ -31,11 +34,38 @@ security:
       - RS256
     allow_expired: False
     # Trusted token issuers (`iss` claim); tokens of other issuers are
-    # rejected. None yet, as authentication is disabled: FOCA requires an
-    # `audience` with issuers, so LS Login
-    # (`https://login.aai.lifescience-ri.eu/oidc/`) and the audience are set
-    # when authentication is enabled (#212)
+    # rejected. Deployments set them, and `audience`: only tokens for the
+    # apps calling proTES (e.g., the client IDs of its front ends) are
+    # accepted, e.g.:
+    # issuers:
+    #   - https://login.example.org/oidc/
+    # audience:
+    #   - my-portal-client-id
+    # Claims fetched from the user info endpoint of the issuer, e.g., groups
+    # (if the identity provider doesn't put them into access tokens):
+    # userinfo_claims:
+    #   - groups
     issuers: []
+  # Access control: users (the role `user`) may create, list, read and cancel
+  # tasks; admins (the role `admin`) may do everything. Roles are given to
+  # groups of the identity provider (values of the claim `claim_groups`) by
+  # `group_mapping`, e.g.:
+  # claim_groups: groups
+  # group_mapping:
+  #   compute-users: user
+  #   compute-admins: admin
+  # Cf. https://foca.readthedocs.io/en/latest/access-control/
+  access_control:
+    enabled: True
+    enforce: True
+    model: access_control/model.conf
+    db_name: taskStore
+    collection_name: policy_rules
+    # Managed on startup (removed rules are deleted)
+    policies:
+      - [p, user, /ga4gh/tes/v1/tasks, (GET)|(HEAD)|(POST)]
+      # `POST` is cancellation (`/tasks/{id}:cancel`)
+      - [p, user, "/ga4gh/tes/v1/tasks/:id", (GET)|(HEAD)|(POST)]
 
 # Database configuration
 # Cf. https://foca.readthedocs.io/en/latest/configuration/db/
@@ -79,8 +109,7 @@ api:
           - bearerAuth: []
       add_security_fields:
         x-bearerInfoFunc: foca.security.auth.validate_token
-      # Authentication is enabled in a later version (#212)
-      disable_auth: True
+      disable_auth: False
       connexion:
         strict_validation: True
         # current specs have inconsistency, therefore disabling response validation
@@ -155,6 +184,11 @@ exceptions:
 
 # Custom configuration
 custom:
+  # The app refuses to start unless a group is mapped to the role `admin`
+  # (`security.access_control.group_mapping`); set `require_admin` to false
+  # to run without admins
+  access_control:
+    require_admin: True
   controllers:
     post_task:
       db:

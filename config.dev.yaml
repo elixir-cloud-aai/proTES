@@ -1,0 +1,27 @@
+# Config overlay for local development with Docker Compose
+# (`docker-compose.yaml`); NOT for deployments, which must set the issuers,
+# the audience and the groups of the roles (see `docs/access-control.md`).
+# For local tests with access tokens without an identity provider of your
+# own, use the Compose override of the smoke test instead, with its fake
+# identity provider (see `docs/development.md`)
+security:
+  auth:
+    # Replace with the issuer of your identity provider, whose tokens you use
+    issuers:
+      - https://login.example.org/oidc/
+    # Accept tokens for any audience (i.e., of any app)
+    verify_audience: False
+    # Claims with the groups of users, if not in access tokens
+    userinfo_claims:
+      - groups
+  access_control:
+    # Map your groups to the roles `user` and `admin`, e.g.:
+    # group_mapping:
+    #   compute-users: user
+    #   compute-admins: admin
+    claim_groups: groups
+    group_mapping: {}
+custom:
+  access_control:
+    # Start without admin groups
+    require_admin: False
