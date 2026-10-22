@@ -3,6 +3,7 @@
 import importlib.util
 from pathlib import Path
 from types import SimpleNamespace
+from urllib.parse import urlsplit
 
 import pytest
 
@@ -79,7 +80,8 @@ def test_readme_links_are_absolute() -> None:
     assert [
         target
         for target in targets
-        if "readthedocs.io" in target and not target.startswith(DOCS_URL)
+        if urlsplit(target).hostname == urlsplit(DOCS_URL).hostname
+        and not target.startswith(DOCS_URL)
     ] == []
 
 

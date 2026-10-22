@@ -18,8 +18,7 @@ reads the same config.
 
 Tasks are forwarded to the TES instances listed in `custom.tes.service_list`
 (their base URLs, without the API path `/ga4gh/tes/v1`). The base config lists
-public TES instances of the ELIXIR On-Cloud network as examples; deployments
-set their own list. The [middlewares](middlewares.md) decide which of them
+some public TES instances as examples; deployments set their own list. The [middlewares](middlewares.md) decide which of them
 are tried, and in which order (see [Tasks](api.md#tasks)).
 
 ## Middlewares
