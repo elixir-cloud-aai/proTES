@@ -7,8 +7,6 @@ build-backend = "setuptools.build_meta"
 [tool.ruff]
 line-length = 88
 target-version = "py310"
-# Not collectable yet; fixed or removed with #207
-extend-exclude = ["tests/unitTest"]
 
 [tool.ruff.lint]
 # The rule set shared by FOCA and FOCA apps: FOCA's rules plus `G` and `S`;
@@ -54,8 +52,6 @@ convention = "google"
 
 [tool.mypy]
 files = ["pro_tes", "docs/hooks.py", "tests"]
-# Not collectable yet; fixed or removed with #207
-exclude = ["^tests/unitTest/"]
 # Complete type hints: all functions annotated, generic types parametrized
 # (instead of ruff's `ANN` rules, which report missing hints only, without
 # checking them)
@@ -128,8 +124,6 @@ dev = [
     "packaging>=26.3",
     "pre-commit>=4.6",
     "pytest>=9.1",
-    # Used by the tests in `tests/unitTest`
-    "pytest-ordering>=0.6",
     # Used by the tests; builds use `build-system.requires`
     "setuptools-scm>=10.3",
     # Used by the tests on Python 3.10 (`tomllib` from 3.11 on)
