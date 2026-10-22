@@ -24,6 +24,19 @@ def test_mongo_client(mongo_client: MongoClient[dict[str, Any]]) -> None:
         assert mongo_client.server_info()["version"]
 
 
+def test_mongo_dbname_unset(
+    monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest
+) -> None:
+    """Apps of the tests use database `DB` despite `MONGO_DBNAME`."""
+    monkeypatch.setenv("MONGO_DBNAME", "deployed")
+    mongo_client = request.getfixturevalue("mongo_client")
+    app = request.getfixturevalue("app")
+    with app.app.app_context():
+        get_collection(DB, "tasks").insert_one({"worker_id": "fixture"})
+    assert "deployed" not in mongo_client.list_database_names()
+    assert mongo_client[DB]["tasks"].count_documents({}) == 1
+
+
 def test_app_uses_mongo_client(
     app: FlaskApp, mongo_client: MongoClient[dict[str, Any]]
 ) -> None:

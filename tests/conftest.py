@@ -187,8 +187,10 @@ def mongo_client(
     """MongoDB client used by all apps created in a test.
 
     The MongoDB at `MONGODB_TEST_URI`, without the databases `DBS`, if set;
-    otherwise a new in-memory one.
+    otherwise a new in-memory one. `MONGO_DBNAME` of the environment is
+    unset, so that the apps use database `DB` (unless a test sets it).
     """
+    monkeypatch.delenv("MONGO_DBNAME", raising=False)
     client: MongoClient[dict[str, Any]]
     if _mongodb is None:
         client = mongomock.MongoClient()

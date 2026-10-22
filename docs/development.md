@@ -28,6 +28,7 @@ one of them exists), e.g.:
 
 ```bash
 docker run -d --rm --name mongodb-test -p 127.0.0.1:27017:27017 mongo:7.0
+until docker exec mongodb-test mongosh --quiet --eval 'db.adminCommand(ping).ok'; do sleep 1; done
 MONGODB_TEST_URI=mongodb://localhost:27017 pytest
 docker stop mongodb-test
 ```
