@@ -26,15 +26,25 @@ jobs:
       - name: Pin pip version
         run: python -m pip install --upgrade "pip<24.1"
       - name: Install requirements
-        run: |
-          pip install .
-          pip install -r requirements_dev.txt
+        run: pip install -e ".[dev]"
       - name: Lint with Flake8
-        run: flake8 pro_tes/ setup.py
+        run: flake8 pro_tes/
       - name: Lint with Pylint
-        run: pylint pro_tes/ setup.py
+        run: pylint pro_tes/
       - name: Type check with mypy
         run: mypy pro_tes/
+      - name: Build distributions
+        run: python -m build
+      - name: Check wheel contents
+        run: |
+          unzip -Z1 dist/*.whl | tee wheel-contents.txt
+          if grep -Ev '^pro_tes(/|-[^/]+\.dist-info/)' wheel-contents.txt; then
+            echo "::error::Unexpected files in wheel"
+            exit 1
+          fi
+          grep -qx 'pro_tes/config.yaml' wheel-contents.txt
+          grep -Eqx 'pro_tes-[^/]+\.dist-info/licenses/LICENSE' wheel-contents.txt
+          grep -q '^pro_tes/api/.*\.yaml$' wheel-contents.txt
   unit-test:
     name: Run unit tests (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
@@ -49,18 +59,16 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install requirements
-        run: |
-          pip install .
-          pip install -r requirements_dev.txt
+        run: pip install -e ".[dev]"
       # The tests in `tests/unitTest` are not collectable yet (#207)
       - name: Run unit tests
         run: pytest tests --ignore=tests/unitTest --ignore=tests/test_integration
   test:
     name: Run tests
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
+    env:
+      # Passed to the image build by Docker Compose, as for published images
+      SETUPTOOLS_SCM_PRETEND_VERSION: 0.0.0+compose
     steps:
       - name: Check out repository
         uses: actions/checkout@v3
@@ -69,21 +77,24 @@ jobs:
         with:
           python-version: "3.10"
       - name: Install requirements
-        run: |
-          pip install .
-          pip install -r requirements_dev.txt
+        run: pip install -e ".[dev]"
       - name: Deploy app
-        run: docker compose up -d --build
-      - name: Wait for app startup
+        # Waits until the containers are healthy (see their health checks)
+        run: docker compose up -d --build --wait --wait-timeout 300
+      - name: Check app version
         run: |
-          for i in $(seq 1 24); do
-            sleep 5; curl localhost:8080 -so /dev/null && break;
-            docker compose ps;
-            echo "Retrying ($i) in 5 seconds...";
-          done
+          actual="$(docker compose exec -T protes python -c \
+            "from importlib.metadata import version; print(version('pro-tes'))")"
+          if [ "${actual}" != "${SETUPTOOLS_SCM_PRETEND_VERSION}" ]; then
+            echo "::error::App reports version '${actual}', expected '${SETUPTOOLS_SCM_PRETEND_VERSION}'"
+            exit 1
+          fi
       - name: Run integration tests
         shell: bash
         run: pytest tests/test_integration
+      - name: Show app logs
+        if: failure()
+        run: docker compose logs
       - name: Tear down app
         run: docker compose down
   publish:
@@ -93,25 +104,42 @@ jobs:
     needs: [lint, unit-test, test]
     steps:
       - name: Check out repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # Full history and tags, to derive the version
+          fetch-depth: 0
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      # The Docker build gets no Git metadata, so the version (e.g.,
+      # `0.3.1.dev4+g<commit>`) is passed as a build argument
+      - name: Derive version
+        id: version
+        # Same bound as in `build-system.requires` of `pyproject.toml`
+        run: |
+          pip install "setuptools-scm>=8"
+          echo "version=$(python -m setuptools_scm)" >> "$GITHUB_OUTPUT"
       - name: Generate tag
         run: |
           echo "TAG=$(date '+%Y%m%d')" >> $GITHUB_ENV
-      - name: Build and publish image
-        id: docker
-        uses: philips-software/docker-ci-scripts@v5.0.0
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Log in to Docker Hub
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
-          dockerfile: .
-          image-name: "protes"
-          tags: "latest ${{ env.TAG }}"
-          push-branches: "${{ github.event.repository.default_branch }}"
-        env:
-          REGISTRY_USERNAME: ${{ secrets.DOCKERHUB_LOGIN }}
-          REGISTRY_TOKEN: "${{ secrets.DOCKERHUB_TOKEN }}"
-          DOCKER_ORGANIZATION: ${{ secrets.DOCKERHUB_ORG }}
-          GITHUB_ORGANIZATION: ${{ github.repository_owner }}
-      - name: Verify that image was pushed
-        run: |
-          echo "Push indicator: ${{ steps.docker.outputs.push-indicator }}"
-          echo "# Set to 'true' if image was pushed, empty string otherwise"
-          test "${{ steps.docker.outputs.push-indicator }}" == "true"
+          username: ${{ secrets.DOCKERHUB_LOGIN }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      # Same tags as before (`latest` and the date); OCI label with the
+      # version
+      - name: Build and push image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_ORG }}/protes:latest
+            ${{ secrets.DOCKERHUB_ORG }}/protes:${{ env.TAG }}
+          labels: org.opencontainers.image.version=${{ steps.version.outputs.version }}
+          build-args: SETUPTOOLS_SCM_PRETEND_VERSION=${{ steps.version.outputs.version }}

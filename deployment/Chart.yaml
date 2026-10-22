@@ -4,5 +4,5 @@ description: >-
   proTES, a gateway for the GA4GH Task Execution Service API by ELIXIR
   On-Cloud, with MongoDB, RabbitMQ and Celery workers
 type: application
-version: 2.0.1
+version: 3.0.0
 appVersion: 2.0.1
