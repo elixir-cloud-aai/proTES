@@ -22,6 +22,7 @@ from werkzeug.datastructures import Authorization
 from pro_tes.config_models import CustomConfig
 from pro_tes.exceptions import (
     BadRequest,
+    MiddlewareException,
     NoTesInstancesAvailable,
     TaskNotFound,
 )
@@ -93,6 +94,8 @@ class TaskRuns:
 
         Raises:
             pro_tes.exceptions.BadRequest: The request has no JSON body.
+            pro_tes.exceptions.MiddlewareException: The middlewares removed
+                the JSON body.
         """
         # create task document
         start_time = datetime.now().strftime("%m-%d-%Y %H:%M:%S")
@@ -111,7 +114,7 @@ class TaskRuns:
 
         # update task document
         if request_modified.json is None:
-            raise BadRequest("Request body is missing after middlewares")
+            raise MiddlewareException("Middlewares removed the request body")
         payload: dict[str, Any] = request_modified.json
         tes_urls = deepcopy(payload["tes_urls"])
         del payload["tes_urls"]
@@ -623,8 +626,11 @@ class TaskRuns:
             root="tes_endpoint",
             **tes_endpoint_dict,
         )
+        if db_document.task.logs is None:
+            raise ValueError(f"Task '{db_document.task.id}' has no logs")
+        task_logs = db_document.task.logs
         # updating the end time in TesTask logs
-        for logs in db_document.task.logs or []:
+        for logs in task_logs:
             logs.end_time = time_now
 
         # updating the metadata in TesTask logs
@@ -635,7 +641,7 @@ class TaskRuns:
                 remote_task_id=remote_task_id,
             )
         else:
-            for logs in db_document.task.logs or []:
+            for logs in task_logs:
                 # Not a `Metadata` model; fixed with #208
                 logs.metadata = {"remote_task_id": remote_task_id}  # type: ignore[assignment]
 
@@ -662,7 +668,9 @@ class TaskRuns:
         Returns:
             The updated database document.
         """
-        logs: list[TesTaskLog] = db_document.task.logs or []
+        if db_document.task.logs is None:
+            raise ValueError(f"Task '{db_document.task.id}' has no logs")
+        logs: list[TesTaskLog] = db_document.task.logs
         forward = TesForward(
             id=remote_task_id,
             url=tes_url,
