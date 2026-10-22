@@ -57,8 +57,7 @@ class DbDocumentConnector:
             document: DbDocument = DbDocument(**(document_unvalidated or {}))
         except Exception as exc:
             raise ValueError(
-                "Database document does not conform to schema: "
-                f"{document_unvalidated}"
+                f"Database document does not conform to schema: {document_unvalidated}"
             ) from exc
         return document
 
@@ -106,24 +105,16 @@ class DbDocumentConnector:
             projection = {"_id": False}
         document_unvalidated = self.collection.find_one_and_update(
             {"worker_id": self.worker_id},
-            {
-                "$set": {
-                    ".".join([root, key]): value for (key, value) in
-                    kwargs.items()
-                }
-            },
+            {"$set": {".".join([root, key]): value for (key, value) in kwargs.items()}},
             projection=projection,
             return_document=ReturnDocument.AFTER,
         )
         if document_unvalidated is None:
-            raise ValueError(
-                f"No database document with worker ID '{self.worker_id}'"
-            )
+            raise ValueError(f"No database document with worker ID '{self.worker_id}'")
         try:
             document: DbDocument = DbDocument(**document_unvalidated)
         except Exception as exc:
             raise ValueError(
-                "Database document does not conform to schema: "
-                f"{document_unvalidated}"
+                f"Database document does not conform to schema: {document_unvalidated}"
             ) from exc
         return document

@@ -70,9 +70,7 @@ def task_id(client: FlaskClient, backend: type[FakeBackend]) -> str:
     return str(response.get_json()["id"])
 
 
-def set_state(
-    mongo_client: mongomock.MongoClient, task_id: str, state: str
-) -> None:
+def set_state(mongo_client: mongomock.MongoClient, task_id: str, state: str) -> None:
     """Set the state of a stored task, as the Celery task does."""
     mongo_client["taskStore"]["tasks"].update_one(
         {"task.id": task_id}, {"$set": {"task.state": state}}
@@ -94,9 +92,7 @@ def test_list_tasks(client: FlaskClient, task_id: str) -> None:
 
 def test_get_task(client: FlaskClient, task_id: str) -> None:
     """Tasks are served with their executors and forwards."""
-    response = client.get(
-        f"{BASE_PATH}/tasks/{task_id}", query_string={"view": "FULL"}
-    )
+    response = client.get(f"{BASE_PATH}/tasks/{task_id}", query_string={"view": "FULL"})
     assert response.status_code == 200
     task = response.get_json()
     assert task["name"] == "hello"
@@ -114,9 +110,9 @@ def test_cancel_task(
 ) -> None:
     """Tasks are canceled at the last forward, i.e., proTES's own."""
     collection = mongo_client["taskStore"]["tasks"]
-    forwards = collection.find_one({"task.id": task_id})["task"]["logs"][0][
-        "metadata"
-    ]["forwarded_to"]
+    forwards = collection.find_one({"task.id": task_id})["task"]["logs"][0]["metadata"][
+        "forwarded_to"
+    ]
     upstream = {"id": "upstream-1", "url": "https://upstream.example.org"}
     collection.update_one(
         {"task.id": task_id},

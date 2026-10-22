@@ -79,13 +79,10 @@ class MiddlewareHandler:
                 logger.info(f"Applying middleware: {mw_class}")
                 instance = mw_class()
                 try:
-                    request = instance.apply_middleware(
-                        request, *args, **kwargs
-                    )
+                    request = instance.apply_middleware(request, *args, **kwargs)
                 except Exception as exc:  # pylint: disable=W0703
                     logger.warning(
-                        f"Error occurred in middleware class '{mw_class}':"
-                        f" {exc}"
+                        f"Error occurred in middleware class '{mw_class}': {exc}"
                     )
                     continue
                 break
@@ -114,15 +111,12 @@ class MiddlewareHandler:
         try:
             module = importlib.import_module(module_path)
         except ImportError as exc:
-            raise InvalidMiddleware(
-                f"Could not import module: {module_path}."
-            ) from exc
+            raise InvalidMiddleware(f"Could not import module: {module_path}.") from exc
         try:
             middleware_class = getattr(module, class_name)
         except AttributeError as exc:
             raise InvalidMiddleware(
-                f"Module {module_path} does not contain a class called "
-                f"{class_name}."
+                f"Module {module_path} does not contain a class called {class_name}."
             ) from exc
         if not issubclass(middleware_class, AbstractMiddleware):
             raise InvalidMiddleware(

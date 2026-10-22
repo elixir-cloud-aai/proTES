@@ -82,9 +82,7 @@ def test_get_task_by_id_minimal():
         url=f"{tes_url}/tasks", headers=headers, json=tasks_body
     )
     id = (post_response.json()["id"],)
-    response = requests.get(
-        url=f"{tes_url}/tasks/{id[0]}", params={"view": "MINIMAL"}
-    )
+    response = requests.get(url=f"{tes_url}/tasks/{id[0]}", params={"view": "MINIMAL"})
     assert response.status_code == 200
     assert response.json()["id"] == id[0]
     assert response.json()["state"]
@@ -95,9 +93,7 @@ def test_get_task_by_id_basic():
         url=f"{tes_url}/tasks", headers=headers, json=tasks_body
     )
     id = post_response.json()["id"]
-    response = requests.get(
-        url=f"{tes_url}/tasks/{id}", params={"view": "BASIC"}
-    )
+    response = requests.get(url=f"{tes_url}/tasks/{id}", params={"view": "BASIC"})
     assert response.status_code == 200
     assert response.json()["id"] == id
     assert response.json()["state"]
@@ -111,9 +107,7 @@ def test_get_task_by_id_full():
         url=f"{tes_url}/tasks", headers=headers, json=tasks_body
     )
     id = post_response.json()["id"]
-    response = requests.get(
-        url=f"{tes_url}/tasks/{id}", params={"view": "FULL"}
-    )
+    response = requests.get(url=f"{tes_url}/tasks/{id}", params={"view": "FULL"})
     assert response.status_code == 200
     assert response.json()["id"] == id
     assert response.json()["state"]

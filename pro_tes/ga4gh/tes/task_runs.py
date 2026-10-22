@@ -105,9 +105,7 @@ class TaskRuns:
 
         # apply middlewares
         mw_handler = MiddlewareHandler()
-        mw_handler.set_middlewares(
-            paths=self.custom_config.middlewares.root
-        )
+        mw_handler.set_middlewares(paths=self.custom_config.middlewares.root)
         logger.debug(f"Middlewares registered: {mw_handler.middlewares}")
         request_modified = mw_handler.apply_middlewares(request=request)
 
@@ -289,7 +287,7 @@ class TaskRuns:
         page_size = kwargs.get(
             "page_size",
             self.custom_config.controllers.list_tasks.default_page_size,
-            )
+        )
         page_token = kwargs.get("page_token")
         filter_dict = {}
 
@@ -394,25 +392,17 @@ class TaskRuns:
             )
 
             _logs = db_document.task.logs
-            assert isinstance(
-                _logs,
-                (list, tuple)
-            ), "task logs is not indexable"
+            assert isinstance(_logs, (list, tuple)), "task logs is not indexable"
 
             _metadata = _logs[0].metadata
-            assert isinstance(
-                _metadata,
-                Metadata
-            ), "task metadata is None"
+            assert isinstance(_metadata, Metadata), "task metadata is None"
 
             if self.store_logs:
-                assert (
-                    _metadata.forwarded_to
-                ), "link to next TES is missing"
+                assert _metadata.forwarded_to, "link to next TES is missing"
                 # the TES server that proTES forwarded the task to
                 task_id = _metadata.forwarded_to[-1].id
             else:
-                task_id = _metadata["remote_task_id"]   # type: ignore
+                task_id = _metadata["remote_task_id"]  # type: ignore
 
             logger.info(
                 "Trying to cancel task with task identifier"
@@ -432,8 +422,7 @@ class TaskRuns:
                 state="CANCELED",
             )
             logger.info(
-                f"Task '{id}' with worker ID '{db_document.worker_id}'"
-                " canceled."
+                f"Task '{id}' with worker ID '{db_document.worker_id}' canceled."
             )
         return {}
 
@@ -495,13 +484,10 @@ class TaskRuns:
             payload["resources"] = tes.models.Resources(**payload["resources"])
         if "executors" in payload:
             payload["executors"] = [
-                tes.models.Executor(**executor)
-                for executor in payload["executors"]
+                tes.models.Executor(**executor) for executor in payload["executors"]
             ]
         if "logs" in payload:
-            payload["logs"] = [
-                tes.models.TaskLog(**log) for log in payload["logs"]
-            ]
+            payload["logs"] = [tes.models.TaskLog(**log) for log in payload["logs"]]
         return payload
 
     def _set_projection(self, view: str) -> dict:
@@ -552,9 +538,7 @@ class TaskRuns:
         Returns:
             DbDocument: The updated database document.
         """
-        logs = self._set_logs(
-            payloads=deepcopy(payload), start_time=start_time
-        )
+        logs = self._set_logs(payloads=deepcopy(payload), start_time=start_time)
         db_document.task.logs = [TesTaskLog(**logs) for logs in logs]
         db_document.task.state = TesState.UNKNOWN
         db_document.user_id = kwargs.get("user_id", None)
