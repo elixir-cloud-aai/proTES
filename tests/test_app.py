@@ -54,9 +54,7 @@ def test_service_info_not_stored(
     """The service info is not stored in the database."""
     assert client.get(f"{BASE_PATH}/service-info").status_code == 200
     for db_name in mongo_client.list_database_names():
-        assert "service_info" not in (
-            mongo_client[db_name].list_collection_names()
-        )
+        assert "service_info" not in (mongo_client[db_name].list_collection_names())
 
 
 def test_middleware_api_not_registered(client: FlaskClient) -> None:

@@ -18,9 +18,7 @@ from pro_tes.ga4gh.tes.models import (
 from pro_tes.ga4gh.tes.task_runs import TaskRuns
 from pro_tes.utils.models import TaskModelConverter
 
-ADDITIONS = (
-    Path(__file__).parents[1] / "pro_tes" / "api" / "additions.openapi.yaml"
-)
+ADDITIONS = Path(__file__).parents[1] / "pro_tes" / "api" / "additions.openapi.yaml"
 
 
 def test_executor_defaults() -> None:
@@ -43,9 +41,7 @@ def test_ignore_error_relayed(app: FlaskApp) -> None:
 def test_ignore_error_converted() -> None:
     """`ignore_error` of executors of backend tasks is kept."""
     task = tes.Task(
-        executors=[
-            tes.Executor(image="alpine", command=["true"], ignore_error=True)
-        ]
+        executors=[tes.Executor(image="alpine", command=["true"], ignore_error=True)]
     )
     converted = TaskModelConverter(task=task).convert_task()
     assert converted.executors[0].ignore_error is True
@@ -53,12 +49,12 @@ def test_ignore_error_converted() -> None:
 
 def test_forwarded_to_not_recursive() -> None:
     """Forwards are a list of `tesForward` without references (cf. #173)."""
-    schemas = yaml.safe_load(ADDITIONS.read_text(encoding="utf-8"))[
-        "components"
-    ]["schemas"]
-    forwarded_to = schemas["tesTaskLog"]["properties"]["metadata"][
-        "properties"
-    ]["forwarded_to"]
+    schemas = yaml.safe_load(ADDITIONS.read_text(encoding="utf-8"))["components"][
+        "schemas"
+    ]
+    forwarded_to = schemas["tesTaskLog"]["properties"]["metadata"]["properties"][
+        "forwarded_to"
+    ]
     assert forwarded_to["type"] == "array"
     assert forwarded_to["items"] == {"$ref": "#/components/schemas/tesForward"}
     assert "tesNextTes" not in schemas

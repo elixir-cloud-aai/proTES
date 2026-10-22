@@ -1,4 +1,5 @@
 """Unit test for distance-based middleware."""
+
 import unittest
 from unittest.mock import patch
 
@@ -72,9 +73,7 @@ class TestDistanceBasedTaskDistribution(unittest.TestCase):
         """
         self.setUp()
         with self.app.app_context():
-            access_uri_combination = get_uri_combination(
-                self.input_uri, self.tes_url
-            )
+            access_uri_combination = get_uri_combination(self.input_uri, self.tes_url)
             assert access_uri_combination == expected_access_uri_combination
 
     def test_ip_combination(self):
@@ -203,18 +202,20 @@ class TestDistanceBasedTaskDistribution(unittest.TestCase):
         self.setUp()
 
         with self.app.app_context():
-            with patch.object(
-                pro_tes.middleware.task_distribution.distance,
-                "get_uri_combination",
-            ) as get_uri_combination_mock, patch.object(
-                pro_tes.middleware.task_distribution.distance,
-                "calculate_distance",
-            ) as calculate_distance_mock, patch.object(
-                pro_tes.middleware.task_distribution.distance, "ip_combination"
-            ) as ip_combination_mock:
-                get_uri_combination_mock.return_value = (
-                    expected_access_uri_combination
-                )
+            with (
+                patch.object(
+                    pro_tes.middleware.task_distribution.distance,
+                    "get_uri_combination",
+                ) as get_uri_combination_mock,
+                patch.object(
+                    pro_tes.middleware.task_distribution.distance,
+                    "calculate_distance",
+                ) as calculate_distance_mock,
+                patch.object(
+                    pro_tes.middleware.task_distribution.distance, "ip_combination"
+                ) as ip_combination_mock,
+            ):
+                get_uri_combination_mock.return_value = expected_access_uri_combination
                 calculate_distance_mock.return_value = expected_distances
                 ip_combination_mock.return_value = expected_ips
                 result = task_distribution(self.input_uri)

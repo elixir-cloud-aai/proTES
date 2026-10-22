@@ -6,8 +6,8 @@
       - [Using the Helm CLI](#helmclitweaks)
     - [Deployment](#deployment)
 
-The files under this directory can be used to deploy proTES on Kubernetes. 
-The deployment method is based on Helm (v3). The directory structure is as 
+The files under this directory can be used to deploy proTES on Kubernetes.
+The deployment method is based on Helm (v3). The directory structure is as
 follows:
 
 - templates: YAML files used in Kubernetes clusters where this is deployed
@@ -49,10 +49,10 @@ NOTE: update the variable clusterType in values.yaml depending on your target cl
 
 ### Using the Helm CLI
 
-Optionally, for CI/CD use cases for example, you could override the values in 
+Optionally, for CI/CD use cases for example, you could override the values in
 values.yaml when creating the Helm chart. For example:
 
-```bash 
+```bash
 cd deployment
 helm install . --generate-name --set protes.appName=proxyT
 ```
@@ -63,19 +63,18 @@ where proxyT will be the name of the proTES deployment and associated objects.
 
 After this you can deploy proTES using Helm:
 
-```bash 
+```bash
 cd deployment
 helm install . --generate-name
 ```
 
-Once proTES is deployed, you can access it via the url endpoint which you can 
+Once proTES is deployed, you can access it via the url endpoint which you can
 query by running:
 
-```bash 
+```bash
 # In vanilla kubernetes clusters
 kubectl get ingress
 
 # In OpenShift clusters
 kubectl get routes
 ```
-

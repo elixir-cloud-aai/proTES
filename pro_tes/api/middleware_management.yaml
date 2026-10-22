@@ -110,19 +110,19 @@ paths:
         - Git repositories: Git repositories containing setup.py or pyproject.toml (recommended)
         - PyPI packages: Packages from PyPI or other package registries (recommended)
         - Local packages: Installed Python packages or local file paths (**deprecated** - for development only)
-        
-        The middleware will be appended to the end of the execution stack. To change the execution 
+
+        The middleware will be appended to the end of the execution stack. To change the execution
         order, use the PUT /middlewares/reorder endpoint after creation.
-        
+
         If name is not provided, it will be derived from the package or repository name.
-        
+
         Fallback groups can be created by providing an array of source configurations.
-        If the first middleware in the group fails, the system tries the next one in the 
+        If the first middleware in the group fails, the system tries the next one in the
         fallback group, allowing mixed sources (Git, PyPI, local) in a single entry.
-        
-        **Note:** Fallback groups are managed as atomic units. To modify the middlewares 
-        within a fallback group (add/remove/reorder sources), you must delete and recreate 
-        the entire fallback group. Individual middlewares within a group cannot be modified 
+
+        **Note:** Fallback groups are managed as atomic units. To modify the middlewares
+        within a fallback group (add/remove/reorder sources), you must delete and recreate
+        the entire fallback group. Individual middlewares within a group cannot be modified
         separately due to security constraints on source configuration changes.
       operationId: AddMiddleware
       tags:
@@ -336,7 +336,7 @@ paths:
       summary: Remove a middleware
       description: |
         Permanently remove a middleware from the execution stack and database.
-        This operation works for both individual middlewares and fallback groups (which are 
+        This operation works for both individual middlewares and fallback groups (which are
         removed as a single unit).
       operationId: DeleteMiddleware
       tags:
@@ -541,7 +541,7 @@ components:
             package_location:
               type: string
               description: >
-                Local file path to directory containing package. 
+                Local file path to directory containing package.
                 Optional if the package is already installed in the environment.
               pattern: '^/.*'
               example: "/path/to/my/middleware/package"
