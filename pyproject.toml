@@ -45,7 +45,7 @@ dev = [
     "flake8-docstrings>=1.7",
     "mongomock>=4.3",
     # Pinned until the strict mypy settings of the shared standard (#206)
-    "mypy==1.14.1",
+    "mypy==2.4.0",
     "packaging>=26.3",
     "pylint>=4.1",
     "pytest>=9.1",
