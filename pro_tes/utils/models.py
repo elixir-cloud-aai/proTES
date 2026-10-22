@@ -248,23 +248,14 @@ class TaskModelConverter:
         return output_file_logs
 
     @staticmethod
-    def convert_time(
-        timestamp: datetime | None,
-        allow_none: bool = True,
-    ) -> str | None:
+    def convert_time(timestamp: datetime | None) -> str | None:
         """Convert py-tes to proTES TES task time.
 
         Args:
             timestamp: Time to convert.
-            allow_none: Whether to allow `None` for return value if `timestamp`
-                is `None`.
 
         Returns:
-            String representation of time in RFC3339 format, or `None`, if
-                `allow_none` is `True` and `timestamp` is `None`.
+            String representation of time in RFC3339 format, or `None` if
+                `timestamp` is `None`.
         """
-        if timestamp is None:
-            if allow_none:
-                return None
-            return datetime.fromtimestamp(0).isoformat()
-        return timestamp.isoformat()
+        return None if timestamp is None else timestamp.isoformat()

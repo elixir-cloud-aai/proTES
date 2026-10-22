@@ -12,7 +12,7 @@ from flask import request
 from foca import get_collection
 from foca.utils.misc import generate_id
 from pymongo.collection import Collection
-from pymongo.errors import DuplicateKeyError, PyMongoError
+from pymongo.errors import DuplicateKeyError
 import requests
 import tes
 from tes.models import Task
@@ -126,7 +126,6 @@ class TaskRuns:
 
         # create database document
         db_document = self._update_task(
-            payload=payload,
             db_document=db_document,
             start_time=start_time,
             **kwargs,
@@ -142,9 +141,11 @@ class TaskRuns:
             db_document.worker_id,
         )
 
-        # validate request; the TES instance sets its own creation time (TES
-        # servers may reject tasks that set it, as proTES does)
-        payload.pop("creation_time", None)
+        # validate request; the TES instance sets its own creation time and
+        # logs (TES servers may reject tasks that set them, as proTES does);
+        # clients can't set them, but middlewares could
+        for field in ("creation_time", "logs"):
+            payload.pop(field, None)
         payload = self._sanitize_request(payload=payload)
         try:
             payload_marshalled = tes.Task(**payload)
@@ -229,16 +230,6 @@ class TaskRuns:
                 logger.error(
                     "Task '%s' info could not be retrieved from TES endpoint"
                     " hosted at: %s. Original error message: '%s: %s'",
-                    db_document.task.id,
-                    url,
-                    type(exc).__name__,
-                    exc,
-                )
-            except PyMongoError as exc:
-                logger.error(
-                    "Database could not be updated with task info retrieved"
-                    " for task '%s' sent to TES endpoint hosted at: %s."
-                    " Original error message: '%s: %s'",
                     db_document.task.id,
                     url,
                     type(exc).__name__,
@@ -481,8 +472,6 @@ class TaskRuns:
             payload["executors"] = [
                 tes.models.Executor(**executor) for executor in payload["executors"]
             ]
-        if "logs" in payload:
-            payload["logs"] = [tes.models.TaskLog(**log) for log in payload["logs"]]
         return payload
 
     def _set_projection(self, view: str) -> dict[str, bool]:
@@ -521,7 +510,6 @@ class TaskRuns:
 
     def _update_task(
         self,
-        payload: dict[str, Any],
         db_document: DbDocument,
         start_time: str,
         **kwargs: Any,
@@ -529,7 +517,6 @@ class TaskRuns:
         """Update the task object.
 
         Args:
-            payload: A dictionary containing the payload for the update.
             db_document: The document in the database to be updated.
             start_time: The starting time of the incoming TES request.
             **kwargs: Additional keyword arguments passed along with request.
@@ -537,8 +524,8 @@ class TaskRuns:
         Returns:
             DbDocument: The updated database document.
         """
-        logs = self._set_logs(payloads=deepcopy(payload), start_time=start_time)
-        db_document.task.logs = [TesTaskLog(**logs) for logs in logs]
+        logs = self._set_logs(start_time=start_time)
+        db_document.task.logs = [TesTaskLog(**log) for log in logs]
         db_document.task.state = TesState.UNKNOWN
         db_document.user_id = kwargs.get("user_id")
 
@@ -547,35 +534,26 @@ class TaskRuns:
         db_document.worker_id = worker_id
         return db_document
 
-    def _set_logs(
-        self, payloads: dict[str, Any], start_time: str
-    ) -> list[dict[str, Any]]:
-        """Create or update `TesTask.logs` and set start time.
+    @staticmethod
+    def _set_logs(start_time: str) -> list[dict[str, Any]]:
+        """Create the logs of a task (`TesTask.logs`).
 
         Args:
-            payloads: A dictionary containing the payload for the update.
             start_time: The starting time of the incoming TES request.
 
         Returns:
             Task logs with start time set.
         """
-        if "logs" not in payloads:
-            logs: list[dict[str, Any]] = [
-                {
-                    "logs": [],
-                    "metadata": {},
-                    "start_time": start_time,
-                    "end_time": None,
-                    "outputs": [],
-                    "system_logs": [],
-                }
-            ]
-            payloads["logs"] = logs
-        else:
-            for log in payloads["logs"]:
-                log["start_time"] = start_time
-        logs = payloads["logs"]
-        return logs
+        return [
+            {
+                "logs": [],
+                "metadata": {},
+                "start_time": start_time,
+                "end_time": None,
+                "outputs": [],
+                "system_logs": [],
+            }
+        ]
 
     def _update_doc_in_db(
         self,
