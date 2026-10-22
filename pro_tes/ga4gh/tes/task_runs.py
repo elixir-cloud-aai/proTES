@@ -375,6 +375,8 @@ class TaskRuns:
                 to access the resource.
             pro_tes.exceptions.TaskNotFound: The requested task is not
                 available.
+            ValueError: The task is cancelable, but its identifier at its
+                TES instance is unknown.
         """
         document = self.db_client.find_one(
             filter={"task.id": id},
@@ -397,10 +399,9 @@ class TaskRuns:
 
             task_id = self._remote_task_id(document=document, db_document=db_document)
             if task_id is None:
-                # not forwarded (e.g., the relay failed), so nothing runs
-                logger.warning("Task '%s' was not forwarded; canceling it locally", id)
-                db_connector.update_task_state(state="CANCELED")
-                return {}
+                # tasks get cancelable states only from the TES instance they
+                # were forwarded to, which proTES records
+                raise ValueError(f"No remote identifier of task '{id}'")
 
             logger.info(
                 "Trying to cancel task with task identifier '%s' and worker job"

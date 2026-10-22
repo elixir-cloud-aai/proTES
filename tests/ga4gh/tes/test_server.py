@@ -775,13 +775,13 @@ def test_cancel_task_legacy(
     assert backend.canceled == ["remote-1", "remote-2"]
 
 
-def test_cancel_task_not_forwarded(
+def test_cancel_task_no_remote_id(
     client: FlaskClient,
     task_id: str,
     backend: type[FakeBackend],
     mongo_client: MongoClient[dict[str, Any]],
 ) -> None:
-    """Tasks that were not forwarded are canceled locally."""
+    """Cancelable tasks without a remote identifier can't be canceled (`500`)."""
     mongo_client[DB]["tasks"].update_one(
         {"task.id": task_id},
         {
@@ -789,6 +789,6 @@ def test_cancel_task_not_forwarded(
             "$set": {"task.logs.0.metadata": {}, "task.state": "RUNNING"},
         },
     )
-    assert client.post(f"{BASE_PATH}/tasks/{task_id}:cancel").status_code == 200
+    assert client.post(f"{BASE_PATH}/tasks/{task_id}:cancel").status_code == 500
     assert backend.canceled == []
-    assert stored(mongo_client, task_id)["task"]["state"] == "CANCELED"
+    assert stored(mongo_client, task_id)["task"]["state"] == "RUNNING"
