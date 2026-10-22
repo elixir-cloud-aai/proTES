@@ -13,9 +13,10 @@ RUN apt-get update \
   && apt-get install -y --no-install-recommends gcc libc6-dev \
   && rm -rf /var/lib/apt/lists/*
 COPY pyproject.toml /tmp/src/
-RUN python -c "import tomllib; print('\n'.join(tomllib.load(open('/tmp/src/pyproject.toml', 'rb'))['project']['dependencies']))" \
-    > /tmp/src/requirements.txt \
-  && pip wheel --no-cache-dir --wheel-dir /tmp/wheels -r /tmp/src/requirements.txt
+RUN mkdir /tmp/deps \
+  && python -c "import tomllib; print('\n'.join(tomllib.load(open('/tmp/src/pyproject.toml', 'rb'))['project']['dependencies']))" \
+    > /tmp/deps/requirements.txt \
+  && pip wheel --no-cache-dir --wheel-dir /tmp/deps/wheels -r /tmp/deps/requirements.txt
 
 ##### BASE IMAGE #####
 FROM elixircloud/foca:0.15.0-py3.12@sha256:0d21e23d67f8b84a0bf4e2ee893024ac82344aec41a09f9f4b6440d1e108e570
@@ -31,9 +32,9 @@ LABEL maintainer.organisation="ELIXIR On-Cloud"
 ## Install dependencies from the wheels of the build stage first, so that
 ## code changes do not reinstall them; the FOCA image runs as non-root user
 USER root
-RUN --mount=type=bind,from=build,source=/tmp,target=/tmp/build \
-  pip install --no-cache-dir --no-index --find-links /tmp/build/wheels \
-    -r /tmp/build/src/requirements.txt
+RUN --mount=type=bind,from=build,source=/tmp/deps,target=/tmp/deps \
+  pip install --no-cache-dir --no-index --find-links /tmp/deps/wheels \
+    -r /tmp/deps/requirements.txt
 
 ## Install app (non-editable; the base config is installed with the package,
 ## and deployments override it via `FOCA_CONFIG_OVERLAY`)

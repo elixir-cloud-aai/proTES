@@ -7,6 +7,7 @@ import shlex
 import sys
 from urllib.parse import urlsplit
 
+from flask.testing import FlaskClient
 from gunicorn.util import import_app  # type: ignore
 import mongomock
 import pytest
@@ -83,15 +84,26 @@ def test_app_uri_loads(
     assert response.status_code == 200
 
 
-def test_health_check_port() -> None:
-    """The image's health check probes the port Gunicorn listens on."""
-    (bind,) = load_settings().cfg.bind
+def _health_check_url() -> str:
+    """Get the URL that the image's health check probes."""
     (url,) = re.findall(
         r"^ENV HEALTHCHECK_URL=(\S+)$",
         DOCKERFILE.read_text(encoding="utf-8"),
         re.M,
     )
-    assert urlsplit(url).port == int(bind.rpartition(":")[2])
+    return str(url)
+
+
+def test_health_check_port() -> None:
+    """The image's health check probes the port Gunicorn listens on."""
+    (bind,) = load_settings().cfg.bind
+    assert urlsplit(_health_check_url()).port == int(bind.rpartition(":")[2])
+
+
+def test_health_check_path(client: FlaskClient) -> None:
+    """The image's health check probes the Swagger UI of the app."""
+    response = client.get(urlsplit(_health_check_url()).path)
+    assert response.status_code == 200
 
 
 def test_load_settings_restores(

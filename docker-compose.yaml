@@ -25,7 +25,11 @@ x-protes: &protes
 
 # Message broker URL with the RabbitMQ credentials, which default to
 # `protes:protes` (RabbitMQ is not published); set `RABBITMQ_DEFAULT_USER`
-# and `RABBITMQ_DEFAULT_PASS` (URL-encoded) on the host to change them
+# and `RABBITMQ_DEFAULT_PASS` on the host to change them, with URL-safe
+# characters only (letters, digits, `-`, `.`, `_`, `~`), as they are used
+# both as is and in the URL. RabbitMQ creates the user on its first start
+# only: to change the credentials later, remove its volume (`docker compose
+# down --volumes`, which also removes the database)
 x-broker-url: &broker-url "pyamqp://${RABBITMQ_DEFAULT_USER:-protes}:${RABBITMQ_DEFAULT_PASS:-protes}@rabbitmq:5672//"
 
 services:
@@ -111,6 +115,8 @@ services:
         ports:
             - "127.0.0.1:5555:5555"
 
+# Named volumes; data of earlier versions of this file, in
+# `PROTES_DATA_DIR` (default `../data/pro_tes`), is not migrated
 volumes:
     mongodb-data:
     rabbitmq-data:
