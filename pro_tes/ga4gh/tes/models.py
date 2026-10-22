@@ -611,7 +611,8 @@ class TesEndpoint(CustomBaseModel):
             https://my.tes.com/api/ga4gh/tes/v1.
         base_path: Override the default path suffix defined in the TES API
             specification, i.e., `/ga4gh/tes/v1`.
-        task_id: Identifier for task on external TES endpoint.
+        task_id: Identifier of the task at the external TES endpoint; not
+            set for tasks stored by earlier versions.
 
     Attributes:
         host: Host at which the TES API is served that is processing this
@@ -621,11 +622,13 @@ class TesEndpoint(CustomBaseModel):
             https://my.tes.com/api/ga4gh/tes/v1.
         base_path: Override the default path suffix defined in the TES API
             specification, i.e., `/ga4gh/tes/v1`.
-        task_id: Identifier for tasks on external TES endpoint.
+        task_id: Identifier of the task at the external TES endpoint; not
+            set for tasks stored by earlier versions.
     """
 
     host: str = ""
     base_path: str = ""
+    task_id: str | None = None
 
 
 class DbDocument(CustomBaseModel):

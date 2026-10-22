@@ -11,14 +11,15 @@ the endpoints and lets you try them; the specification is served at
 | --- | --- |
 | `GET /service-info` | The service info of the deployment (see [Service info](configuration.md#service-info)). |
 | `POST /tasks` | Create a task: proTES forwards it to a TES instance (see [Tasks](#tasks)) and returns its own identifier of the task. |
-| `GET /tasks` | List the tasks, newest first, one page at a time (`page_size`, `page_token`), optionally only those whose name starts with `name_prefix`. |
+| `GET /tasks` | List the tasks, newest first, one page at a time (`page_size`, at most `max_page_size` of the [config](configuration.md#tasks); `page_token` from `next_page_token` of the previous page, which is empty on the last page), optionally only those whose name starts with `name_prefix` (taken literally). |
 | `GET /tasks/{id}` | Get a task, with its state as last tracked from the TES instance. |
 | `POST /tasks/{id}:cancel` | Cancel a task that has not finished yet, at the TES instance that runs it. |
 
-`GET /tasks` and `GET /tasks/{id}` return the views `MINIMAL` (identifier and
-state), `BASIC` (the default; without the contents of inputs, the system logs
-and the executors' standard output and error) and `FULL` (`view`), as the TES
-specification describes.
+`GET /tasks` and `GET /tasks/{id}` return the views `MINIMAL` (the default;
+identifier and state), `BASIC` (without the contents of inputs, the system
+logs and the executors' standard output and error) and `FULL` (`view`), as
+the TES specification describes. Times (`creation_time`, and `start_time`
+and `end_time` of proTES's log of a task) are in UTC, in RFC 3339 format.
 
 ## Tasks
 
@@ -29,7 +30,10 @@ For `POST /tasks`, proTES:
 2. applies the [middlewares](middlewares.md), which select the TES instances
    to try and their order (and may change the task);
 3. forwards the task to the first of these TES instances that accepts it,
-   and returns its own identifier of the task; if no TES instance accepts it,
+   and returns its own identifier of the task (each TES instance gets the
+   task as received from the middlewares; TES instances other than Funnel get
+   the URLs of inputs and outputs without user names and passwords); if no
+   TES instance accepts it,
    the task's state is set to `SYSTEM_ERROR`, and the request fails with
    `500 Internal Server Error`;
 4. tracks the task at the TES instance in the background (a Celery worker

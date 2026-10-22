@@ -1,5 +1,6 @@
 """Miscellaneous utilities."""
 
+from datetime import datetime, timezone
 from urllib.parse import urlsplit, urlunsplit
 
 from foca import get_config
@@ -43,3 +44,12 @@ def strip_auth(url: str) -> str:
     elements = list(urlsplit(url))
     elements[1] = elements[1][elements[1].rfind("@") + 1 :]
     return urlunsplit(elements)
+
+
+def utc_now() -> str:
+    """Get the current time in UTC, in RFC 3339 format, as TES requires.
+
+    Returns:
+        The current time, e.g., `2026-10-22T12:34:56.789012+00:00`.
+    """
+    return datetime.now(timezone.utc).isoformat()
