@@ -569,6 +569,8 @@ def test_page_size_config() -> None:
         ListTasks(default_page_size=0)
     with pytest.raises(ValidationError):
         ListTasks(max_page_size=0)
+    with pytest.raises(ValidationError):
+        ListTasks(max_page_size=2048)
 
 
 def test_default_view(client: FlaskClient, task_id: str) -> None:
