@@ -34,9 +34,23 @@ The middleware management API is no longer registered, as its controllers
 don't exist yet (see [Middleware management
 API](middlewares.md#middleware-management-api)).
 
+## Image
+
+The image installs proTES as a package: it serves the app with `gunicorn
+--config python:pro_tes.gunicorn_config 'pro_tes.app:init_app()'` (its
+default command), and runs the Celery worker with `celery --app
+pro_tes.celery_worker worker`. `/app/pro_tes`, `gunicorn.py` and `wsgi.py` are
+gone, and the environment variables `GUNICORN_PROCESSES` and
+`GUNICORN_THREADS` are replaced by `GUNICORN_CMD_ARGS` (see
+[Server](configuration.md#server)). The Helm chart 3.0.0 needs images of this
+version, and earlier charts need earlier images.
+
 ## Docker Compose
 
 Docker Compose runs MongoDB 7.0 (was 3.6, which current PyMongo releases
-can't connect to). MongoDB can't upgrade data files from 3.6 to 7.0 directly:
-dump the data with the old version (`mongodump`) and restore it into the new
-one (`mongorestore`), or start with an empty database.
+can't connect to), and keeps the data in named volumes instead of
+`PROTES_DATA_DIR` (default `../data/pro_tes`), whose data is not migrated.
+MongoDB can't upgrade data files from 3.6 to 7.0 directly: dump the data with
+the old version (`mongodump`) and restore it into the new one
+(`mongorestore`), or start with an empty database. Only proTES (and Flower,
+now opt-in) are published, on `127.0.0.1`.

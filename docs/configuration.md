@@ -67,13 +67,22 @@ parsed. Raise the limit if tasks with large inline contents
 
 ## Server
 
-The app is served with [Gunicorn](https://gunicorn.org/), configured by
-[`pro_tes/gunicorn.py`](https://github.com/elixir-cloud-aai/proTES/blob/dev/pro_tes/gunicorn.py):
-it listens at `server.host` and `server.port` of the config, with the number
-of worker processes and threads set by the environment variables
-`GUNICORN_PROCESSES` and `GUNICORN_THREADS` (default: 1 each).
+The image serves the app with [Gunicorn](https://gunicorn.org/), configured by
+[`pro_tes/gunicorn_config.py`](https://github.com/elixir-cloud-aai/proTES/blob/dev/pro_tes/gunicorn_config.py),
+which documents its settings: it listens on port 8080, with one worker
+process with four threads. Override settings with the environment variable
+`GUNICORN_CMD_ARGS` (e.g., `--workers 2 --threads 8`), but not `--bind`: the
+image's health check and the Helm chart expect port 8080. Behind a reverse
+proxy, set its addresses in `FORWARDED_ALLOW_IPS`, so that Gunicorn trusts
+its `X-Forwarded-*` headers. `server.host` and `server.port` of the config
+only apply to Flask's development server (`python -m pro_tes.app`).
 `server.debug` must stay off outside local development: Flask's debugger
 allows executing arbitrary code.
+
+The Celery worker runs from the same image, with the command `celery --app
+pro_tes.celery_worker worker`; it connects to the broker at
+`CELERY_BROKER_URL` (with the RabbitMQ credentials; see
+[`docker-compose.yaml`](https://github.com/elixir-cloud-aai/proTES/blob/dev/docker-compose.yaml)).
 
 ## Service info
 
