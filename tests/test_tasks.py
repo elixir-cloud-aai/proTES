@@ -138,7 +138,8 @@ def test_cancel_task_nested_forwards(
     backend: type[FakeBackend],
     mongo_client: mongomock.MongoClient,
 ) -> None:
-    """Tasks stored with nested forwards (earlier versions) are canceled."""
+    """Tasks stored with nested forwards (earlier versions) are served
+    with lists of forwards, and canceled."""
     mongo_client["taskStore"]["tasks"].update_one(
         {"task.id": task_id},
         {
@@ -150,6 +151,15 @@ def test_cancel_task_nested_forwards(
             }
         },
     )
+    for path, query in (
+        (f"/tasks/{task_id}", {"view": "FULL"}),
+        ("/tasks", {"view": "FULL"}),
+    ):
+        response = client.get(f"{BASE_PATH}{path}", query_string=query)
+        tasks = response.get_json().get("tasks") or [response.get_json()]
+        assert tasks[0]["logs"][0]["metadata"]["forwarded_to"] == [
+            {"id": "remote-1", "url": "https://tes.example.org"}
+        ]
     set_state(mongo_client, task_id, "RUNNING")
     response = client.post(f"{BASE_PATH}/tasks/{task_id}:cancel")
     assert response.status_code == 200

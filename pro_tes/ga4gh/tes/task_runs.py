@@ -49,6 +49,25 @@ from pro_tes.utils.models import TaskModelConverter
 logger = logging.getLogger(__name__)
 
 
+def flatten_forwards(task: dict) -> dict:
+    """Serve forwards nested by earlier versions as lists.
+
+    Args:
+        task: Stored task (`DbDocument.task`), possibly projected.
+
+    Returns:
+        The task, with the forwards of its logs as lists (cf.
+        :py:meth:`pro_tes.ga4gh.tes.models.Metadata.flatten_forwards`).
+    """
+    for log in task.get("logs") or []:
+        metadata = log.get("metadata") if isinstance(log, dict) else None
+        if isinstance(metadata, dict) and "forwarded_to" in metadata:
+            metadata["forwarded_to"] = Metadata.flatten_forwards(
+                metadata["forwarded_to"]
+            )
+    return task
+
+
 class TaskRuns:
     """Class for TES API server-side controller methods.
 
@@ -309,9 +328,9 @@ class TaskRuns:
                 task["state"] = task["task"]["state"]
                 tasks_lists.append({"id": task["id"], "state": task["state"]})
             if view == "BASIC":
-                tasks_lists.append(task["task"])
+                tasks_lists.append(flatten_forwards(task["task"]))
             if view == "FULL":
-                tasks_lists.append(task["task"])
+                tasks_lists.append(flatten_forwards(task["task"]))
 
         return {"next_page_token": next_page_token, "tasks": tasks_lists}
 
@@ -337,7 +356,7 @@ class TaskRuns:
         if document is None:
             logger.error(f"Task '{id}' not found.")
             raise TaskNotFound
-        return document["task"]
+        return flatten_forwards(document["task"])
 
     def cancel_task(self, id: str, **kwargs) -> dict:
         """Cancel task.
@@ -611,7 +630,7 @@ class TaskRuns:
 
         db_document = db_connector.upsert_fields_in_root_object(
             root="task",
-            **db_document.model_dump(mode="json")["task"],
+            **db_document.model_dump(mode="json", exclude_none=True)["task"],
         )
         logger.debug(f"Task '{db_document.task}' inserted to database ")
         return db_document

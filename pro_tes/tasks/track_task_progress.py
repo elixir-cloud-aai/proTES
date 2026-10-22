@@ -109,5 +109,5 @@ def task__track_task_progress(  # pylint: disable=too-many-arguments,R0917
 
     # updating the database
     db_client.upsert_fields_in_root_object(
-        root="task", **document.task.model_dump(mode="json")
+        root="task", **document.task.model_dump(mode="json", exclude_none=True)
     )
