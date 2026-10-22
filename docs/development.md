@@ -12,14 +12,30 @@ pip install -e ".[dev]"  # the app, with the dev dependencies
 pre-commit install  # run the checks on every commit
 pre-commit run --all-files  # ruff, mypy, semgrep, ast-grep, actionlint
 pre-commit run --all-files --hook-stage manual gitleaks-all  # secrets
-pytest tests --ignore=tests/unitTest --ignore=tests/test_integration
+pytest
 ```
 
-The tests need no database: they use an in-memory one
-([mongomock](https://github.com/mongomock/mongomock)). The integration tests
-in `tests/test_integration` run against the Docker Compose setup (see
-[Getting started](getting-started.md)), which forwards tasks to the TES
-instances of the config; CI runs them too.
+The tests need neither a database nor TES backends: they use an in-memory
+database ([mongomock](https://github.com/mongomock/mongomock)) and fake TES
+backends, and have no network access. CI also runs them against MongoDB 7.0;
+to do so locally, set `MONGODB_TEST_URI` to a single-node MongoDB without
+other data, one per test run (the tests drop its databases `taskStore` and
+`protes` before each test, and refuse to start if one of them exists), e.g.:
+
+```bash
+docker run -d --rm --name mongodb-test -p 127.0.0.1:27017:27017 mongo:7.0
+MONGODB_TEST_URI=mongodb://localhost:27017 pytest
+docker stop mongodb-test
+```
+
+CI also runs the app with Docker Compose, with a fake TES backend instead of
+the TES instances of the config (`tests/smoke/`), and checks that tasks are
+relayed to it and tracked until they are complete. To start this setup
+locally:
+
+```bash
+docker compose -f docker-compose.yaml -f tests/smoke/compose.yaml up --build --wait
+```
 
 To try changes in the running app, rebuild it with
 `docker compose up --build -d`. `python -m pro_tes.app` runs the app with
@@ -44,9 +60,7 @@ GitHub-hosted runners, so CI may find more than a local run without it). To
 suppress a false positive, add a comment with the reason to the line:
 `# noqa: <code>` (ruff), `# type: ignore[<code>]` (mypy),
 `# nosemgrep: <rule-id>`, `# ast-grep-ignore: <rule-id>` or
-`# gitleaks:allow`. The tests in `tests/unitTest` are not checked until
-they are fixed or removed
-([#207](https://github.com/elixir-cloud-aai/proTES/issues/207)).
+`# gitleaks:allow`.
 
 ## Documentation
 
