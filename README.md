@@ -61,7 +61,8 @@ curl -X GET "http://localhost:8080/ga4gh/tes/v1/service-info" -H "accept: applic
 ```
 
 Tasks are forwarded to the TES instances listed in `custom.tes.service_list`
-of the [config](pro_tes/config.yaml).
+of the
+[config](https://github.com/elixir-cloud-aai/proTES/blob/dev/pro_tes/config.yaml).
 <!-- --8<-- [end:quick-start] -->
 
 ## Contributing

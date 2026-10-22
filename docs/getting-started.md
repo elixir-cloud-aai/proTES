@@ -2,21 +2,18 @@
 
 To quickly install the service for development/testing purposes, we recommend
 deployment via [Docker Compose](https://docs.docker.com/compose/install/), as
-described in the quick start of the
-[README](https://github.com/elixir-cloud-aai/proTES/blob/dev/README.md#quick-start).
-For more durable deployments on cloud native infrastructure, we also provide
-a [Helm](https://helm.sh/) chart in the
+described below. For more durable deployments on cloud native infrastructure,
+we also provide a [Helm](https://helm.sh/) chart in the
 [`deployment/`](https://github.com/elixir-cloud-aai/proTES/tree/dev/deployment)
-directory. The [FOCA deployment
+directory (see [Deployment](deployment.md)). The [FOCA deployment
 guide](https://foca.readthedocs.io/en/latest/deployment/) explains how FOCA
 apps, such as this one, are configured with Docker Compose and Helm.
 
-The app is configured by
-[`pro_tes/config.yaml`](https://github.com/elixir-cloud-aai/proTES/blob/dev/pro_tes/config.yaml),
-the Docker Compose setup by
-[`docker-compose.yaml`](https://github.com/elixir-cloud-aai/proTES/blob/dev/docker-compose.yaml).
+## Quick start
 
-## Other useful commands
+--8<-- "README.md:quick-start"
+
+### Other useful commands
 
 To shut down the service, run:
 
@@ -24,11 +21,23 @@ To shut down the service, run:
 docker compose down
 ```
 
+!!! warning
+    The Celery worker tracks the state of forwarded tasks until they finish.
+    Tracking is not resumed after a restart: tasks that are still being
+    tracked (or queued for tracking in RabbitMQ) when the service is shut
+    down keep the state last recorded. Shut down when no tasks are running.
+
 If you need to inspect the logs, call:
 
 ```bash
 docker compose logs
 ```
+
+## Usage
+
+[Endpoints](api.md) can be probed with `curl`, as above, or tried in the
+Swagger UI. See [Configuration](configuration.md) for the TES instances that
+tasks are forwarded to, and to change the config of the Docker Compose setup.
 
 ## Troubleshooting: network MTU
 

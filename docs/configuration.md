@@ -1,0 +1,88 @@
+# Configuration
+
+The app is configured by
+[`pro_tes/config.yaml`](https://github.com/elixir-cloud-aai/proTES/blob/dev/pro_tes/config.yaml),
+the base config, which documents its values. It is a
+[FOCA](https://foca.readthedocs.io/) config: the sections `server`,
+`security`, `db`, `api`, `log`, `jobs`, `service_info` and `exceptions` are
+described in the [FOCA documentation](https://foca.readthedocs.io/en/latest/),
+the app's own settings are in section `custom` (validated on startup by
+[`pro_tes.config_models.CustomConfig`](reference.md#pro_tes.config_models.CustomConfig)).
+To override some values, write them to a config overlay file and list it in
+environment variable `FOCA_CONFIG_OVERLAY` (several files separated by `:`);
+FOCA merges overlays into the config on startup (see the [FOCA deployment
+guide](https://foca.readthedocs.io/en/latest/deployment/)). The Celery worker
+reads the same config.
+
+## TES instances
+
+Tasks are forwarded to the TES instances listed in `custom.tes.service_list`
+(their base URLs, without the API path `/ga4gh/tes/v1`). The base config lists
+public TES instances of the ELIXIR On-Cloud network as examples; deployments
+set their own list. The [middlewares](middlewares.md) decide which of them
+are tried, and in which order (see [Tasks](api.md#tasks)).
+
+## Middlewares
+
+`custom.middlewares` is the stack of middlewares that are applied to each new
+task, in order: a list of lists of the import paths of middleware classes.
+Of each inner list, the first class that can be applied successfully is used,
+and the others are skipped; the inner list is a chain of fallbacks. If no
+class of an inner list can be applied, the task is rejected. See
+[Middlewares](middlewares.md) for the built-in ones and how to write your own.
+
+```yaml
+custom:
+  middlewares:
+    - - "pro_tes.plugins.middlewares.task_distribution.distance.TaskDistributionDistance"
+      - "pro_tes.plugins.middlewares.task_distribution.random.TaskDistributionRandom"
+```
+
+## Tasks
+
+`custom.controllers` sets how tasks are created and listed:
+
+- `post_task.db.insert_attempts`: how often proTES tries to store a new task
+  with a newly generated identifier if the identifier exists already;
+- `post_task.task_id`: the characters (`charset`) and the length (`length`)
+  of task identifiers;
+- `post_task.polling`: how the Celery worker tracks a forwarded task: it
+  polls the TES instance for the task's state every `wait` seconds until the
+  task has finished, and gives up (state `SYSTEM_ERROR`) after `attempts`
+  failed requests;
+- `list_tasks.default_page_size`: the number of tasks per page of
+  `GET /tasks` if the request sets no `page_size`.
+
+`custom.storeLogs.execution_trace` sets whether proTES records the TES
+instance and the remote task identifier of each forwarded task in the task's
+logs (`logs[].metadata.forwarded_to`).
+
+## Request size limit
+
+Request bodies are limited to `server.max_content_length` bytes (default:
+1048576, i.e., 1 MiB), by FOCA: larger requests, also chunked ones, are
+rejected with `413 Content Too Large` before they are authenticated and
+parsed. Raise the limit if tasks with large inline contents
+(`inputs[].content`) must be accepted.
+
+## Server
+
+The app is served with [Gunicorn](https://gunicorn.org/), configured by
+[`pro_tes/gunicorn.py`](https://github.com/elixir-cloud-aai/proTES/blob/dev/pro_tes/gunicorn.py):
+it listens at `server.host` and `server.port` of the config, with the number
+of worker processes and threads set by the environment variables
+`GUNICORN_PROCESSES` and `GUNICORN_THREADS` (default: 1 each).
+`server.debug` must stay off outside local development: Flask's debugger
+allows executing arbitrary code.
+
+## Service info
+
+`GET /service-info` is served by FOCA from section `service_info` of the
+config, according to the GA4GH service info schema (validated on startup).
+Its `version` is the version of the installed package (`service_info.package`).
+The base config describes the app, not a deployment: its `id`
+(`org.example.protes`) and `organization` are placeholders with reserved
+example domains, which the app warns of on startup. Deployments set their
+own `id`, `name`, `description`, `organization`, `contactUrl` and
+`environment`, and `storage` (the storage locations their TES instances can
+access), in `service_info.service`.
