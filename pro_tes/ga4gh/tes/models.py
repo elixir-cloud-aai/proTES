@@ -5,17 +5,12 @@
 #   timestamp: 2022-07-07T11:45:30+00:00
 # manually edited
 
-# pragma pylint: disable=missing-class-docstring,invalid-name
-
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
-# pragma pylint: disable=no-name-in-module
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-
-# pragma pylint: disable=too-few-public-methods
 
 
 class CustomBaseModel(BaseModel):
@@ -25,14 +20,18 @@ class CustomBaseModel(BaseModel):
 
 
 class TesCancelTaskResponse(CustomBaseModel):
-    pass
+    """Response to a task cancellation (empty)."""
 
 
 class TesCreateTaskResponse(CustomBaseModel):
+    """Response to a task creation, with the task identifier."""
+
     id: str = Field(..., description="Task identifier assigned by the server.")
 
 
 class TesExecutor(CustomBaseModel):
+    """Executor: a command run in a container."""
+
     image: str = Field(
         default="",
         description=(
@@ -54,7 +53,7 @@ class TesExecutor(CustomBaseModel):
         ),
         examples=["/bin/md5", "/data/file1"],
     )
-    workdir: Optional[str] = Field(
+    workdir: str | None = Field(
         default=None,
         description=(
             "The working directory that the command will be executed          "
@@ -63,7 +62,7 @@ class TesExecutor(CustomBaseModel):
         ),
         examples=["/data/"],
     )
-    stdin: Optional[str] = Field(
+    stdin: str | None = Field(
         default=None,
         description=(
             "Path inside the container to a file which will be            "
@@ -77,7 +76,7 @@ class TesExecutor(CustomBaseModel):
         ),
         examples=["/data/file1"],
     )
-    stdout: Optional[str] = Field(
+    stdout: str | None = Field(
         default=None,
         description=(
             "Path inside the container to a file where the            "
@@ -85,9 +84,9 @@ class TesExecutor(CustomBaseModel):
             ' path.                Example:\n```\n{\n  "stdout" :'
             ' "/tmp/stdout.log"\n}\n```'
         ),
-        examples=["/tmp/stdout.log"],
+        examples=["/tmp/stdout.log"],  # noqa: S108 (example of the TES spec)
     )
-    stderr: Optional[str] = Field(
+    stderr: str | None = Field(
         default=None,
         description=(
             "Path inside the container to a file where the            "
@@ -95,9 +94,9 @@ class TesExecutor(CustomBaseModel):
             ' path.                 Example:\n```\n{\n  "stderr" :'
             ' "/tmp/stderr.log"\n}\n```'
         ),
-        examples=["/tmp/stderr.log"],
+        examples=["/tmp/stderr.log"],  # noqa: S108 (example of the TES spec)
     )
-    env: Optional[dict[str, str]] = Field(
+    env: dict[str, str] | None = Field(
         default=None,
         description=(
             "Enviromental variables to set within the container.            "
@@ -107,7 +106,7 @@ class TesExecutor(CustomBaseModel):
         ),
         examples=[{"BLASTDB": "/data/GRC38", "HMMERDB": "/data/hmmer"}],
     )
-    ignore_error: Optional[bool] = Field(
+    ignore_error: bool | None = Field(
         default=None,
         description=(
             "Default behavior of running an array of executors is that "
@@ -119,17 +118,19 @@ class TesExecutor(CustomBaseModel):
 
 
 class TesExecutorLog(CustomBaseModel):
-    start_time: Optional[str] = Field(
+    """Logs of an executor run."""
+
+    start_time: str | None = Field(
         default=None,
         description="Time the executor started, in RFC 3339 format.",
         examples=["2020-10-02T10:00:00-05:00"],
     )
-    end_time: Optional[str] = Field(
+    end_time: str | None = Field(
         default=None,
         description="Time the executor ended, in RFC 3339 format.",
         examples=["2020-10-02T11:00:00-05:00"],
     )
-    stdout: Optional[str] = Field(
+    stdout: str | None = Field(
         default=None,
         description=(
             "Stdout content.\n\nThis is meant for convenience. No           "
@@ -141,7 +142,7 @@ class TesExecutorLog(CustomBaseModel):
             " Task.outputs to upload that file\nto permanent storage."
         ),
     )
-    stderr: Optional[str] = Field(
+    stderr: str | None = Field(
         default=None,
         description=(
             "Stderr content.\n\nThis is meant for convenience. No            "
@@ -154,21 +155,25 @@ class TesExecutorLog(CustomBaseModel):
         ),
     )
     # exit code not optional according to specs, but Funnel may return 'null'
-    exit_code: Optional[int] = Field(
+    exit_code: int | None = Field(
         default=None,
         description="Exit code.",
     )
 
 
 class TesFileType(Enum):
+    """Type of an input or output: file or directory."""
+
     FILE = "FILE"
     DIRECTORY = "DIRECTORY"
 
 
 class TesInput(CustomBaseModel):
-    name: Optional[str] = None
-    description: Optional[str] = None
-    url: Optional[str] = Field(
+    """Input file or directory of a task."""
+
+    name: str | None = None
+    description: str | None = None
+    url: str | None = Field(
         default=None,
         description=(
             'REQUIRED, unless "content" is set.\n\nURL in long term        '
@@ -186,8 +191,8 @@ class TesInput(CustomBaseModel):
         ),
         examples=["/data/file1"],
     )
-    type: Optional[TesFileType] = TesFileType.FILE
-    content: Optional[str] = Field(
+    type: TesFileType | None = TesFileType.FILE
+    content: str | None = Field(
         default=None,
         description=(
             "File content literal.\n\nImplementations should support a        "
@@ -196,7 +201,7 @@ class TesInput(CustomBaseModel):
             ' "url"             must be ignored.'
         ),
     )
-    streamable: Optional[bool] = Field(
+    streamable: bool | None = Field(
         default=None,
         description=(
             "Indicate that a file resource could be accessed using a"
@@ -213,10 +218,12 @@ class TesInput(CustomBaseModel):
 
 
 class TesOutput(CustomBaseModel):
-    name: Optional[str] = Field(
+    """Output file or directory of a task."""
+
+    name: str | None = Field(
         default=None, description="User-provided name of         output file"
     )
-    description: Optional[str] = Field(
+    description: str | None = Field(
         default=None,
         description=(
             "Optional users provided description field, can be used           "
@@ -239,10 +246,12 @@ class TesOutput(CustomBaseModel):
             " absolute path."
         ),
     )
-    type: Optional[TesFileType] = TesFileType.FILE
+    type: TesFileType | None = TesFileType.FILE
 
 
 class TesOutputFileLog(CustomBaseModel):
+    """Log of an output file."""
+
     url: str = Field(
         ...,
         description=(
@@ -257,7 +266,7 @@ class TesOutputFileLog(CustomBaseModel):
         ),
     )
     # required by the specs, but py-tes may return none
-    size_bytes: Optional[str] = Field(
+    size_bytes: str | None = Field(
         default=None,
         description=(
             "Size of the file in bytes. Note, this is currently coded         "
@@ -269,10 +278,12 @@ class TesOutputFileLog(CustomBaseModel):
 
 
 class TesResources(CustomBaseModel):
-    cpu_cores: Optional[int] = Field(
+    """Resources requested by a task."""
+
+    cpu_cores: int | None = Field(
         default=None, description="Requested number of CPUs", examples=[4]
     )
-    preemptible: Optional[bool] = Field(
+    preemptible: bool | None = Field(
         default=None,
         description=(
             "Define if the task is allowed to run on preemptible            "
@@ -282,15 +293,15 @@ class TesResources(CustomBaseModel):
         ),
         examples=[False],
     )
-    ram_gb: Optional[float] = Field(
+    ram_gb: float | None = Field(
         default=None,
         description="Requested RAM required in gigabytes (GB)",
         examples=[8],
     )
-    disk_gb: Optional[float] = Field(
+    disk_gb: float | None = Field(
         default=None, description="Requested disk size in gigabytes (GB)", examples=[40]
     )
-    zones: Optional[list[str]] = Field(
+    zones: list[str] | None = Field(
         default=None,
         description=(
             "Request that the task be run in these compute zones. How         "
@@ -302,7 +313,7 @@ class TesResources(CustomBaseModel):
         ),
         examples=["us-west-1"],
     )
-    backend_parameters: Optional[dict[str, str]] = Field(
+    backend_parameters: dict[str, str] | None = Field(
         default=None,
         description=(
             "Key/value pairs for backend configuration.ServiceInfo shall "
@@ -321,7 +332,7 @@ class TesResources(CustomBaseModel):
         ),
         examples=[{"VmSize": "Standard_D64_v3"}],
     )
-    backend_parameters_strict: Optional[bool] = Field(
+    backend_parameters_strict: bool | None = Field(
         default=False,
         description=(
             "If set to true, backends should fail the task if any"
@@ -333,6 +344,8 @@ class TesResources(CustomBaseModel):
 
 
 class TesState(Enum):
+    """State of a task."""
+
     UNKNOWN = "UNKNOWN"
     QUEUED = "QUEUED"
     INITIALIZING = "INITIALIZING"
@@ -362,7 +375,7 @@ class TesForward(CustomBaseModel):
         description="TES server to which the task was forwarded.",
         examples=["https://my.tes.instance/"],
     )
-    forward_time: Optional[str] = Field(
+    forward_time: str | None = Field(
         default=None,
         description=(
             "When the task was forwarded, in RFC 3339 format; not set for"
@@ -375,7 +388,7 @@ class TesForward(CustomBaseModel):
 class Metadata(CustomBaseModel):
     """Create model instance for metadata."""
 
-    forwarded_to: Optional[list[TesForward]] = Field(
+    forwarded_to: list[TesForward] | None = Field(
         default=None,
         description=(
             "TES servers to which the task was forwarded, in the order of forwarding."
@@ -410,18 +423,20 @@ class Metadata(CustomBaseModel):
 
 
 class TesTaskLog(CustomBaseModel):
+    """Logs of a task attempt."""
+
     logs: list[TesExecutorLog] = Field(..., description="Logs for each executor")
-    metadata: Optional[Metadata] = Field(
+    metadata: Metadata | None = Field(
         default=None,
         description=("Arbitrary logging metadata included by the implementation."),
         examples=[{"host": "worker-001", "slurmm_id": 123456}],
     )
-    start_time: Optional[str] = Field(
+    start_time: str | None = Field(
         default=None,
         description="When the task started, in RFC 3339 format.",
         examples=["2020-10-02T10:00:00-05:00"],
     )
-    end_time: Optional[str] = Field(
+    end_time: str | None = Field(
         default=None,
         description="When the task ended, in RFC 3339 format.",
         examples=["2020-10-02T11:00:00-05:00"],
@@ -433,7 +448,7 @@ class TesTaskLog(CustomBaseModel):
             "    \nflattened into separate items."
         ),
     )
-    system_logs: Optional[list[str]] = Field(
+    system_logs: list[str] | None = Field(
         default=None,
         description=(
             "System logs are any logs the system decides are relevant,        "
@@ -450,21 +465,23 @@ class TesTaskLog(CustomBaseModel):
 
 
 class TesTask(CustomBaseModel):
-    id: Optional[str] = Field(
+    """TES task."""
+
+    id: str | None = Field(
         default=None,
         description="Task identifier assigned by the server.",
         examples=["job-0012345"],
     )
-    state: Optional[TesState] = None
-    name: Optional[str] = Field(default=None, description="User-provided task name.")
-    description: Optional[str] = Field(
+    state: TesState | None = None
+    name: str | None = Field(default=None, description="User-provided task name.")
+    description: str | None = Field(
         default=None,
         description=(
             "Optional user-provided description of task for           "
             " documentation purposes."
         ),
     )
-    inputs: Optional[list[TesInput]] = Field(
+    inputs: list[TesInput] | None = Field(
         default=None,
         description=(
             "Input files that will be used by the task. Inputs will be        "
@@ -473,7 +490,7 @@ class TesTask(CustomBaseModel):
         ),
         examples=[[{"url": "s3://my-object-store/file1", "path": "/data/file1"}]],
     )
-    outputs: Optional[list[TesOutput]] = Field(
+    outputs: list[TesOutput] | None = Field(
         default=None,
         description=(
             "Output files.\nOutputs will be uploaded from the executor        "
@@ -487,7 +504,7 @@ class TesTask(CustomBaseModel):
             }
         ],
     )
-    resources: Optional[TesResources] = None
+    resources: TesResources | None = None
     executors: list[TesExecutor] = Field(
         default_factory=list,
         description=(
@@ -500,7 +517,7 @@ class TesTask(CustomBaseModel):
             " message.\n\nExecution stops on the first error."
         ),
     )
-    volumes: Optional[list[str]] = Field(
+    volumes: list[str] | None = Field(
         default=None,
         description=(
             "Volumes are directories which may be used to share data          "
@@ -516,7 +533,7 @@ class TesTask(CustomBaseModel):
         ),
         examples=[["/vol/A/"]],
     )
-    tags: Optional[dict[str, str]] = Field(
+    tags: dict[str, str] | None = Field(
         default=None,
         description=(
             "A key-value map of arbitrary tags. These can be used to          "
@@ -527,7 +544,7 @@ class TesTask(CustomBaseModel):
         ),
         examples=[{"WORKFLOW_ID": "cwl-01234", "PROJECT_GROUP": "alice-lab"}],
     )
-    logs: Optional[list[TesTaskLog]] = Field(
+    logs: list[TesTaskLog] | None = Field(
         default=None,
         description=(
             "Task logging information.\nNormally, this will contain           "
@@ -535,7 +552,7 @@ class TesTask(CustomBaseModel):
             "        retried, an entry will be appended to this list."
         ),
     )
-    creation_time: Optional[str] = Field(
+    creation_time: str | None = Field(
         default=None,
         description=(
             "Date + time the task was created, in RFC 3339 format.\n          "
@@ -546,6 +563,8 @@ class TesTask(CustomBaseModel):
 
 
 class TesListTasksResponse(CustomBaseModel):
+    """Response to a task listing, with a page of tasks."""
+
     tasks: list[TesTask] = Field(
         ...,
         description=(
@@ -555,7 +574,7 @@ class TesListTasksResponse(CustomBaseModel):
             " job progresses."
         ),
     )
-    next_page_token: Optional[str] = Field(
+    next_page_token: str | None = Field(
         default=None,
         description=(
             "Token used to return the next page of results. This value        "
@@ -577,8 +596,8 @@ class BasicAuth(CustomBaseModel):
         password: Password for basic authorization.
     """
 
-    username: Optional[str] = None
-    password: Optional[str] = None
+    username: str | None = None
+    password: str | None = None
 
 
 class TesEndpoint(CustomBaseModel):
@@ -631,7 +650,7 @@ class DbDocument(CustomBaseModel):
 
     task: TesTask = TesTask()
     task_original: TesTask = TesTask()
-    user_id: Optional[str] = None
+    user_id: str | None = None
     worker_id: str = ""
     basic_auth: BasicAuth = BasicAuth()
     tes_endpoint: TesEndpoint = TesEndpoint()

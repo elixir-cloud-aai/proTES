@@ -1,16 +1,13 @@
 """Tests of the app created from `config.yaml`, with FOCA 0.15."""
 
-# pylint: disable=redefined-outer-name
-
 from importlib.metadata import version
-
 from pathlib import Path
 from typing import Any
 
 from connexion import FlaskApp
 from flask.testing import FlaskClient
 from foca import get_config
-import mongomock
+from pymongo import MongoClient
 import pytest
 import yaml
 
@@ -49,7 +46,7 @@ def test_service_info(client: FlaskClient) -> None:
 
 
 def test_service_info_not_stored(
-    client: FlaskClient, mongo_client: mongomock.MongoClient
+    client: FlaskClient, mongo_client: MongoClient[dict[str, Any]]
 ) -> None:
     """The service info is not stored in the database."""
     assert client.get(f"{BASE_PATH}/service-info").status_code == 200
@@ -106,7 +103,7 @@ def test_request_body_size_limit(client: FlaskClient) -> None:
 def test_placeholder_service_info(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
-    mongo_client: mongomock.MongoClient,  # pylint: disable=unused-argument
+    mongo_client: MongoClient[dict[str, Any]],
     capsys: pytest.CaptureFixture[str],
     service: dict[str, Any],
     fields: str | None,

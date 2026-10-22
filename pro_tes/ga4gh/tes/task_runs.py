@@ -1,39 +1,40 @@
 """Class implementing TES API-server-side controller methods."""
 
+from collections.abc import Sequence
 from copy import deepcopy
 from datetime import datetime, timezone
 import logging
-from typing import Optional, Sequence
+from typing import Any
 
-from bson.objectid import ObjectId  # type: ignore
+from bson.objectid import ObjectId
 from celery import uuid
 from dateutil.parser import parse as parse_time
 from flask import request
 from foca import get_collection
-from foca.utils.misc import generate_id  # type: ignore
-from pymongo.collection import Collection  # type: ignore
-from pymongo.errors import DuplicateKeyError, PyMongoError  # type: ignore
+from foca.utils.misc import generate_id
+from pymongo.collection import Collection
+from pymongo.errors import DuplicateKeyError, PyMongoError
 import requests
-import tes  # type: ignore
-from tes.models import Task  # type: ignore
+import tes
+from tes.models import Task
 from werkzeug.datastructures import Authorization
-
-from pro_tes.ga4gh.tes.models import Metadata
 
 from pro_tes.config_models import CustomConfig
 from pro_tes.exceptions import (
     BadRequest,
+    MiddlewareException,
     NoTesInstancesAvailable,
     TaskNotFound,
 )
 from pro_tes.ga4gh.tes.models import (
     BasicAuth,
     DbDocument,
+    Metadata,
     TesEndpoint,
+    TesForward,
     TesState,
     TesTask,
     TesTaskLog,
-    TesForward,
 )
 from pro_tes.ga4gh.tes.states import States
 from pro_tes.middleware.middleware_handler import MiddlewareHandler
@@ -42,14 +43,10 @@ from pro_tes.utils.db import DbDocumentConnector
 from pro_tes.utils.misc import get_custom_config, strip_auth
 from pro_tes.utils.models import TaskModelConverter
 
-# pragma pylint: disable=invalid-name,redefined-builtin,unused-argument
-# pragma pylint: disable=too-many-locals
-# pylint: disable=unsubscriptable-object
-
 logger = logging.getLogger(__name__)
 
 
-def flatten_forwards(task: dict) -> dict:
+def flatten_forwards(task: dict[str, Any]) -> dict[str, Any]:
     """Serve forwards nested by earlier versions as lists.
 
     Args:
@@ -81,12 +78,12 @@ class TaskRuns:
     def __init__(self) -> None:
         """Construct object instance."""
         self.custom_config: CustomConfig = get_custom_config()
-        self.db_client: Collection = get_collection("taskStore", "tasks")
+        self.db_client: Collection[dict[str, Any]] = get_collection(
+            "taskStore", "tasks"
+        )
         self.store_logs = self.custom_config.storeLogs.execution_trace
 
-    def create_task(  # pylint: disable=too-many-statements,too-many-branches
-        self, **kwargs
-    ) -> dict:
+    def create_task(self, **kwargs: Any) -> dict[str, Any]:
         """Start task.
 
         Args:
@@ -94,24 +91,31 @@ class TaskRuns:
 
         Returns:
             Task identifier.
+
+        Raises:
+            pro_tes.exceptions.BadRequest: The request has no JSON body.
+            pro_tes.exceptions.MiddlewareException: The middlewares removed
+                the JSON body.
         """
         # create task document
         start_time = datetime.now().strftime("%m-%d-%Y %H:%M:%S")
         db_document: DbDocument = DbDocument()
         db_document.basic_auth = self.parse_basic_auth(request.authorization)
-        assert request.json is not None
-        payload_original: dict = deepcopy(request.json)
+        if request.json is None:
+            raise BadRequest("Request body is missing")
+        payload_original: dict[str, Any] = deepcopy(request.json)
         db_document.task_original = TesTask(**payload_original)
 
         # apply middlewares
         mw_handler = MiddlewareHandler()
         mw_handler.set_middlewares(paths=self.custom_config.middlewares.root)
-        logger.debug(f"Middlewares registered: {mw_handler.middlewares}")
+        logger.debug("Middlewares registered: %s", mw_handler.middlewares)
         request_modified = mw_handler.apply_middlewares(request=request)
 
         # update task document
-        assert request_modified.json is not None
-        payload: dict = request_modified.json
+        if request_modified.json is None:
+            raise MiddlewareException("Middlewares removed the request body")
+        payload: dict[str, Any] = request_modified.json
         tes_urls = deepcopy(payload["tes_urls"])
         del payload["tes_urls"]
         db_document.task = TesTask(**payload)
@@ -128,9 +132,10 @@ class TaskRuns:
             worker_id=db_document.worker_id,
         )
         logger.info(
-            "Created task record with task identifier"
-            f" '{db_document.task.id}' and worker job identifier"
-            f" '{db_document.worker_id}'"
+            "Created task record with task identifier '%s' and worker job"
+            " identifier '%s'",
+            db_document.task.id,
+            db_document.worker_id,
         )
 
         # validate request
@@ -148,7 +153,8 @@ class TaskRuns:
         # relay request
         logger.info(
             "Attempting to forward the task request to any of the known TES"
-            f" instances, in the following order: {tes_urls}"
+            " instances, in the following order: %s",
+            tes_urls,
         )
         for tes_url in tes_urls:
             db_document.tes_endpoint = TesEndpoint(host=tes_url)
@@ -165,15 +171,18 @@ class TaskRuns:
                 )
             except ValueError as exc:
                 logger.warning(
-                    f"Task '{db_document.task.id}' could not "
-                    f"be sent to TES endpoint hosted at: {url}. Invalid TES"
-                    " endpoint URL. Original error message: "
-                    f"'{type(exc).__name__}: {exc}'"
+                    "Task '%s' could not be sent to TES endpoint hosted at: %s."
+                    " Invalid TES endpoint URL. Original error message:"
+                    " '%s: %s'",
+                    db_document.task.id,
+                    url,
+                    type(exc).__name__,
+                    exc,
                 )
                 continue
 
             # fix for FTP URLs with credentials on non-Funnel services
-            def strip_none_items(_seq: Sequence) -> list:
+            def strip_none_items(_seq: Sequence[Any]) -> list[Any]:
                 """Remove empty items from Sequence.
 
                 Args:
@@ -184,7 +193,7 @@ class TaskRuns:
                 """
                 return [item for item in _seq if item is not None]
 
-            def remove_auth(_list: list) -> list:
+            def remove_auth(_list: list[Any]) -> list[str]:
                 """Forward the list to 'remove_auth_from_url'.
 
                 Args:
@@ -219,16 +228,21 @@ class TaskRuns:
                 remote_task_id = cli.create_task(payload_marshalled)
             except requests.HTTPError as exc:
                 logger.warning(
-                    f"Task '{db_document.task.id}' could not be sent to TES"
-                    f" endpoint hosted at: {url}. Original error message:"
-                    f" '{type(exc).__name__}: {exc}'"
+                    "Task '%s' could not be sent to TES endpoint hosted at: %s."
+                    " Original error message: '%s: %s'",
+                    db_document.task.id,
+                    url,
+                    type(exc).__name__,
+                    exc,
                 )
                 continue
 
             logger.info(
-                f"Task '{db_document.task.id}' successfully forwarded to TES"
-                f" endpoint hosted at: {url}. Remote tak identifier:"
-                f" {remote_task_id}"
+                "Task '%s' successfully forwarded to TES endpoint hosted at:"
+                " %s. Remote task identifier: %s",
+                db_document.task.id,
+                url,
+                remote_task_id,
             )
             try:
                 task: Task = cli.get_task(remote_task_id)
@@ -237,17 +251,22 @@ class TaskRuns:
                 db_document.task.state = task_converted.state
             except requests.HTTPError as exc:
                 logger.error(
-                    f"Task '{db_document.task.id}' info could "
-                    "not be retrieved from TES endpoint hosted at: "
-                    f"{url}. Original error message: "
-                    f"'{type(exc).__name__}: {exc}'"
+                    "Task '%s' info could not be retrieved from TES endpoint"
+                    " hosted at: %s. Original error message: '%s: %s'",
+                    db_document.task.id,
+                    url,
+                    type(exc).__name__,
+                    exc,
                 )
             except PyMongoError as exc:
                 logger.error(
-                    "Database could not be updated with task info "
-                    f"retrieved for task '{db_document.task.id}'"
-                    f"sent to TES endpoint hosted at: {url}. "
-                    f"Original error message:'{type(exc).__name__}: {exc}'"
+                    "Database could not be updated with task info retrieved"
+                    " for task '%s' sent to TES endpoint hosted at: %s."
+                    " Original error message: '%s: %s'",
+                    db_document.task.id,
+                    url,
+                    type(exc).__name__,
+                    exc,
                 )
             # update task_logs, tes_endpoint and task in db
             db_document = self._update_doc_in_db(
@@ -274,7 +293,7 @@ class TaskRuns:
             " state set to 'SYSTEM_ERROR'."
         )
 
-    def list_tasks(self, **kwargs) -> dict:
+    def list_tasks(self, **kwargs: Any) -> dict[str, Any]:
         """Return list of tasks.
 
         Args:
@@ -289,7 +308,7 @@ class TaskRuns:
             self.custom_config.controllers.list_tasks.default_page_size,
         )
         page_token = kwargs.get("page_token")
-        filter_dict = {}
+        filter_dict: dict[str, Any] = {}
 
         user_id = kwargs.get("user_id")
         if user_id is not None:
@@ -311,7 +330,7 @@ class TaskRuns:
         )
         tasks_list = list(cursor)
 
-        logger.debug(f"Tasks list: {tasks_list}")
+        logger.debug("Tasks list: %s", tasks_list)
         if len(tasks_list) > page_size:
             next_page_token = str(tasks_list[page_size - 1]["_id"])
             tasks_list = tasks_list[:page_size]
@@ -332,11 +351,11 @@ class TaskRuns:
 
         return {"next_page_token": next_page_token, "tasks": tasks_lists}
 
-    def get_task(self, id=str, **kwargs) -> dict:
+    def get_task(self, id: str, **kwargs: Any) -> dict[str, Any]:
         """Return detailed information about a task.
 
         Args:
-            task_id: Task identifier.
+            id: Task identifier.
             **kwargs: Additional keyword arguments passed along with request.
 
         Returns:
@@ -352,11 +371,11 @@ class TaskRuns:
             filter={"task.id": id}, projection=projection
         )
         if document is None:
-            logger.error(f"Task '{id}' not found.")
+            logger.error("Task '%s' not found.", id)
             raise TaskNotFound
         return flatten_forwards(document["task"])
 
-    def cancel_task(self, id: str, **kwargs) -> dict:
+    def cancel_task(self, id: str, **kwargs: Any) -> dict[str, Any]:
         """Cancel task.
 
         Args:
@@ -377,7 +396,7 @@ class TaskRuns:
             projection={"_id": False},
         )
         if document is None:
-            logger.error(f"task '{id}' not found.")
+            logger.error("Task '%s' not found.", id)
             raise TaskNotFound
         db_document: DbDocument = DbDocument(**document)
 
@@ -392,23 +411,28 @@ class TaskRuns:
             )
 
             _logs = db_document.task.logs
-            assert isinstance(_logs, (list, tuple)), "task logs is not indexable"
+            if not _logs:
+                raise ValueError(f"Task '{id}' has no logs")
 
             _metadata = _logs[0].metadata
-            assert isinstance(_metadata, Metadata), "task metadata is None"
+            if not isinstance(_metadata, Metadata):
+                raise ValueError(f"Task '{id}' has no metadata")
 
             if self.store_logs:
-                assert _metadata.forwarded_to, "link to next TES is missing"
+                if not _metadata.forwarded_to:
+                    raise ValueError(f"Task '{id}' was not forwarded")
                 # the TES server that proTES forwarded the task to
                 task_id = _metadata.forwarded_to[-1].id
             else:
-                task_id = _metadata["remote_task_id"]  # type: ignore
+                # Not subscriptable; fixed with #208
+                task_id = _metadata["remote_task_id"]  # type: ignore[index]
 
             logger.info(
-                "Trying to cancel task with task identifier"
-                f" '{task_id}' and worker job"
-                f" identifier '{db_document.worker_id}' running at TES"
-                f" endpoint hosted at: {url}"
+                "Trying to cancel task with task identifier '%s' and worker job"
+                " identifier '%s' running at TES endpoint hosted at: %s",
+                task_id,
+                db_document.worker_id,
+                url,
             )
             cli = tes.HTTPClient(
                 url,
@@ -422,7 +446,7 @@ class TaskRuns:
                 state="CANCELED",
             )
             logger.info(
-                f"Task '{id}' with worker ID '{db_document.worker_id}' canceled."
+                "Task '%s' with worker ID '%s' canceled.", id, db_document.worker_id
             )
         return {}
 
@@ -455,12 +479,10 @@ class TaskRuns:
                 )
             except DuplicateKeyError:
                 continue
-            assert document is not None
-            assert document.task.id is not None
             return document.task.id, document.worker_id
         raise DuplicateKeyError("Could not insert document into database.")
 
-    def _sanitize_request(self, payload: dict) -> dict:
+    def _sanitize_request(self, payload: dict[str, Any]) -> dict[str, Any]:
         """Sanitize request for use with py-tes.
 
         Args:
@@ -490,7 +512,7 @@ class TaskRuns:
             payload["logs"] = [tes.models.TaskLog(**log) for log in payload["logs"]]
         return payload
 
-    def _set_projection(self, view: str) -> dict:
+    def _set_projection(self, view: str) -> dict[str, bool]:
         """Set database projection for selected view.
 
         Args:
@@ -525,7 +547,11 @@ class TaskRuns:
         return projection
 
     def _update_task(
-        self, payload: dict, db_document: DbDocument, start_time: str, **kwargs
+        self,
+        payload: dict[str, Any],
+        db_document: DbDocument,
+        start_time: str,
+        **kwargs: Any,
     ) -> DbDocument:
         """Update the task object.
 
@@ -541,25 +567,27 @@ class TaskRuns:
         logs = self._set_logs(payloads=deepcopy(payload), start_time=start_time)
         db_document.task.logs = [TesTaskLog(**logs) for logs in logs]
         db_document.task.state = TesState.UNKNOWN
-        db_document.user_id = kwargs.get("user_id", None)
+        db_document.user_id = kwargs.get("user_id")
 
         (task_id, worker_id) = self._write_doc_to_db(document=db_document)
         db_document.task.id = task_id
         db_document.worker_id = worker_id
         return db_document
 
-    def _set_logs(self, payloads: dict, start_time: str) -> dict:
+    def _set_logs(
+        self, payloads: dict[str, Any], start_time: str
+    ) -> list[dict[str, Any]]:
         """Create or update `TesTask.logs` and set start time.
 
         Args:
-            payload: A dictionary containing the payload for the update.
+            payloads: A dictionary containing the payload for the update.
             start_time: The starting time of the incoming TES request.
 
         Returns:
             Task logs with start time set.
         """
-        if "logs" not in payloads.keys():
-            logs = [
+        if "logs" not in payloads:
+            logs: list[dict[str, Any]] = [
                 {
                     "logs": [],
                     "metadata": {},
@@ -573,11 +601,12 @@ class TaskRuns:
         else:
             for log in payloads["logs"]:
                 log["start_time"] = start_time
-        return payloads["logs"]
+        logs = payloads["logs"]
+        return logs
 
     def _update_doc_in_db(
         self,
-        db_connector,
+        db_connector: DbDocumentConnector,
         tes_url: str,
         remote_task_id: str,
     ) -> DbDocument:
@@ -590,15 +619,21 @@ class TaskRuns:
 
         Returns:
             The updated database document.
+
+        Raises:
+            ValueError: The task has no logs.
         """
         time_now = datetime.now().strftime("%m-%d-%Y %H:%M:%S")
-        tes_endpoint_dict = {"host": tes_url, "base_path": ""}
+        tes_endpoint_dict: dict[str, Any] = {"host": tes_url, "base_path": ""}
         db_document = db_connector.upsert_fields_in_root_object(
             root="tes_endpoint",
             **tes_endpoint_dict,
         )
+        if db_document.task.logs is None:
+            raise ValueError(f"Task '{db_document.task.id}' has no logs")
+        task_logs = db_document.task.logs
         # updating the end time in TesTask logs
-        for logs in db_document.task.logs:
+        for logs in task_logs:
             logs.end_time = time_now
 
         # updating the metadata in TesTask logs
@@ -609,14 +644,15 @@ class TaskRuns:
                 remote_task_id=remote_task_id,
             )
         else:
-            for logs in db_document.task.logs:
-                logs.metadata = {"remote_task_id": remote_task_id}
+            for logs in task_logs:
+                # Not a `Metadata` model; fixed with #208
+                logs.metadata = {"remote_task_id": remote_task_id}  # type: ignore[assignment]
 
         db_document = db_connector.upsert_fields_in_root_object(
             root="task",
             **db_document.model_dump(mode="json", exclude_none=True)["task"],
         )
-        logger.debug(f"Task '{db_document.task}' inserted to database ")
+        logger.debug("Task '%s' inserted to database", db_document.task)
         return db_document
 
     def _update_task_metadata(
@@ -634,8 +670,12 @@ class TaskRuns:
 
         Returns:
             The updated database document.
+
+        Raises:
+            ValueError: The task has no logs.
         """
-        assert db_document.task.logs is not None
+        if db_document.task.logs is None:
+            raise ValueError(f"Task '{db_document.task.id}' has no logs")
         logs: list[TesTaskLog] = db_document.task.logs
         forward = TesForward(
             id=remote_task_id,
@@ -643,14 +683,15 @@ class TaskRuns:
             forward_time=datetime.now(timezone.utc).isoformat(),
         )
         for log in logs:
-            assert log.metadata is not None
+            if log.metadata is None:
+                log.metadata = Metadata()
             if log.metadata.forwarded_to is None:
                 log.metadata.forwarded_to = []
             log.metadata.forwarded_to.append(forward)
         return db_document
 
     @staticmethod
-    def parse_basic_auth(auth: Optional[Authorization]) -> BasicAuth:
+    def parse_basic_auth(auth: Authorization | None) -> BasicAuth:
         """Parse basic auth header.
 
         Args:

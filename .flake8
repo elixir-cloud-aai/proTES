@@ -1,6 +1,0 @@
-[flake8]
-# Line length and slice spacing of ruff format
-max-line-length = 88
-extend-ignore = E203
-per-file-ignores =
-    pro_tes/ga4gh/tes/models.py:D101

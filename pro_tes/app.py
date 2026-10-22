@@ -3,7 +3,7 @@
 import logging
 from pathlib import Path
 
-from connexion import FlaskApp  # type: ignore
+from connexion import FlaskApp
 from foca import Foca, get_config
 
 logger = logging.getLogger(__name__)

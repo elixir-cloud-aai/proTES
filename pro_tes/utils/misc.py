@@ -35,11 +35,11 @@ def strip_auth(url: str) -> str:
     After removal: scheme://host:port/path?query#fragment
 
     Args:
-        uri: URI.
+        url: URI.
 
     Returns:
         URI without basic auth.
     """
     elements = list(urlsplit(url))
-    elements[1] = elements[1][elements[1].rfind("@") + 1 :]  # noqa: E203
+    elements[1] = elements[1][elements[1].rfind("@") + 1 :]
     return urlunsplit(elements)

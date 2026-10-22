@@ -1,21 +1,20 @@
 """Class to convert py-tes to proTES TES task model."""
 
 from datetime import datetime
-from typing import Optional
 
-from tes.models import TaskLog, Task  # type: ignore
+from tes.models import Task, TaskLog
 
 from pro_tes.ga4gh.tes.models import (
     TesExecutor,
     TesExecutorLog,
     TesFileType,
     TesInput,
-    TesTaskLog,
     TesOutput,
     TesOutputFileLog,
     TesResources,
     TesState,
     TesTask,
+    TesTaskLog,
 )
 
 
@@ -77,7 +76,7 @@ class TaskModelConverter:
             state = TesState(self.task.state)
         return state
 
-    def convert_inputs(self) -> Optional[list[TesInput]]:
+    def convert_inputs(self) -> list[TesInput] | None:
         """Convert py-tes to proTES TES task inputs.
 
         Returns:
@@ -99,7 +98,7 @@ class TaskModelConverter:
             ]
         return inputs
 
-    def convert_outputs(self) -> Optional[list[TesOutput]]:
+    def convert_outputs(self) -> list[TesOutput] | None:
         """Convert py-tes to proTES TES task outputs.
 
         Returns:
@@ -120,7 +119,7 @@ class TaskModelConverter:
             ]
         return outputs
 
-    def convert_resources(self) -> Optional[TesResources]:
+    def convert_resources(self) -> TesResources | None:
         """Convert py-tes to proTES TES task resources.
 
         Returns:
@@ -162,7 +161,7 @@ class TaskModelConverter:
             ]
         return executors
 
-    def convert_logs(self) -> Optional[list[TesTaskLog]]:
+    def convert_logs(self) -> list[TesTaskLog] | None:
         """Convert py-tes to proTES TES task logs.
 
         Returns:
@@ -250,9 +249,9 @@ class TaskModelConverter:
 
     @staticmethod
     def convert_time(
-        timestamp: Optional[datetime],
-        allow_none=True,
-    ) -> Optional[str]:
+        timestamp: datetime | None,
+        allow_none: bool = True,
+    ) -> str | None:
         """Convert py-tes to proTES TES task time.
 
         Args:

@@ -1,11 +1,9 @@
 """Tests of the TES API endpoints, with a fake TES backend."""
 
-# pylint: disable=redefined-outer-name
-
-from typing import Any
+from typing import Any, ClassVar
 
 from flask.testing import FlaskClient
-import mongomock
+from pymongo import MongoClient
 import pytest
 import tes
 
@@ -23,8 +21,8 @@ TASK = {
 class FakeBackend:
     """Fake TES backend: tasks are queued; records tasks and cancellations."""
 
-    tasks: list[tes.Task] = []
-    canceled: list[str] = []
+    tasks: ClassVar[list[tes.Task]] = []
+    canceled: ClassVar[list[str]] = []
 
     def __init__(self, url: str, **kwargs: Any) -> None:
         """Create a client; arguments are ignored."""
@@ -70,7 +68,9 @@ def task_id(client: FlaskClient, backend: type[FakeBackend]) -> str:
     return str(response.get_json()["id"])
 
 
-def set_state(mongo_client: mongomock.MongoClient, task_id: str, state: str) -> None:
+def set_state(
+    mongo_client: MongoClient[dict[str, Any]], task_id: str, state: str
+) -> None:
     """Set the state of a stored task, as the Celery task does."""
     mongo_client["taskStore"]["tasks"].update_one(
         {"task.id": task_id}, {"$set": {"task.state": state}}
@@ -106,13 +106,13 @@ def test_cancel_task(
     client: FlaskClient,
     task_id: str,
     backend: type[FakeBackend],
-    mongo_client: mongomock.MongoClient,
+    mongo_client: MongoClient[dict[str, Any]],
 ) -> None:
     """Tasks are canceled at the last forward, i.e., proTES's own."""
     collection = mongo_client["taskStore"]["tasks"]
-    forwards = collection.find_one({"task.id": task_id})["task"]["logs"][0]["metadata"][
-        "forwarded_to"
-    ]
+    document = collection.find_one({"task.id": task_id})
+    assert document is not None
+    forwards = document["task"]["logs"][0]["metadata"]["forwarded_to"]
     upstream = {"id": "upstream-1", "url": "https://upstream.example.org"}
     collection.update_one(
         {"task.id": task_id},
@@ -132,10 +132,12 @@ def test_cancel_task_nested_forwards(
     client: FlaskClient,
     task_id: str,
     backend: type[FakeBackend],
-    mongo_client: mongomock.MongoClient,
+    mongo_client: MongoClient[dict[str, Any]],
 ) -> None:
-    """Tasks stored with nested forwards (earlier versions) are served
-    with lists of forwards, and canceled."""
+    """Tasks stored with nested forwards are served as lists, and canceled.
+
+    Earlier versions stored the forwards nested.
+    """
     mongo_client["taskStore"]["tasks"].update_one(
         {"task.id": task_id},
         {

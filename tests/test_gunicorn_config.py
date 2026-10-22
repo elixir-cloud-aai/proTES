@@ -5,11 +5,12 @@ from pathlib import Path
 import re
 import shlex
 import sys
+from typing import Any
 from urllib.parse import urlsplit
 
 from flask.testing import FlaskClient
-from gunicorn.util import import_app  # type: ignore
-import mongomock
+from gunicorn.util import import_app
+from pymongo import MongoClient
 import pytest
 
 from pro_tes import gunicorn_config
@@ -75,7 +76,7 @@ def test_app_uri() -> None:
 
 
 def test_app_uri_loads(
-    mongo_client: mongomock.MongoClient,  # pylint: disable=unused-argument
+    mongo_client: MongoClient[dict[str, Any]],
 ) -> None:
     """Gunicorn gets a WSGI app from the image's command."""
     app = import_app(load_settings().app_uri)

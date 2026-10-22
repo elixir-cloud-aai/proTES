@@ -1,0 +1,24 @@
+# Semgrep rules for security issues that ruff's bandit rules (`S`) do not
+# cover; secrets are detected by gitleaks (cf. `.pre-commit-config.yaml`)
+rules:
+  - id: flask-debug-enabled
+    languages: [generic]
+    severity: ERROR
+    message: >-
+      Flask debug mode allows executing arbitrary code; only enable it for
+      local development, in an overlay config (`FOCA_CONFIG_OVERLAY`)
+    paths:
+      include:
+        - "/pro_tes/config.yaml"
+        - "/deployment/**/*.yaml"
+    pattern-regex: (?im)^\s*debug:\s*['"]?(true|yes|on)['"]?\s*(#.*)?$
+  - id: jwt-decode-without-verification
+    languages: [python]
+    severity: ERROR
+    message: >-
+      Access tokens must be verified; use FOCA's `validate_token()` for
+      tokens of callers
+    patterns:
+      - pattern-either:
+          - pattern: 'jwt.decode(..., options={..., "verify_signature": False, ...}, ...)'
+          - pattern: "jwt.decode(..., verify=False, ...)"

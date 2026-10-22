@@ -15,7 +15,6 @@ clients can reach the app directly.
 """
 
 # Settings are module variables named as Gunicorn's settings, in lower case
-# pylint: disable=invalid-name
 
 import os
 from pathlib import Path

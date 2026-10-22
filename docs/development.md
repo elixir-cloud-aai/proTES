@@ -9,9 +9,9 @@ the checks that CI runs:
 
 ```bash
 pip install -e ".[dev]"  # the app, with the dev dependencies
-flake8 pro_tes/
-pylint pro_tes/
-mypy pro_tes/
+pre-commit install  # run the checks on every commit
+pre-commit run --all-files  # ruff, mypy, semgrep, ast-grep, actionlint
+pre-commit run --all-files --hook-stage manual gitleaks-all  # secrets
 pytest tests --ignore=tests/unitTest --ignore=tests/test_integration
 ```
 
@@ -27,10 +27,26 @@ Flask's development server instead of Gunicorn (see
 [Server](configuration.md#server)); it needs a MongoDB at `db.host` and a
 RabbitMQ at `jobs.host` of the config.
 
+Run `pre-commit` in the environment with the dev dependencies: the mypy and
+ast-grep hooks use the installed packages. The first run sets up the other
+hooks, which takes a few minutes.
+
 The checks are configured in
-[`pyproject.toml`](https://github.com/elixir-cloud-aai/proTES/blob/dev/pyproject.toml)
-and the [CI
-workflow](https://github.com/elixir-cloud-aai/proTES/blob/dev/.github/workflows/checks.yaml).
+[`.pre-commit-config.yaml`](https://github.com/elixir-cloud-aai/proTES/blob/dev/.pre-commit-config.yaml)
+and
+[`pyproject.toml`](https://github.com/elixir-cloud-aai/proTES/blob/dev/pyproject.toml).
+Project-specific rules are in `.semgrep/` (security) and `.ast-grep/`
+(anti-patterns such as HTTP status codes as strings).
+[actionlint](https://github.com/rhysd/actionlint) checks the workflows in
+`.github/workflows/`, and their shell scripts with
+[ShellCheck](https://www.shellcheck.net/) if it is installed (as on
+GitHub-hosted runners, so CI may find more than a local run without it). To
+suppress a false positive, add a comment with the reason to the line:
+`# noqa: <code>` (ruff), `# type: ignore[<code>]` (mypy),
+`# nosemgrep: <rule-id>`, `# ast-grep-ignore: <rule-id>` or
+`# gitleaks:allow`. The tests in `tests/unitTest` are not checked until
+they are fixed or removed
+([#207](https://github.com/elixir-cloud-aai/proTES/issues/207)).
 
 ## Documentation
 
