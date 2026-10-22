@@ -2,28 +2,35 @@
 
 To quickly install the service for development/testing purposes, we recommend
 deployment via [Docker Compose](https://docs.docker.com/compose/install/), as
-described in the quick start of the
-[README](https://github.com/elixir-cloud-aai/proTES/blob/dev/README.md#quick-start).
-For more durable deployments on cloud native infrastructure, we also provide
-a [Helm](https://helm.sh/) chart in the
+described below. For more durable deployments on cloud native infrastructure,
+we also provide a [Helm](https://helm.sh/) chart in the
 [`deployment/`](https://github.com/elixir-cloud-aai/proTES/tree/dev/deployment)
-directory. The [FOCA deployment
+directory (see [Deployment](deployment.md)). The [FOCA deployment
 guide](https://foca.readthedocs.io/en/latest/deployment/) explains how FOCA
 apps, such as this one, are configured with Docker Compose and Helm.
 
-The app is configured by
-[`pro_tes/config.yaml`](https://github.com/elixir-cloud-aai/proTES/blob/dev/pro_tes/config.yaml),
-the Docker Compose setup by
-[`docker-compose.yaml`](https://github.com/elixir-cloud-aai/proTES/blob/dev/docker-compose.yaml).
+## Quick start
 
-Set the service info that proTES serves at `GET /ga4gh/tes/v1/service-info`
-(section `service_info.service` of the app configuration) to describe your
-deployment: at least `id` (e.g., `org.example.my-protes`) and `organization`
-(`name`, `url`), and preferably `name`, `description`, `contactUrl`,
-`environment` and `storage`. The defaults are placeholders, and proTES logs a
-warning on startup while `id` or `organization` still have them.
+--8<-- "README.md:quick-start"
 
-## Other useful commands
+Only proTES is published, on the host's loopback interface (`127.0.0.1`);
+MongoDB and RabbitMQ are only reachable from the containers. Their data is
+kept in the Compose project's volumes `mongodb-data` and `rabbitmq-data`
+(e.g., `protes_mongodb-data`, see `docker volume ls`). Earlier versions kept
+the data elsewhere (see [Upgrading](upgrading.md#docker-compose)). The
+comments in
+[`docker-compose.yaml`](https://github.com/elixir-cloud-aai/proTES/blob/dev/docker-compose.yaml)
+describe the settings, e.g., the RabbitMQ credentials.
+
+To also start [Flower](https://flower.readthedocs.io/), a web UI to monitor
+the Celery worker, at `http://localhost:5555`, set its credentials and enable
+the `monitoring` profile:
+
+```bash
+FLOWER_BASIC_AUTH='<user>:<password>' docker compose --profile monitoring up -d
+```
+
+### Other useful commands
 
 To shut down the service, run:
 
@@ -31,16 +38,28 @@ To shut down the service, run:
 docker compose down
 ```
 
-The Celery worker tracks the state of forwarded tasks until they finish.
-Tracking is not resumed after a restart: tasks that are still being tracked
-(or queued for tracking in RabbitMQ) when the service is shut down keep the
-state last recorded. Shut down when no tasks are running.
+Add `--volumes` to also delete the database and the broker's data.
+
+!!! warning
+    The Celery worker tracks the state of forwarded tasks until they finish.
+    Tracking is not resumed after a restart: tasks that are still being
+    tracked (or queued for tracking in RabbitMQ) when the service is shut
+    down keep the state last recorded. Shut down when no tasks are running.
 
 If you need to inspect the logs, call:
 
 ```bash
 docker compose logs
 ```
+
+## Usage
+
+[Endpoints](api.md) can be probed with `curl`, as above, or tried in the
+Swagger UI. See [Configuration](configuration.md) for the TES instances that
+tasks are forwarded to, and to change the config of the Docker Compose setup.
+Set the [service info](configuration.md#service-info) to describe your
+deployment: the defaults are placeholders, and proTES logs a warning on
+startup while `id` or `organization` still have them.
 
 ## Troubleshooting: network MTU
 

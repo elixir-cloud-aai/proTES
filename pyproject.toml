@@ -12,7 +12,7 @@ extend-exclude = ["tests/unitTest"]
 
 [tool.ruff.lint]
 # The rule set shared by FOCA and FOCA apps: FOCA's rules plus `G` and `S`;
-# unlike in FOCA, `D` applies everywhere, also to the tests
+# unlike in FOCA, `D` applies everywhere, also to the tests and docs hooks
 select = [
     "B",    # flake8-bugbear
     "C4",   # flake8-comprehensions
@@ -53,7 +53,7 @@ known-first-party = ["pro_tes", "tests"]
 convention = "google"
 
 [tool.mypy]
-files = ["pro_tes", "tests"]
+files = ["pro_tes", "docs/hooks.py", "tests"]
 # Not collectable yet; fixed or removed with #207
 exclude = ["^tests/unitTest/"]
 # Complete type hints: all functions annotated, generic types parametrized
@@ -138,6 +138,20 @@ dev = [
     "types-PyYAML>=6.0.12",
     "types-requests>=2.28.5",
 ]
+# Documentation (`mkdocs.yml`), built by Read the Docs (`.readthedocs.yaml`)
+# and in CI; needs Python 3.11 or later. The packages that add warnings,
+# which fail the strict build, are listed too, to bound their major versions
+# (new warnings of minor releases still fail it)
+docs = [
+    "griffelib>=2.4,<3",
+    "mkdocs>=1.6.1,<2",
+    "mkdocs-autorefs>=1.4.4,<2",
+    "mkdocs-material>=9.7.7,<10",
+    # 1.0.6 and earlier fail with pymdown-extensions 12
+    "mkdocstrings>=1.0.8,<2",
+    "mkdocstrings-python>=2.0.10,<3",
+    "pymdown-extensions>=12.3,<13",
+]
 
 [project.readme]
 file = "README.md"
@@ -146,6 +160,7 @@ content-type = "text/markdown"
 [project.urls]
 homepage = "https://github.com/elixir-cloud-aai/proTES.git"
 Tracker = "https://github.com/elixir-cloud-aai/proTES/issues"
+Documentation = "https://protes.readthedocs.io"
 
 [tool.setuptools_scm]
 # Version from Git tags (`vX.Y.Z`), the only place it is stored; builds

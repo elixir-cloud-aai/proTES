@@ -8,8 +8,9 @@ repos:
       - id: check-added-large-files
       - id: check-merge-conflict
       - id: check-yaml
-        # Helm templates are not valid YAML before rendering
-        exclude: ^deployment/templates/
+        # Helm templates are not valid YAML before rendering; `mkdocs.yml`
+        # uses MkDocs' `!ENV` tag (the docs build checks it)
+        exclude: ^(deployment/templates/|mkdocs\.yml$)
       # Vendored GA4GH specifications are kept as published
       - id: end-of-file-fixer
         exclude: ^pro_tes/api/(9e9c5aa|20181113|20190903)\.
