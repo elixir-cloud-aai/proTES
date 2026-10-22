@@ -1,6 +1,6 @@
 """proTES exceptions."""
 
-from connexion.exceptions import (  # type: ignore
+from connexion.exceptions import (
     BadRequestProblem,
     ExtraParameterProblem,
     Forbidden,
@@ -8,7 +8,7 @@ from connexion.exceptions import (  # type: ignore
     Unauthorized,
 )
 from pydantic import ValidationError
-from pymongo.errors import PyMongoError  # type: ignore
+from pymongo.errors import PyMongoError
 from werkzeug.exceptions import (
     BadRequest,
     InternalServerError,

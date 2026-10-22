@@ -1,31 +1,33 @@
 """TES task states."""
 
+from typing import ClassVar
+
 # pragma pylint: disable=too-few-public-methods
 
 
 class States:
     """TES task states."""
 
-    UNDEFINED = [
+    UNDEFINED: ClassVar[list[str]] = [
         "UNKNOWN",
     ]
 
-    CANCELABLE = [
+    CANCELABLE: ClassVar[list[str]] = [
         "INITIALIZING",
         "PAUSED",
         "QUEUED",
         "RUNNING",
     ]
 
-    UNFINISHED = CANCELABLE + UNDEFINED
+    UNFINISHED: ClassVar[list[str]] = CANCELABLE + UNDEFINED
 
-    FINISHED = [
+    FINISHED: ClassVar[list[str]] = [
         "COMPLETE",
         "CANCELED",
         "EXECUTOR_ERROR",
         "SYSTEM_ERROR",
     ]
 
-    DEFINED = UNFINISHED + FINISHED
+    DEFINED: ClassVar[list[str]] = UNFINISHED + FINISHED
 
-    ALL = UNDEFINED + DEFINED
+    ALL: ClassVar[list[str]] = UNDEFINED + DEFINED

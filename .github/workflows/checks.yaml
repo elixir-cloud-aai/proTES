@@ -9,30 +9,42 @@ on:
 permissions:
   contents: read
 
+# Cancel superseded runs of a pull request; runs for pushes get their own
+# group, so that queued runs for successive pushes are not dropped
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'push' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  lint:
-    name: Run linting (Python ${{ matrix.python-version }})
+  analyze_code:
+    name: Static code analysis
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ["3.10", "3.12"]
+    timeout-minutes: 15
     steps:
       - name: Check out repository
-        uses: actions/checkout@v3
-      - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          python-version: ${{ matrix.python-version }}
-      - name: Pin pip version
-        run: python -m pip install --upgrade "pip<24.1"
-      - name: Install requirements
-        run: pip install -e ".[dev]"
-      - name: Lint with Flake8
-        run: flake8 pro_tes/
-      - name: Lint with Pylint
-        run: pylint pro_tes/
-      - name: Type check with mypy
-        run: mypy pro_tes/
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.10"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      # mypy checks imports, so runtime dependencies are needed too
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip==24.0
+          pip install -e ".[dev]"
+      - name: Cache pre-commit hook environments
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
+      - name: Run linters, type checks and security checks
+        run: |
+          pre-commit run --all-files --show-diff-on-failure
+          pre-commit run --all-files --hook-stage manual gitleaks-all
       - name: Build distributions
         run: python -m build
       - name: Check wheel contents
@@ -48,36 +60,51 @@ jobs:
   unit-test:
     name: Run unit tests (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     strategy:
+      fail-fast: false
       matrix:
         python-version: ["3.10", "3.12"]
     steps:
       - name: Check out repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Install requirements
-        run: pip install -e ".[dev]"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip==24.0
+          pip install -e ".[dev]"
       # The tests in `tests/unitTest` are not collectable yet (#207)
       - name: Run unit tests
         run: pytest tests --ignore=tests/unitTest --ignore=tests/test_integration
   test:
     name: Run tests
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     env:
       # Passed to the image build by Docker Compose, as for published images
       SETUPTOOLS_SCM_PRETEND_VERSION: 0.0.0+compose
     steps:
       - name: Check out repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.10"
-      - name: Install requirements
-        run: pip install -e ".[dev]"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip==24.0
+          pip install -e ".[dev]"
       - name: Deploy app
         # Waits until the containers are healthy (see their health checks)
         run: docker compose up -d --build --wait --wait-timeout 300
@@ -100,8 +127,9 @@ jobs:
   publish:
     name: Build and publish app image
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     if: ${{ github.event_name == 'push' }}
-    needs: [lint, unit-test, test]
+    needs: [analyze_code, unit-test, test]
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

@@ -1,0 +1,6 @@
+id: foca-config-attribute
+valid:
+  - conf = get_config()
+invalid:
+  - conf = current_app.config.foca
+  - app.app.config.foca.custom.endpoints

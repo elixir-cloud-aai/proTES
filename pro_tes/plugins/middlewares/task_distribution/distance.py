@@ -2,14 +2,13 @@
 
 import logging
 from socket import gaierror, gethostbyname
-from typing import Optional
 from urllib.parse import urlparse
 
 import flask
-from geopy.distance import geodesic  # type: ignore
-from ip2geotools.errors import InvalidRequestError  # type: ignore
-from ip2geotools.databases.noncommercial import DbIpCity  # type: ignore
-from ip2geotools.models import IpLocation  # type: ignore
+from geopy.distance import geodesic
+from ip2geotools.databases.noncommercial import DbIpCity
+from ip2geotools.errors import InvalidRequestError
+from ip2geotools.models import IpLocation
 from pydantic import (  # pragma pylint: disable=no-name-in-module
     BaseModel,
     ConfigDict,
@@ -34,7 +33,7 @@ class TesStats(BaseModel):
             and the task's inputs.
     """
 
-    total_distance: Optional[float] = None
+    total_distance: float | None = None
 
 
 class TesInstance(BaseModel):
@@ -45,7 +44,7 @@ class TesInstance(BaseModel):
         stats: TES instance statistics.
     """
 
-    location: Optional[IpLocation] = None
+    location: IpLocation | None = None
     stats: TesStats = TesStats()
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -58,7 +57,7 @@ class TaskInput(BaseModel):
         location: Input IP location.
     """
 
-    location: Optional[IpLocation] = None
+    location: IpLocation | None = None
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 

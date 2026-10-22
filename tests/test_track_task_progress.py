@@ -4,7 +4,7 @@ from typing import Any
 
 from connexion import FlaskApp
 from foca import get_collection
-import mongomock
+from pymongo import MongoClient
 import pytest
 import tes
 
@@ -32,7 +32,7 @@ class FakeClient:  # pylint: disable=too-few-public-methods
 @pytest.mark.parametrize("db_name", [None, "protes"])
 def test_task_tracked(
     monkeypatch: pytest.MonkeyPatch,
-    mongo_client: mongomock.MongoClient,
+    mongo_client: MongoClient[dict[str, Any]],
     db_name: str | None,
 ) -> None:
     """The state and outputs are stored in the configured database.

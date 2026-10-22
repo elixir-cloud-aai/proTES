@@ -1,9 +1,6 @@
 """Custom app config models."""
 
-from typing import List, Optional
-
 from pydantic import BaseModel, RootModel  # pylint: disable=no-name-in-module
-
 
 # pragma pylint: disable=too-few-public-methods
 
@@ -51,9 +48,9 @@ class Timeout(BaseModel):
         job: Timeout for job execution (None disables timeout).
     """
 
-    post: Optional[int] = None
+    post: int | None = None
     poll: int = 2
-    job: Optional[int] = None
+    job: int | None = None
 
 
 class Polling(BaseModel):
@@ -165,7 +162,7 @@ class Tes(BaseModel):
         service_list: List of available TES services.
     """
 
-    service_list: List[str] = [
+    service_list: list[str] = [
         "https://csc-tesk-noauth.rahtiapp.fi",
         "https://funnel.cloud.e-infra.cz/",
         "https://tesk-eu.hypatia-comp.athenarc.gr",
@@ -187,7 +184,7 @@ class StoreLogs(BaseModel):
     execution_trace: bool = True
 
 
-class Middlewares(RootModel[List[List[str]]]):
+class Middlewares(RootModel[list[list[str]]]):
     """Middleware configuration.
 
     Args:
@@ -197,7 +194,7 @@ class Middlewares(RootModel[List[List[str]]]):
         root: A list of middleware class paths.
     """
 
-    root: List[List[str]] = [
+    root: list[list[str]] = [
         [
             (
                 "pro_tes.plugins.middlewares.task_distribution.distance."

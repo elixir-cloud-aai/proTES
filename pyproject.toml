@@ -7,6 +7,82 @@ build-backend = "setuptools.build_meta"
 [tool.ruff]
 line-length = 88
 target-version = "py310"
+# Not collectable yet; fixed or removed with #207
+extend-exclude = ["tests/unitTest"]
+
+[tool.ruff.lint]
+# The rule set shared by FOCA and FOCA apps: FOCA's rules plus `G` and `S`;
+# unlike in FOCA, `D` applies everywhere, also to the tests
+select = [
+    "B",    # flake8-bugbear
+    "C4",   # flake8-comprehensions
+    "D",    # pydocstyle (docstrings)
+    "E",    # pycodestyle errors
+    "F",    # Pyflakes
+    "G",    # flake8-logging-format
+    "I",    # isort
+    "PL",   # Pylint
+    "RUF",  # Ruff-specific rules
+    "S",    # flake8-bandit (security)
+    "SIM",  # flake8-simplify
+    "UP",   # pyupgrade
+    "W",    # pycodestyle warnings
+]
+ignore = [
+    # Complexity limits, as in FOCA: some functions mirror the API's
+    # operations or take many test fixtures, and splitting them would obscure
+    # them
+    "PLR0912",  # too-many-branches
+    "PLR0913",  # too-many-arguments
+    "PLR0915",  # too-many-statements
+    "PLR0917",  # too-many-positional-arguments
+    # Flags HTTP status codes and other literals (e.g., lengths), which are
+    # clear as is
+    "PLR2004",  # magic-value-comparison
+]
+
+[tool.ruff.lint.isort]
+force-sort-within-sections = true
+known-first-party = ["pro_tes", "tests"]
+
+[tool.ruff.lint.per-file-ignores]
+# pytest checks with `assert`
+"tests/**" = ["S101"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.mypy]
+files = ["pro_tes", "tests"]
+# Not collectable yet; fixed or removed with #207
+exclude = ["^tests/unitTest/"]
+# Complete type hints: all functions annotated, generic types parametrized
+# (instead of ruff's `ANN` rules, which report missing hints only, without
+# checking them)
+disallow_untyped_defs = true
+disallow_any_generics = true
+warn_unused_ignores = true
+
+# Connexion 2 ships no type information
+[[tool.mypy.overrides]]
+module = ["connexion", "connexion.*"]
+ignore_missing_imports = true
+
+# geopy and ip2geotools ship no type information (distance-based
+# middleware)
+[[tool.mypy.overrides]]
+module = ["geopy", "geopy.*", "ip2geotools", "ip2geotools.*"]
+ignore_missing_imports = true
+
+# py-tes ships no type information
+[[tool.mypy.overrides]]
+module = ["tes", "tes.*"]
+ignore_missing_imports = true
+
+# Gunicorn ships no type information (used by the tests only)
+[[tool.mypy.overrides]]
+module = ["gunicorn", "gunicorn.*"]
+ignore_missing_imports = true
 
 [project]
 name = "pro-tes"
@@ -41,17 +117,16 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Local hooks of `.pre-commit-config.yaml` use these too
 dev = [
+    "ast-grep-cli>=0.51",
     "build>=1.6",
     "celery-types>=0.20.0",
     "coverage>=7.16",
-    "flake8>=7.4",
-    "flake8-docstrings>=1.7",
     "mongomock>=4.3",
-    # Pinned until the strict mypy settings of the shared standard (#206)
-    "mypy==1.14.1",
+    "mypy>=2.4",
     "packaging>=26.3",
-    "pylint>=4.1",
+    "pre-commit>=4.6",
     "pytest>=9.1",
     # Used by the tests in `tests/unitTest`
     "pytest-ordering>=0.6",

@@ -104,10 +104,11 @@ def test_forward_logged(app: FlaskApp) -> None:
         )
     assert document.task.logs is not None
     assert len(document.task.logs) == 2
-    for log, previous in zip(document.task.logs, [[earlier], []]):
+    for log, previous in zip(document.task.logs, [[earlier], []], strict=True):
         assert log.metadata is not None
         assert log.metadata.forwarded_to is not None
         *before, forward = log.metadata.forwarded_to
         assert before == previous
         assert (forward.id, forward.url) == ("task-1", "https://tes.example.org")
+        assert forward.forward_time is not None
         assert datetime.fromisoformat(forward.forward_time).tzinfo is not None
