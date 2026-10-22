@@ -12,8 +12,11 @@ import pytest
 import yaml
 
 from pro_tes.app import init_app
+from pro_tes.utils.misc import get_custom_config
 
 BASE_PATH = "/ga4gh/tes/v1"
+# Config overlay of the Compose smoke test
+SMOKE_CONFIG = Path(__file__).parent / "smoke" / "config.yaml"
 
 
 def test_config(app: FlaskApp) -> None:
@@ -126,3 +129,20 @@ def test_placeholder_service_info(
     else:
         assert err.count("placeholder values") == 1
         assert f"placeholder values; set {fields} to" in err
+
+
+def test_smoke_test_config(
+    monkeypatch: pytest.MonkeyPatch, mongo_client: MongoClient[dict[str, Any]]
+) -> None:
+    """The config overlay of the Compose smoke test is valid.
+
+    It relays tasks to the fake TES backend only.
+    """
+    monkeypatch.setenv("FOCA_CONFIG_OVERLAY", str(SMOKE_CONFIG))
+    app = init_app()
+    with app.app.app_context():
+        custom = get_custom_config()
+    assert custom.tes.service_list == ["http://fake-tes:8080"]
+    assert custom.middlewares.root == [
+        ["pro_tes.plugins.middlewares.task_distribution.random.TaskDistributionRandom"]
+    ]
