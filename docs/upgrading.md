@@ -50,7 +50,8 @@ page instead of an error if no task matches; invalid page tokens and page
 sizes are rejected (`400`). Pages have 256 tasks by default (was 5) and at
 most 2047 (`custom.controllers.list_tasks`, see
 [Tasks](configuration.md#tasks)). `name_prefix` is taken literally, not as a
-regular expression.
+regular expression. proTES no longer starts if
+`custom.controllers.list_tasks.default_page_size` exceeds `max_page_size`.
 
 ## Middleware management API
 

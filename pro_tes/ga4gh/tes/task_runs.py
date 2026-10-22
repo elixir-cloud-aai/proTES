@@ -142,7 +142,9 @@ class TaskRuns:
             db_document.worker_id,
         )
 
-        # validate request
+        # validate request; the TES instance sets its own creation time (TES
+        # servers may reject tasks that set it, as proTES does)
+        payload.pop("creation_time", None)
         payload = self._sanitize_request(payload=payload)
         try:
             payload_marshalled = tes.Task(**payload)
@@ -303,6 +305,9 @@ class TaskRuns:
         # matched literally, as a prefix
         name_prefix = kwargs.get("name_prefix")
         if name_prefix is not None:
+            # MongoDB rejects regular expressions with null characters
+            if "\x00" in name_prefix:
+                raise BadRequest("Invalid name prefix: null character")
             pattern = "^" + re.escape(name_prefix)
             filter_dict["task_original.name"] = {"$regex": pattern}
 
@@ -390,7 +395,12 @@ class TaskRuns:
                 f"{db_document.tes_endpoint.base_path.strip('/')}"
             )
 
-            task_id = self._remote_task_id(db_document=db_document)
+            task_id = self._remote_task_id(document=document, db_document=db_document)
+            if task_id is None:
+                # not forwarded (e.g., the relay failed), so nothing runs
+                logger.warning("Task '%s' was not forwarded; canceling it locally", id)
+                db_connector.update_task_state(state="CANCELED")
+                return {}
 
             logger.info(
                 "Trying to cancel task with task identifier '%s' and worker job"
@@ -688,29 +698,34 @@ class TaskRuns:
                 item.url = strip_auth(item.url)
 
     @staticmethod
-    def _remote_task_id(db_document: DbDocument) -> str:
+    def _remote_task_id(
+        document: dict[str, Any], db_document: DbDocument
+    ) -> str | None:
         """Get the identifier of a task at the TES backend it was relayed to.
 
-        Tasks stored by earlier versions have it only in the last forward of
-        their logs.
+        Tasks stored by earlier versions have it only in their logs: in the
+        last forward with an execution trace, else as `remote_task_id`.
 
         Args:
-            db_document: Stored task.
+            document: Stored task, as stored.
+            db_document: Stored task, as model.
 
         Returns:
-            The identifier of the task at its TES backend.
-
-        Raises:
-            ValueError: The task has no such identifier.
+            The identifier of the task at its TES backend, or `None` if the
+            task was not forwarded.
         """
         if db_document.tes_endpoint.task_id is not None:
             return db_document.tes_endpoint.task_id
         logs = db_document.task.logs or []
         metadata = logs[0].metadata if logs else None
-        if metadata is None or not metadata.forwarded_to:
-            raise ValueError(f"Task '{db_document.task.id}' was not forwarded")
-        # the TES server that proTES forwarded the task to
-        return metadata.forwarded_to[-1].id
+        if metadata is not None and metadata.forwarded_to:
+            # the TES server that proTES forwarded the task to
+            return metadata.forwarded_to[-1].id
+        # the metadata model drops `remote_task_id`, so it is read as stored
+        stored_logs = document.get("task", {}).get("logs") or [{}]
+        stored_metadata = stored_logs[0].get("metadata") or {}
+        remote_task_id = stored_metadata.get("remote_task_id")
+        return remote_task_id if isinstance(remote_task_id, str) else None
 
     @staticmethod
     def parse_basic_auth(auth: Authorization | None) -> BasicAuth:

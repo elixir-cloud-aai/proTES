@@ -599,6 +599,12 @@ def test_list_tasks_name_prefix(
     assert [by_id[task["id"]] for task in tasks] == names
 
 
+def test_list_tasks_name_prefix_null(client: FlaskClient) -> None:
+    """Name prefixes with null characters are rejected."""
+    response = client.get(f"{BASE_PATH}/tasks", query_string={"name_prefix": "a\x00"})
+    assert response.status_code == 400
+
+
 @pytest.mark.parametrize("view", ["BASIC", "FULL"])
 def test_views_logs(
     client: FlaskClient,
@@ -721,7 +727,8 @@ def test_timestamps(
         assert parsed.utcoffset() == timedelta(0)
         assert before <= parsed <= after
     ((_, relayed_task),) = relayed(backend)
-    assert relayed_task.creation_time == datetime.fromisoformat(task["creation_time"])
+    # the TES instance sets its own creation time
+    assert relayed_task.creation_time is None
 
 
 def test_cancel_task_without_trace(
@@ -754,9 +761,34 @@ def test_cancel_task_legacy(
     set_state(mongo_client, task_id, "RUNNING")
     assert client.post(f"{BASE_PATH}/tasks/{task_id}:cancel").status_code == 200
     assert backend.canceled == ["remote-1"]
+    # without an execution trace
     mongo_client[DB]["tasks"].update_one(
         {"task.id": task_id},
-        {"$set": {"task.logs.0.metadata": {}, "task.state": "RUNNING"}},
+        {
+            "$set": {
+                "task.logs.0.metadata": {"remote_task_id": "remote-2"},
+                "task.state": "RUNNING",
+            }
+        },
     )
-    response = client.post(f"{BASE_PATH}/tasks/{task_id}:cancel")
-    assert response.status_code == 500
+    assert client.post(f"{BASE_PATH}/tasks/{task_id}:cancel").status_code == 200
+    assert backend.canceled == ["remote-1", "remote-2"]
+
+
+def test_cancel_task_not_forwarded(
+    client: FlaskClient,
+    task_id: str,
+    backend: type[FakeBackend],
+    mongo_client: MongoClient[dict[str, Any]],
+) -> None:
+    """Tasks that were not forwarded are canceled locally."""
+    mongo_client[DB]["tasks"].update_one(
+        {"task.id": task_id},
+        {
+            "$unset": {"tes_endpoint.task_id": ""},
+            "$set": {"task.logs.0.metadata": {}, "task.state": "RUNNING"},
+        },
+    )
+    assert client.post(f"{BASE_PATH}/tasks/{task_id}:cancel").status_code == 200
+    assert backend.canceled == []
+    assert stored(mongo_client, task_id)["task"]["state"] == "CANCELED"
