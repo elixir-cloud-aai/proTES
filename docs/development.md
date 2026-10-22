@@ -15,12 +15,16 @@ pre-commit run --all-files --hook-stage manual gitleaks-all  # secrets
 pytest
 ```
 
-The tests need neither a database nor TES backends: they use an in-memory
-database ([mongomock](https://github.com/mongomock/mongomock)) and fake TES
-backends, and have no network access. CI also runs them against MongoDB 7.0;
-to do so locally, set `MONGODB_TEST_URI` to a single-node MongoDB without
-other data, one per test run (the tests drop its databases `taskStore` and
-`protes` before each test, and refuse to start if one of them exists), e.g.:
+The tests in `tests/` mirror the package (`pro_tes/`). They need neither a
+database nor TES backends: they use an in-memory database
+([mongomock](https://github.com/mongomock/mongomock)) and fake TES backends,
+and have no network access (fixture `no_network` in `tests/conftest.py`
+blocks all connections except to the test database, and fails tests that try
+with `Network access blocked in tests`). CI also runs them against MongoDB
+7.0; to do so locally, set `MONGODB_TEST_URI` to a standalone MongoDB (not a
+replica set) without other data, one per test run (the tests drop its
+databases `taskStore` and `protes` before each test, and refuse to start if
+one of them exists), e.g.:
 
 ```bash
 docker run -d --rm --name mongodb-test -p 127.0.0.1:27017:27017 mongo:7.0
@@ -30,11 +34,14 @@ docker stop mongodb-test
 
 CI also runs the app with Docker Compose, with a fake TES backend instead of
 the TES instances of the config (`tests/smoke/`), and checks that tasks are
-relayed to it and tracked until they are complete. To start this setup
-locally:
+relayed to it and tracked until they are complete. To run it locally (with
+curl and jq):
 
 ```bash
-docker compose -f docker-compose.yaml -f tests/smoke/compose.yaml up --build --wait
+export COMPOSE_FILE=docker-compose.yaml:tests/smoke/compose.yaml
+docker compose up -d --build --wait
+tests/smoke/check.sh
+docker compose down
 ```
 
 To try changes in the running app, rebuild it with

@@ -9,11 +9,14 @@ The tests use an in-memory database (mongomock), or, if the environment
 variable `MONGODB_TEST_URI` is set, the MongoDB at that URI (e.g.,
 `mongodb://localhost:27017`), as in CI: there, the databases in `DBS` are
 dropped before each test, so use a single-node MongoDB (only the hosts of the
-URI may be connected to) without other data, one per test run. The tests
+URI may be connected to; a standalone server, not a replica set, whose
+members would be announced under other names) without other data, one per
+test run. The tests
 refuse to start if one of the databases exists already.
 """
 
 from collections.abc import Iterator
+import errno
 import os
 import socket
 from typing import Any
@@ -37,6 +40,7 @@ DBS = (DB, OTHER_DB)
 # URI of a MongoDB to test against instead of mongomock (see above)
 MONGODB_TEST_URI = os.environ.get("MONGODB_TEST_URI", "")
 _CONNECT = socket.socket.connect
+_CONNECT_EX = socket.socket.connect_ex
 
 # The Celery app (`pro_tes.celery_worker`) is created, with its MongoDB
 # client, when its module is imported (e.g., with the controllers), so the
@@ -93,6 +97,24 @@ def _no_network(sock: socket.socket, address: object) -> None:
     raise OSError(f"Network access blocked in tests: {address}")
 
 
+def _no_network_ex(sock: socket.socket, address: object) -> int:
+    """Replace `socket.socket.connect_ex()`, to block network access.
+
+    Connections to the test database (`DB_ADDRESSES`) are allowed.
+
+    Args:
+        sock: Socket to connect.
+        address: Address to connect to.
+
+    Returns:
+        The result of the connection to the test database; `EACCES` for
+        other addresses.
+    """
+    if isinstance(address, tuple) and tuple(address[:2]) in DB_ADDRESSES:
+        return _CONNECT_EX(sock, address)
+    return errno.EACCES
+
+
 def _no_name_resolution(host: str) -> str:
     """Replace `gethostbyname()` of the distance-based task distribution.
 
@@ -112,6 +134,7 @@ def _no_name_resolution(host: str) -> str:
 def no_network(monkeypatch: pytest.MonkeyPatch) -> None:
     """Block network access of all tests, except to the test database."""
     monkeypatch.setattr(socket.socket, "connect", _no_network)
+    monkeypatch.setattr(socket.socket, "connect_ex", _no_network_ex)
     monkeypatch.setattr(distance, "gethostbyname", _no_name_resolution)
 
 

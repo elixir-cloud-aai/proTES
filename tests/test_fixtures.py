@@ -1,5 +1,6 @@
 """Tests of the shared fixtures (`tests/conftest.py`)."""
 
+import errno
 import os
 import socket
 from typing import Any
@@ -36,7 +37,11 @@ def test_app_uses_mongo_client(
 def test_mongo_client_empty(
     mongo_client: MongoClient[dict[str, Any]], run: int
 ) -> None:
-    """Each test starts without the databases `DBS`."""
+    """Each test starts without the databases `DBS`.
+
+    Meaningful with a MongoDB (`MONGODB_TEST_URI`), which all tests share:
+    the second run would find the document of the first.
+    """
     for name in DBS:
         tasks = mongo_client[name]["tasks"]
         assert tasks.count_documents({}) == 0
@@ -91,6 +96,15 @@ def test_no_network_db(monkeypatch: pytest.MonkeyPatch) -> None:
         with pytest.raises(OSError, match="Network access blocked in tests"):
             conftest._no_network(sock, "/tmp/socket")  # noqa: S108 (not created)
     assert calls == [("127.0.0.1", 12345)]
+
+
+def test_no_network_ex(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Connections via `connect_ex()` are blocked too, except to the database."""
+    monkeypatch.setattr(conftest, "DB_ADDRESSES", frozenset({("127.0.0.1", 12345)}))
+    monkeypatch.setattr(conftest, "_CONNECT_EX", lambda sock, address: 0)
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        assert sock.connect_ex(("192.0.2.1", 443)) == errno.EACCES
+        assert sock.connect_ex(("127.0.0.1", 12345)) == 0
 
 
 def test_no_name_resolution() -> None:
