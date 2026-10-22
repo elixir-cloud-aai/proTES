@@ -107,6 +107,7 @@ def test_forward_logged(app: FlaskApp) -> None:
             remote_task_id="task-1",
         )
     assert document.task.logs is not None
+    assert len(document.task.logs) == 2
     for log, previous in zip(document.task.logs, [[earlier], []]):
         assert log.metadata is not None
         assert log.metadata.forwarded_to is not None
