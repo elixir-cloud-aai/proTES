@@ -38,6 +38,9 @@ docker compose logs
 [Endpoints](api.md) can be probed with `curl`, as above, or tried in the
 Swagger UI. See [Configuration](configuration.md) for the TES instances that
 tasks are forwarded to, and to change the config of the Docker Compose setup.
+Set the [service info](configuration.md#service-info) to describe your
+deployment: the defaults are placeholders, and proTES logs a warning on
+startup while `id` or `organization` still have them.
 
 ## Troubleshooting: network MTU
 
