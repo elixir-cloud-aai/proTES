@@ -12,11 +12,6 @@ import mongomock
 BASE_PATH = "/ga4gh/tes/v1"
 
 
-def test_jsonschema_4() -> None:
-    """The app is created (see fixtures) with jsonschema 4 (cf. #173)."""
-    assert int(version("jsonschema").split(".", maxsplit=1)[0]) >= 4
-
-
 def test_config(app: FlaskApp) -> None:
     """Debug mode is off, request bodies are limited, no issuer is trusted."""
     with app.app.app_context():

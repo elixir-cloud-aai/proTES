@@ -2,12 +2,15 @@
 
 from typing import Any
 
+from connexion import FlaskApp
+from foca import get_collection
 import mongomock
 import pytest
 import tes
 
 from pro_tes.app import init_app
 from pro_tes.tasks import track_task_progress
+from pro_tes.utils.db import DbDocumentConnector
 
 
 class FakeClient:  # pylint: disable=too-few-public-methods
@@ -18,10 +21,11 @@ class FakeClient:  # pylint: disable=too-few-public-methods
 
     def get_task(self, task_id: str, **kwargs: Any) -> tes.Task:
         """Get the task: complete, with one log."""
+        output = tes.OutputFileLog(url="s3://bucket/out", path="/out", size_bytes=10)
         return tes.Task(
             id=task_id,
             state="COMPLETE",
-            logs=[tes.TaskLog(logs=[], outputs=[])],
+            logs=[tes.TaskLog(logs=[], outputs=[output])],
         )
 
 
@@ -31,10 +35,11 @@ def test_task_tracked(
     mongo_client: mongomock.MongoClient,
     db_name: str | None,
 ) -> None:
-    """The task state is stored in the configured database (cf. B6).
+    """The state and outputs are stored in the configured database.
 
     That is, database `taskStore`, or the database named by environment
-    variable `MONGO_DBNAME`.
+    variable `MONGO_DBNAME` (instead of a hard-coded `taskStore`); py-tes
+    returns output sizes as integers.
     """
     if db_name is not None:
         monkeypatch.setenv("MONGO_DBNAME", db_name)
@@ -65,3 +70,16 @@ def test_task_tracked(
     document = collection.find_one({"worker_id": "worker-1"})
     assert document is not None
     assert document["task"]["state"] == "COMPLETE"
+    assert document["task"]["logs"][0]["outputs"] == [
+        {"url": "s3://bucket/out", "path": "/out", "size_bytes": "10"}
+    ]
+
+
+def test_document_missing(app: FlaskApp) -> None:
+    """Updates of missing documents fail."""
+    with app.app.app_context():
+        connector = DbDocumentConnector(
+            collection=get_collection("taskStore", "tasks"), worker_id="none"
+        )
+        with pytest.raises(ValueError, match="No database document"):
+            connector.upsert_fields_in_root_object(root="task", state="QUEUED")

@@ -237,7 +237,12 @@ class TaskModelConverter:
                 TesOutputFileLog(
                     url=_output_file_log.url,
                     path=_output_file_log.path,
-                    size_bytes=_output_file_log.size_bytes,
+                    # py-tes returns sizes as integers
+                    size_bytes=(
+                        None
+                        if _output_file_log.size_bytes is None
+                        else str(_output_file_log.size_bytes)
+                    ),
                 )
                 for _output_file_log in log.outputs
             ]

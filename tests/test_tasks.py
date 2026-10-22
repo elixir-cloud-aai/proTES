@@ -61,22 +61,39 @@ def backend(monkeypatch: pytest.MonkeyPatch) -> type[FakeBackend]:
     return FakeBackend
 
 
-def test_tasks(
-    client: FlaskClient,
-    backend: type[FakeBackend],
-    mongo_client: mongomock.MongoClient,
-) -> None:
-    """Tasks are relayed, listed, served and canceled."""
+@pytest.fixture
+def task_id(client: FlaskClient, backend: type[FakeBackend]) -> str:
+    """Identifier of a task relayed to the fake backend."""
     response = client.post(f"{BASE_PATH}/tasks", json=TASK)
     assert response.status_code == 200
-    task_id = response.get_json()["id"]
+    assert len(backend.tasks) == 1
+    return str(response.get_json()["id"])
+
+
+def set_state(
+    mongo_client: mongomock.MongoClient, task_id: str, state: str
+) -> None:
+    """Set the state of a stored task, as the Celery task does."""
+    mongo_client["taskStore"]["tasks"].update_one(
+        {"task.id": task_id}, {"$set": {"task.state": state}}
+    )
+
+
+def test_create_task(task_id: str, backend: type[FakeBackend]) -> None:
+    """Tasks are relayed with `ignore_error` of their executors (#176)."""
+    assert task_id
     assert backend.tasks[0].executors[0].ignore_error is True
 
+
+def test_list_tasks(client: FlaskClient, task_id: str) -> None:
+    """Tasks are listed."""
     response = client.get(f"{BASE_PATH}/tasks", query_string={"view": "MINIMAL"})
     assert response.status_code == 200
-    # the state is set by the Celery task tracking the task (not run here)
     assert [task["id"] for task in response.get_json()["tasks"]] == [task_id]
 
+
+def test_get_task(client: FlaskClient, task_id: str) -> None:
+    """Tasks are served with their executors and forwards."""
     response = client.get(
         f"{BASE_PATH}/tasks/{task_id}", query_string={"view": "FULL"}
     )
@@ -88,10 +105,24 @@ def test_tasks(
     assert forward["id"] == "remote-1"
     assert forward["forward_time"]
 
-    # as set by the Celery task
-    mongo_client["taskStore"]["tasks"].update_one(
-        {"task.id": task_id}, {"$set": {"task.state": "QUEUED"}}
+
+def test_cancel_task(
+    client: FlaskClient,
+    task_id: str,
+    backend: type[FakeBackend],
+    mongo_client: mongomock.MongoClient,
+) -> None:
+    """Tasks are canceled at the last forward, i.e., proTES's own."""
+    collection = mongo_client["taskStore"]["tasks"]
+    forwards = collection.find_one({"task.id": task_id})["task"]["logs"][0][
+        "metadata"
+    ]["forwarded_to"]
+    upstream = {"id": "upstream-1", "url": "https://upstream.example.org"}
+    collection.update_one(
+        {"task.id": task_id},
+        {"$set": {"task.logs.0.metadata.forwarded_to": [upstream, *forwards]}},
     )
+    set_state(mongo_client, task_id, "QUEUED")
     response = client.post(f"{BASE_PATH}/tasks/{task_id}:cancel")
     assert response.status_code == 200
     assert backend.canceled == ["remote-1"]
@@ -99,3 +130,27 @@ def test_tasks(
         f"{BASE_PATH}/tasks/{task_id}", query_string={"view": "MINIMAL"}
     )
     assert response.get_json()["state"] == "CANCELED"
+
+
+def test_cancel_task_nested_forwards(
+    client: FlaskClient,
+    task_id: str,
+    backend: type[FakeBackend],
+    mongo_client: mongomock.MongoClient,
+) -> None:
+    """Tasks stored with nested forwards (earlier versions) are canceled."""
+    mongo_client["taskStore"]["tasks"].update_one(
+        {"task.id": task_id},
+        {
+            "$set": {
+                "task.logs.0.metadata.forwarded_to": {
+                    "id": "remote-1",
+                    "url": "https://tes.example.org",
+                }
+            }
+        },
+    )
+    set_state(mongo_client, task_id, "RUNNING")
+    response = client.post(f"{BASE_PATH}/tasks/{task_id}:cancel")
+    assert response.status_code == 200
+    assert backend.canceled == ["remote-1"]

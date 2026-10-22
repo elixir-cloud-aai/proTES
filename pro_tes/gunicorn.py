@@ -8,6 +8,7 @@ from pro_tes.app import init_app
 
 # Source application configuration
 app_config: Config = init_app().app.config.foca
+# configured in `config.yaml`; checked for type checkers
 assert app_config.db is not None, "no database configured"
 assert app_config.jobs is not None, "no background jobs configured"
 

@@ -10,10 +10,10 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Optional
+from typing import Any, Optional
 
 # pragma pylint: disable=no-name-in-module
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 # pragma pylint: disable=too-few-public-methods
 
@@ -256,8 +256,9 @@ class TesOutputFileLog(CustomBaseModel):
             " absolute path."
         ),
     )
-    size_bytes: str = Field(
-        ...,
+    # required by the specs, but py-tes may return none
+    size_bytes: Optional[str] = Field(
+        default=None,
         description=(
             "Size of the file in bytes. Note, this is currently coded         "
             "    as a string\nbecause official JSON doesn't support int64"
@@ -363,9 +364,12 @@ class TesForward(CustomBaseModel):
         description="TES server to which the task was forwarded.",
         examples=["https://my.tes.instance/"],
     )
-    forward_time: str = Field(
-        ...,
-        description="When the task was forwarded, in RFC 3339 format.",
+    forward_time: Optional[str] = Field(
+        default=None,
+        description=(
+            "When the task was forwarded, in RFC 3339 format; not set for"
+            " forwards logged by earlier versions."
+        ),
         examples=["2020-10-02T10:00:00-05:00"],
     )
 
@@ -380,6 +384,36 @@ class Metadata(CustomBaseModel):
             " forwarding."
         ),
     )
+
+    @field_validator("forwarded_to", mode="before")
+    @classmethod
+    def flatten_forwards(cls, value: Any) -> Any:
+        """Flatten forwards nested by earlier versions into a list.
+
+        Earlier versions logged forwards as a nested object (`tesNextTes`,
+        with the next forward in `forwarded_to`); such forwards are stored
+        in tasks, and returned by other instances running these versions.
+
+        Args:
+            value: Forwards, as a list or as a nested object.
+
+        Returns:
+            Forwards as a list, in the order of forwarding.
+        """
+        if not isinstance(value, dict):
+            return value
+        forwards = []
+        forward: Any = value
+        while isinstance(forward, dict):
+            forwards.append(
+                {
+                    key: val
+                    for key, val in forward.items()
+                    if key != "forwarded_to"
+                }
+            )
+            forward = forward.get("forwarded_to")
+        return forwards
 
 
 class TesTaskLog(CustomBaseModel):

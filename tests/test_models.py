@@ -63,7 +63,24 @@ def test_forwarded_to_not_recursive() -> None:
     assert forwarded_to["items"] == {"$ref": "#/components/schemas/tesForward"}
     assert "tesNextTes" not in schemas
     assert "$ref" not in str(schemas["tesForward"])
-    assert schemas["tesForward"]["required"] == ["id", "url", "forward_time"]
+    assert schemas["tesForward"]["required"] == ["id", "url"]
+
+
+def test_nested_forwards_flattened() -> None:
+    """Nested forwards of earlier versions are read as a list."""
+    metadata = Metadata.model_validate(
+        {
+            "forwarded_to": {
+                "id": "task-1",
+                "url": "https://first.example.org",
+                "forwarded_to": {"id": "task-2", "url": "https://second.example.org"},
+            }
+        }
+    )
+    assert metadata.forwarded_to == [
+        TesForward(id="task-1", url="https://first.example.org"),
+        TesForward(id="task-2", url="https://second.example.org"),
+    ]
 
 
 def test_forward_logged(app: FlaskApp) -> None:

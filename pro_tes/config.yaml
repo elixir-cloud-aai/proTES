@@ -20,7 +20,7 @@ server:
 # Security configuration
 # Cf. https://foca.readthedocs.io/en/latest/configuration/auth/
 # Authentication is disabled for the TES API for now (`disable_auth` in
-# `api.specs`); it is enabled with LS Login tokens in a later version (#201)
+# `api.specs`); it is enabled with LS Login tokens in a later version (#212)
 security:
   auth:
     add_key_to_claims: True
@@ -76,7 +76,7 @@ api:
           - bearerAuth: []
       add_security_fields:
         x-bearerInfoFunc: foca.security.auth.validate_token
-      # Authentication is enabled in a later version (#201)
+      # Authentication is enabled in a later version (#212)
       disable_auth: True
       connexion:
         strict_validation: True

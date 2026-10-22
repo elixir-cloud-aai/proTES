@@ -9,8 +9,7 @@ from bson.objectid import ObjectId  # type: ignore
 from celery import uuid
 from dateutil.parser import parse as parse_time
 from flask import request
-from foca import get_collection, get_config
-from foca.models.config import Config  # type: ignore
+from foca import get_collection
 from foca.utils.misc import generate_id  # type: ignore
 from pymongo.collection import Collection  # type: ignore
 from pymongo.errors import DuplicateKeyError, PyMongoError  # type: ignore
@@ -54,7 +53,6 @@ class TaskRuns:
     """Class for TES API server-side controller methods.
 
     Attributes:
-        foca_config: FOCA configuration.
         custom_config: Custom configuration of the app.
         db_client: Database collection storing task objects.
         document: Document to be inserted into the collection. Note that it is
@@ -63,7 +61,6 @@ class TaskRuns:
 
     def __init__(self) -> None:
         """Construct object instance."""
-        self.foca_config: Config = get_config()
         self.custom_config: CustomConfig = get_custom_config()
         self.db_client: Collection = get_collection("taskStore", "tasks")
         self.store_logs = self.custom_config.storeLogs.execution_trace
