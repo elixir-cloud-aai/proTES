@@ -24,6 +24,11 @@ To shut down the service, run:
 docker compose down
 ```
 
+The Celery worker tracks the state of forwarded tasks until they finish.
+Tracking is not resumed after a restart: tasks that are still being tracked
+(or queued for tracking in RabbitMQ) when the service is shut down keep the
+state last recorded. Shut down when no tasks are running.
+
 If you need to inspect the logs, call:
 
 ```bash
