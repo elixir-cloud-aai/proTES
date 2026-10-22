@@ -1,9 +1,10 @@
 """Tests of the TES models, their conversion and the forwarding log."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from connexion import FlaskApp
+import pytest
 import tes
 import yaml
 
@@ -110,3 +111,67 @@ def test_forward_logged(app: FlaskApp) -> None:
         assert (forward.id, forward.url) == ("task-1", "https://tes.example.org")
         assert forward.forward_time is not None
         assert datetime.fromisoformat(forward.forward_time).tzinfo is not None
+
+
+def test_task_converted() -> None:
+    """Tasks of backends are converted with all their fields."""
+    time = datetime(2026, 10, 22, 12, 0, tzinfo=timezone.utc)
+    task = tes.Task(
+        id="remote-1",
+        state="COMPLETE",
+        creation_time=time,
+        inputs=[tes.Input(url="s3://bucket/in", path="/in", type="FILE")],
+        outputs=[tes.Output(url="s3://bucket/out", path="/out", type="DIRECTORY")],
+        resources=tes.Resources(cpu_cores=2, ram_gb=4.0, zones=["eu"]),
+        executors=[tes.Executor(image="alpine", command=["true"])],
+        logs=[
+            tes.TaskLog(
+                start_time=time,
+                end_time=time,
+                logs=[
+                    tes.ExecutorLog(
+                        start_time=time, end_time=time, stdout="out", exit_code=0
+                    )
+                ],
+                outputs=[tes.OutputFileLog(url="s3://bucket/out", path="/out")],
+            ),
+            tes.TaskLog(),
+        ],
+    )
+    converted = TaskModelConverter(task=task).convert_task()
+    assert converted.creation_time == time.isoformat()
+    assert converted.inputs is not None
+    assert converted.inputs[0].url == "s3://bucket/in"
+    assert converted.outputs is not None
+    assert converted.outputs[0].type == "DIRECTORY"
+    assert converted.resources is not None
+    assert (converted.resources.cpu_cores, converted.resources.zones) == (2, ["eu"])
+    assert converted.logs is not None
+    log, empty = converted.logs
+    assert (log.start_time, log.end_time) == (time.isoformat(), time.isoformat())
+    (executor_log,) = log.logs
+    assert (executor_log.start_time, executor_log.stdout) == (time.isoformat(), "out")
+    assert (empty.logs, empty.outputs, empty.start_time) == ([], [], None)
+
+
+def test_forward_logged_without_metadata(app: FlaskApp) -> None:
+    """Forwards are logged in logs without metadata."""
+    document = DbDocument(task=TesTask(logs=[TesTaskLog(logs=[], outputs=[])]))
+    with app.app.app_context():
+        document = TaskRuns()._update_task_metadata(
+            db_document=document, tes_url="https://tes.example.org", remote_task_id="1"
+        )
+    assert document.task.logs is not None
+    assert document.task.logs[0].metadata is not None
+    assert document.task.logs[0].metadata.forwarded_to is not None
+    assert document.task.logs[0].metadata.forwarded_to[0].id == "1"
+
+
+def test_forward_logged_no_logs(app: FlaskApp) -> None:
+    """Forwards of tasks without logs can't be logged."""
+    with app.app.app_context(), pytest.raises(ValueError, match="has no logs"):
+        TaskRuns()._update_task_metadata(
+            db_document=DbDocument(),
+            tes_url="https://tes.example.org",
+            remote_task_id="1",
+        )

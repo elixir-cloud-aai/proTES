@@ -6,6 +6,7 @@ from connexion import FlaskApp
 import flask
 import pytest
 
+from pro_tes.exceptions import MiddlewareException
 from pro_tes.plugins.middlewares.task_distribution.base import (
     TaskDistributionBaseClass,
 )
@@ -43,3 +44,12 @@ def test_shuffled(app: FlaskApp) -> None:
             middleware.apply_middleware(flask.request)
             orders.add(tuple(middleware.tes_urls))
     assert len(orders) > 1
+
+
+def test_no_json(app: FlaskApp) -> None:
+    """Requests without a JSON body fail the middleware."""
+    with (
+        app.app.test_request_context(data="null", content_type="application/json"),
+        pytest.raises(MiddlewareException, match="no JSON payload"),
+    ):
+        TaskDistributionRandom().apply_middleware(flask.request)
