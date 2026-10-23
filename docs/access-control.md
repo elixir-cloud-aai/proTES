@@ -239,10 +239,14 @@ ends whose tokens proTES accepts (`security.auth.audience`). All TES
 instances with `client_credentials` get the same token, so each of them
 could use it at the others until it expires: configure only TES instances
 that you trust, and keep the lifetime of the tokens short. Tasks are only
-forwarded to configured TES instances: TES instances that middlewares add
-(`tes_urls`) are skipped, as proTES has no credentials for them. Keep TES
-instances in the list until their tasks have finished: tasks of TES
-instances that are no longer configured can't be tracked or canceled.
+forwarded to configured TES instances, and to those discovered in a service
+registry (`custom.tes.discovery`, which get the credentials of its `auth`;
+only verified ones, see [Discovery in a service
+registry](configuration.md#discovery-in-a-service-registry)): TES instances
+that middlewares add (`tes_urls`) are skipped, as proTES has no credentials
+for them. Keep TES instances in the list until their tasks have finished:
+tasks of TES instances that are no longer configured can't be tracked or
+canceled.
 
 URLs of TES instances and of the identity provider must use `https`
 (`custom.tes.url_schemes`); allow `http` for local tests only, as tokens and

@@ -5,7 +5,8 @@ The tests create the app from `pro_tes/config.yaml` and the test overlay
 and have no network access, except to the test database: the identity
 provider is mocked, TES backends are replaced by fakes (e.g.,
 `tests/ga4gh/tes/test_server.py`), and the hosts of task inputs and TES
-backends are not resolved (distance-based task distribution). The test
+backends are not resolved (distance-based task distribution, discovery of
+TES backends). The test
 client sends the access token of a user (`USER`) with each request.
 
 The tests use an in-memory database (mongomock), or, if the environment
@@ -37,6 +38,7 @@ from pymongo import MongoClient, uri_parser
 import pytest
 
 from pro_tes.app import init_app
+from pro_tes.ga4gh.tes import discovery
 from pro_tes.plugins.middlewares.task_distribution import distance
 
 # Database of the tasks (`db.dbs` of `config.yaml`)
@@ -170,12 +172,33 @@ def _no_name_resolution(host: str) -> str:
     raise socket.gaierror(f"Name resolution blocked in tests: {host}")
 
 
+def _no_address_info(host: str, *args: Any, **kwargs: Any) -> list[Any]:
+    """Replace `getaddrinfo()` of the discovery of TES backends.
+
+    Args:
+        host: Host name.
+        *args: Other arguments of `getaddrinfo()`; ignored.
+        **kwargs: Other keyword arguments of `getaddrinfo()`; ignored.
+
+    Raises:
+        socket.gaierror: Always.
+    """
+    raise socket.gaierror(f"Name resolution blocked in tests: {host}")
+
+
 @pytest.fixture(autouse=True)
-def no_network(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Block network access of all tests, except to the test database."""
+def no_network(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """Block network access of all tests, except to the test database.
+
+    The cache of discovered TES backends is empty.
+    """
     monkeypatch.setattr(socket.socket, "connect", _no_network)
     monkeypatch.setattr(socket.socket, "connect_ex", _no_network_ex)
     monkeypatch.setattr(distance, "gethostbyname", _no_name_resolution)
+    monkeypatch.setattr(discovery, "getaddrinfo", _no_address_info)
+    discovery.discovery.clear()
+    yield
+    discovery.discovery.clear()
 
 
 def _check_no_db(client: MongoClient[dict[str, Any]]) -> None:

@@ -37,6 +37,77 @@ URLs must use one of the schemes of `custom.tes.url_schemes` (default:
 `https` only). The [middlewares](middlewares.md) decide which of the TES
 instances are tried, and in which order (see [Tasks](api.md#tasks)).
 
+### Discovery in a service registry
+
+proTES can also take TES instances from a service registry implementing the
+[GA4GH Service Registry
+API](https://github.com/ga4gh-discovery/ga4gh-service-registry) with a list
+of verified services, such as the [Cloud
+Registry](https://github.com/elixir-cloud-aai/cloud-registry)
+(`GET /verifications`), so that new TES instances are used once they are
+registered and verified, without config change. Discovery is off unless
+`custom.tes.discovery.registry_url` is set to the base URL of the registry's
+API; there is no default registry:
+
+```yaml
+custom:
+  tes:
+    discovery:
+      registry_url: https://registry.example.org/ga4gh/registry/v1
+      # Seconds between reads of the registry
+      refresh_interval: 300
+      # Timeout of each request to the registry, in seconds
+      timeout: 10
+      # Accepted TES versions, as prefixes (`1.1` accepts `1.1.0`)
+      versions: ["1.0", "1.1"]
+      # Accepted environments of services (`environment`); any if empty
+      environments: [prod]
+      # How proTES authenticates at discovered TES instances:
+      # `client_credentials` (the default) or `none`
+      auth: client_credentials
+      # For local setups only
+      allow_private_addresses: false
+```
+
+Anyone who can register services in the registry could point an entry at a
+malicious or internal endpoint, which would receive tasks, their input
+locations and proTES' access token. So the registry, set by the deployment,
+is the trust anchor, and a registered service is only used if all of the
+following hold:
+
+- the registry lists it as verified by an admin, with its current
+  identifier, URL and API type (`type.group`, `type.artifact`);
+- it is a TES service (`org.ga4gh` `tes`) of one of the `versions`, and, if
+  `environments` is set, of one of the `environments`;
+- its URL is a valid `https` URL without user info (whatever
+  `url_schemes` allows); the URL is normalized (e.g., lowercase host,
+  without default port and trailing slashes), and the API path
+  `/ga4gh/tes/v1`, which registries list as part of the URL, is removed;
+- its host has public addresses only: hosts with private, loopback,
+  link-local or other special-purpose addresses (e.g., `10.0.0.1`,
+  `localhost`, `169.254.169.254`) are rejected, unless
+  `allow_private_addresses` is set. Hosts are checked on discovery and
+  before each request to the TES instance.
+
+The registry is read without access token (its reads are public), over a
+URL with a scheme of `custom.tes.url_schemes`; redirects are not followed.
+Each process (each Gunicorn worker and Celery worker) reads it every
+`refresh_interval` seconds, and keeps the last good list while the
+registry is unreachable or returns invalid responses; a service whose
+verification is removed is no longer used once the registry has been read
+again. Changes of the list and rejected verified services are logged.
+TES instances of `custom.tes.service_list` are used, too, and come first;
+their settings take precedence over those of discovered ones with the same
+URL. Discovered TES instances get the credentials of `auth` (see
+[Credentials of TES
+instances](access-control.md#credentials-of-tes-instances)); tasks of a
+TES instance that is no longer discovered can't be tracked or canceled.
+
+The host check doesn't protect against DNS rebinding (a host whose
+addresses change between the check and the request); restrict the egress
+of proTES to the networks of the TES instances (e.g., with a Kubernetes
+NetworkPolicy) where internal services must not be reachable.
+
 ## Middlewares
 
 `custom.middlewares` is the stack of middlewares that are applied to each new
@@ -126,4 +197,7 @@ The base config describes the app, not a deployment: its `id`
 example domains, which the app warns of on startup. Deployments set their
 own `id`, `name`, `description`, `organization`, `contactUrl` and
 `environment`, and `storage` (the storage locations their TES instances can
-access), in `service_info.service`.
+access), in `service_info.service`. The service info also lists the URLs
+of the TES instances that tasks may be forwarded to, configured and
+discovered (`backends`, from `service_info.runtime_fields`); set
+`runtime_fields` to `null` in an overlay to hide them.

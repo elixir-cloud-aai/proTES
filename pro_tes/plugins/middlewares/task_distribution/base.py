@@ -3,8 +3,8 @@
 import flask
 
 from pro_tes.exceptions import MiddlewareException
+from pro_tes.ga4gh.tes.discovery import get_backends
 from pro_tes.middleware.abstract_middleware import AbstractMiddleware
-from pro_tes.utils.misc import get_custom_config
 
 
 class TaskDistributionBaseClass(AbstractMiddleware):
@@ -33,7 +33,7 @@ class TaskDistributionBaseClass(AbstractMiddleware):
         if request.json is None:
             raise MiddlewareException("Request has no JSON payload.")
         self._set_tes_urls(
-            tes_urls=[backend.url for backend in get_custom_config().tes.service_list],
+            tes_urls=[backend.url for backend in get_backends()],
             request=request,
         )
         request.json["tes_urls"] = self.tes_urls

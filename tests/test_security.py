@@ -226,6 +226,9 @@ def test_default_backends() -> None:
     assert custom["tes"]["service_list"] == []
     assert custom["tes"]["url_schemes"] == ["https"]
     assert custom["tes"]["client_credentials"]["issuer"] is None
+    # no registry by default (generic); discovered hosts must be public
+    assert custom["tes"]["discovery"]["registry_url"] is None
+    assert custom["tes"]["discovery"]["allow_private_addresses"] is False
     assert custom["controllers"]["post_task"]["url_credentials"] == "reject"
 
 
@@ -354,3 +357,69 @@ def test_basic_backend_unvalidated() -> None:
     conf = Tes.model_construct(service_list=[backend], url_schemes=["https"])
     with pytest.raises(RuntimeError, match="without `basic`"):
         check_backends(conf)
+
+
+def discovery_overlay(path: Path, **discovery: Any) -> Path:
+    """Write a config overlay with discovery of backends, and no static ones.
+
+    Args:
+        path: Path of the overlay.
+        **discovery: Discovery settings, besides the registry URL.
+
+    Returns:
+        Path of the overlay.
+    """
+    return write_overlay(
+        path,
+        {
+            "custom": {
+                "tes": {
+                    "service_list": [],
+                    "discovery": {
+                        "registry_url": "https://registry.example.org/api",
+                        **discovery,
+                    },
+                    "client_credentials": {"issuer": "https://idp.example.org/"},
+                }
+            }
+        },
+    )
+
+
+def test_discovery_credentials_missing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, app_env: None
+) -> None:
+    """With discovery, the app refuses to start without proTES' client.
+
+    Discovered backends get proTES' token by default.
+    """
+    for name in (CLIENT_ID_ENV, CLIENT_SECRET_ENV):
+        monkeypatch.delenv(name, raising=False)
+    set_overlays(monkeypatch, discovery_overlay(tmp_path / "overlay.yaml"))
+    with pytest.raises(RuntimeError, match=CLIENT_SECRET_ENV):
+        init_app()
+
+
+def test_discovery_logged(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    app_env: None,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Discovery is logged, with warnings for its less safe settings.
+
+    The registry is unreachable in the tests, so no backends are discovered.
+    """
+    overlay = discovery_overlay(
+        tmp_path / "overlay.yaml", auth="none", allow_private_addresses=True
+    )
+    set_overlays(monkeypatch, overlay)
+    init_app()
+    err = capsys.readouterr().err
+    assert "Discovering TES backends at registry https://registry.example.org/api" in (
+        err
+    )
+    assert "Discovered TES backends get no credentials" in err
+    assert "may have private addresses" in err
+    assert "keeping 0 backends discovered earlier" in err
+    assert "No TES backends are configured" not in err

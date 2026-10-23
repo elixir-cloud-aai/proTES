@@ -25,7 +25,7 @@ class BackendAuthError(RuntimeError):
 
 
 class BackendNotConfigured(ValueError):
-    """Raised when a TES backend is not configured (`custom.tes.service_list`)."""
+    """Raised when a TES backend is neither configured nor discovered."""
 
 
 class IdsUnavailableProblem(PyMongoError):
