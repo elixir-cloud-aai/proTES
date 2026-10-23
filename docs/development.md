@@ -128,10 +128,8 @@ Images on Docker Hub (`elixircloud/protes`) are tagged:
 - `X.Y.Z`: release `X.Y.Z`; `latest`: the highest stable release (not an
   alpha, beta or release candidate) on `main`;
 - `dev`: the latest commit on `dev`; `sha-<commit>`: commit `<commit>` on
-  `dev` (full SHA), to deploy a fixed commit.
-
-Before, the CI workflow tagged the image of each commit on `dev` `latest` and
-with the date (e.g., `YYYYMMDD`); such date tags are no longer pushed.
+  `dev` (full SHA), to deploy a fixed commit. Only commits that are still the
+  head of `dev` when their CI run reaches the image job get images.
 
 Features and fixes are merged into `dev`. Branch `main` only ever moves
 forward to commits on `dev` that are released. First, shortly before the
@@ -163,7 +161,8 @@ a date that is not in the future (UTC), that the dependencies are releases
 (see below), and that the [CI
 workflow](https://github.com/elixir-cloud-aai/proTES/blob/dev/.github/workflows/checks.yaml)
 passed for it (a run for the push of the commit to `dev`; if CI hasn't
-finished or failed, re-run the release workflow once it passed). It packages
+finished, failed or was cancelled, e.g., the image job of a commit that a
+later one superseded, re-run CI, then the release workflow). It packages
 the Helm chart with the release version as `version` and `appVersion` (the
 default image tag). In the packaged README, links to the latest docs and to
 files on branch `dev` point to the release (`/en/vX.Y.Z/`, `blob/vX.Y.Z/`);

@@ -118,8 +118,10 @@ default command), and runs the Celery worker with `celery --app
 pro_tes.celery_worker worker`. `/app/pro_tes`, `gunicorn.py` and `wsgi.py` are
 gone, and the environment variables `GUNICORN_PROCESSES` and
 `GUNICORN_THREADS` are replaced by `GUNICORN_CMD_ARGS` (see
-[Server](configuration.md#server)). The Helm chart 3.0.0 needs images of this
-version, and earlier charts need earlier images.
+[Server](configuration.md#server)). The Helm chart of this version (3.0.0 in
+the repository before releases from Git tags) needs images of this version,
+and earlier charts need earlier images. Released charts have the version of
+their release (e.g., 0.3.0), so chart versions restart below 3.0.0.
 
 Images are tagged `dev` and `sha-<commit>` for commits on `dev`, and `X.Y.Z`
 for releases; `latest` is the highest stable release, no longer the latest

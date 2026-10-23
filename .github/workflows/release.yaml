@@ -129,7 +129,7 @@ jobs:
           runs="$(gh api "repos/${REPOSITORY}/actions/workflows/checks.yaml/runs?head_sha=${SHA}&event=push&status=success&per_page=1" \
               --jq .total_count)"
           if [[ ! "${runs}" =~ ^[0-9]+$ || "${runs}" -lt 1 ]]; then
-              echo "::error::No successful run of the CI workflow (checks.yaml) for a push of ${SHA}; once CI passed for it, re-run this workflow"
+              echo "::error::No successful run of the CI workflow (checks.yaml) for a push of ${SHA}; once CI passed for it (re-run it if it failed or was cancelled), re-run this workflow"
               exit 1
           fi
       # Dependabot updates the action, but not this version: bump it by hand

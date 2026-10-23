@@ -23,7 +23,19 @@ namespace. How the namespace is created depends on the cluster, so we won't
 document it here.
 
 Make sure you have both the Kubernetes client (`kubectl`) and Helm 3
-installed, and clone the repository:
+installed. The chart of each release is attached to its [GitHub
+release](https://github.com/elixir-cloud-aai/proTES/releases) and deploys
+the image of that release:
+
+```bash
+helm install protes \
+  https://github.com/elixir-cloud-aai/proTES/releases/download/vX.Y.Z/protes-X.Y.Z.tgz \
+  -f values-prod.yaml
+```
+
+The commands below use the chart in the repository instead, which deploys the
+`dev` image unless `protes.tag` is set (see [Image](#image)); clone the
+repository:
 
 ```bash
 git clone https://github.com/elixir-cloud-aai/proTES.git
@@ -60,8 +72,9 @@ objects.
 ## Image
 
 The app image is `protes.image` (default `elixircloud/protes`) with tag
-`protes.tag`, which defaults to the chart's `appVersion`; the Celery worker
-runs the same image (unless `celeryWorker.image` is set). Charts attached to
+`protes.tag`, which defaults to the chart's `appVersion`. The Celery worker
+runs the same image, unless `celeryWorker.image` (with `celeryWorker.tag`) is
+set. Charts attached to
 [GitHub releases](https://github.com/elixir-cloud-aai/proTES/releases) have
 the release version as `version` and `appVersion`, so they deploy the image
 of their release (`X.Y.Z`). In the repository, both are placeholders, and
