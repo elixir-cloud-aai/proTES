@@ -80,13 +80,13 @@ Contributions are welcome! See [`CONTRIBUTING.md`](CONTRIBUTING.md) and
 [Contributing][docs-contributing] in the documentation, and mind our [code of
 conduct](CODE_OF_CONDUCT.md).
 
-[badge-build-status]: <https://github.com/elixir-cloud-aai/proTES/actions/workflows/checks.yaml/badge.svg>
+[badge-build-status]: <https://github.com/elixir-cloud-aai/proTES/actions/workflows/checks.yaml/badge.svg?branch=dev>
 [badge-coverage]: <https://codecov.io/gh/elixir-cloud-aai/proTES/branch/dev/graph/badge.svg?branch=dev>
 [badge-docker]: <https://img.shields.io/docker/v/elixircloud/protes?sort=semver&label=image&color=C39BD3>
 [badge-docs]: <https://readthedocs.org/projects/protes/badge/>
 [badge-github-tag]: <https://img.shields.io/github/v/tag/elixir-cloud-aai/proTES?color=C39BD3>
 [badge-license]: <https://img.shields.io/badge/license-Apache%202.0-blue.svg>
-[badge-url-build-status]: <https://github.com/elixir-cloud-aai/proTES/actions/workflows/checks.yaml>
+[badge-url-build-status]: <https://github.com/elixir-cloud-aai/proTES/actions/workflows/checks.yaml?query=branch%3Adev>
 [badge-url-coverage]: <https://codecov.io/gh/elixir-cloud-aai/proTES?branch=dev>
 [badge-url-docker]: <https://hub.docker.com/r/elixircloud/protes/tags>
 [badge-url-docs]: <https://protes.readthedocs.io/en/latest/>
