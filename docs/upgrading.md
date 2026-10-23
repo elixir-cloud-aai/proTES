@@ -195,6 +195,12 @@ instead of objects with `message` and `code`.
 served with their forwards as lists; they can be tracked and canceled as
 before.
 
+Earlier versions kept polling tasks that their backend reported as
+`PREEMPTED`, which is a final state. These tasks are stored as `PREEMPTED`
+already, but their final logs are not. The upgrade ends this polling, as
+it ends all tracking by the old Celery worker; the logs of these tasks
+aren't fetched again.
+
 ## Task times and remote identifiers
 
 Times of tasks (`creation_time`, and `start_time` and `end_time` of the
