@@ -11,7 +11,8 @@ that can be applied is used.
 
 Two middlewares are shipped with proTES, as proofs of concept for different
 ways of distributing tasks. Both forward to the TES instances of
-`custom.tes.service_list` (see [TES instances](configuration.md#tes-instances)).
+`custom.tes.service_list` and those discovered in a service registry (see
+[TES instances](configuration.md#tes-instances)).
 
 - **Bringing compute to the data:**
   `pro_tes.plugins.middlewares.task_distribution.distance.TaskDistributionDistance`
@@ -43,14 +44,16 @@ and implements `apply_middleware()`, which receives the request (a
 `flask.Request`) and returns it, possibly changed. To select TES instances,
 set the key `tes_urls` of the request's JSON body to the list of their URLs,
 in the order in which they are tried; proTES removes the key before it
-forwards the task, and skips URLs that are not in `custom.tes.service_list`
-(it has no credentials for them). Credentials that middlewares add to the
-URLs of inputs and outputs are removed. Raise an exception if the middleware
-can't be applied, so that the next alternative of the step is tried. The
-task distribution middlewares derive from
+forwards the task, and skips URLs that are neither in
+`custom.tes.service_list` nor discovered (it has no credentials for them).
+Credentials that middlewares add to the URLs of inputs and outputs are
+removed. Raise an exception if the middleware can't be applied, so that the
+next alternative of the step is tried. The task distribution middlewares
+derive from
 [`TaskDistributionBaseClass`](reference.md#pro_tes.plugins.middlewares.task_distribution.base.TaskDistributionBaseClass),
-which sets `tes_urls` from the URLs of `custom.tes.service_list`; override
-its `_set_tes_urls()` to order them differently.
+which sets `tes_urls` from the URLs of `custom.tes.service_list` and the
+discovered TES instances; override its `_set_tes_urls()` to order them
+differently.
 
 Middlewares are imported by their import path, so they can live in any
 package installed next to proTES, e.g., in a custom image based on the proTES

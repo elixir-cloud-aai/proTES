@@ -11,6 +11,7 @@ import mongomock
 from pymongo import MongoClient
 import pytest
 
+from pro_tes.ga4gh.tes import discovery
 from pro_tes.plugins.middlewares.task_distribution import distance
 from tests import conftest
 from tests.conftest import DB, DBS
@@ -124,3 +125,5 @@ def test_no_name_resolution() -> None:
     """Hosts of task inputs and TES backends are not resolved."""
     with pytest.raises(socket.gaierror, match="Name resolution blocked in tests"):
         distance.gethostbyname("tes.example.org")
+    with pytest.raises(socket.gaierror, match="Name resolution blocked in tests"):
+        discovery.getaddrinfo("tes.example.org", 443)

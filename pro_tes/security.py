@@ -121,9 +121,10 @@ def _missing_env(*names: str) -> list[str]:
 def check_backends(conf: Tes | None = None) -> None:
     """Check the credentials of the TES backends, and log how they are used.
 
-    A warning is logged if no backend is configured, for each backend
-    without token authentication (`auth: basic` or `none`), and if URLs
-    with scheme `http` are allowed.
+    A warning is logged if no backend is configured and discovery is off,
+    for each backend without token authentication (`auth: basic` or `none`),
+    if discovered backends get no tokens or may have private addresses, and
+    if URLs with scheme `http` are allowed.
 
     Args:
         conf: TES backend configuration; by default, that of the current app
@@ -131,16 +132,33 @@ def check_backends(conf: Tes | None = None) -> None:
 
     Raises:
         RuntimeError: Environment variables with credentials are not set:
-            the client ID and secret of proTES if a backend has `auth:
-            client_credentials`, or the HTTP Basic credentials of a backend
-            with `auth: basic`.
+            the client ID and secret of proTES if a backend has (or
+            discovered backends get) `auth: client_credentials`, or the HTTP
+            Basic credentials of a backend with `auth: basic`.
     """
     if conf is None:
         conf = get_custom_config().tes
-    if not conf.service_list:
+    discovery = conf.discovery
+    if discovery.enabled:
+        logger.info(
+            "Discovering TES backends at registry %s every %d seconds"
+            " (`custom.tes.discovery`), with `auth: %s`",
+            discovery.registry_url,
+            discovery.refresh_interval,
+            discovery.auth,
+        )
+        if discovery.auth == "none":
+            logger.warning("Discovered TES backends get no credentials (`auth: none`)")
+        if discovery.allow_private_addresses:
+            logger.warning(
+                "Discovered TES backends may have private addresses"
+                " (`custom.tes.discovery.allow_private_addresses`); for local"
+                " setups only"
+            )
+    elif not conf.service_list:
         logger.warning(
-            "No TES backends are configured (`custom.tes.service_list`), so"
-            " tasks can't be forwarded"
+            "No TES backends are configured (`custom.tes.service_list`) or"
+            " discovered (`custom.tes.discovery`), so tasks can't be forwarded"
         )
     if "http" in conf.url_schemes:
         logger.warning(
@@ -177,6 +195,7 @@ def check_backends(conf: Tes | None = None) -> None:
         logger.info(
             "TES backends with access tokens of proTES: %s", ", ".join(token_backends)
         )
+    if token_backends or discovery.uses_tokens:
         missing.extend(_missing_env(CLIENT_ID_ENV, CLIENT_SECRET_ENV))
     if missing:
         raise RuntimeError(

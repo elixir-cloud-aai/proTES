@@ -176,10 +176,13 @@ jobs:
 # `name`, `description`, `organization`, `contactUrl` and `environment` (and
 # `storage`, the storage locations of their TES backends); `id` and
 # `organization` are placeholders with reserved example domains (RFC 2606),
-# which the app warns of on startup
+# which the app warns of on startup. `backends` lists the URLs of the TES
+# backends that tasks may be forwarded to, configured and discovered
+# (`runtime_fields`; set it to null to hide them)
 # Cf. https://foca.readthedocs.io/en/latest/configuration/service-info/
 service_info:
   package: pro-tes
+  runtime_fields: pro_tes.ga4gh.tes.discovery.service_info_fields
   service:
     id: org.example.protes
     name: proTES
@@ -257,8 +260,30 @@ custom:
   # See `docs/access-control.md`
   tes:
     service_list: []
-    # URL schemes of backends and of the identity provider; add `http` for
-    # local tests only (credentials are sent unencrypted)
+    # Discovery of further TES backends in a service registry (GA4GH Service
+    # Registry API, with verified services, e.g., a Cloud Registry), read
+    # without access token; off unless `registry_url` is set, e.g., to
+    # https://registry.example.org/ga4gh/registry/v1. Only verified TES
+    # services of the accepted `versions` (prefixes) and `environments` (any
+    # if empty) are used, with `https` URLs and hosts with public addresses
+    # (unless `allow_private_addresses`, for local setups only); the backends
+    # of `service_list` take precedence. The list is read every
+    # `refresh_interval` seconds, and the last good list kept while the
+    # registry is unavailable. Discovered backends get `auth`
+    # (`client_credentials` or `none`). See `docs/configuration.md`
+    discovery:
+      registry_url: null
+      refresh_interval: 300
+      timeout: 10
+      versions:
+        - "1.0"
+        - "1.1"
+      environments: []
+      auth: client_credentials
+      allow_private_addresses: false
+    # URL schemes of backends, of the registry and of the identity provider;
+    # add `http` for local tests only (credentials are sent unencrypted);
+    # discovered backends need `https`
     url_schemes:
       - https
     # Client of proTES (OAuth 2.0 client credentials grant) for backends with
