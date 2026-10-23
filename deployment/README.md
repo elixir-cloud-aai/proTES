@@ -77,10 +77,16 @@ config:
         compute-users: user
         compute-admins: admin
   custom:
-    # TES instances that tasks are distributed to
     tes:
+      # TES instances that tasks are distributed to; proTES authenticates
+      # at them with its own access token (`auth: client_credentials`, the
+      # default), unless `auth` is `basic` or `none`
       service_list:
-        - "https://tes.example.org"
+        - url: "https://tes.example.org"
+      # Identity provider of the client of proTES (credentials from
+      # `PROTES_CLIENT_ID` and `PROTES_CLIENT_SECRET`, see Secrets)
+      client_credentials:
+        issuer: "https://login.example.org/oidc/"
 ```
 
 Set the service info (`config.service_info.service`, see [Service
