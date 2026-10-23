@@ -1,11 +1,61 @@
-proTES is being deployed!
+{{- $context := dict "root" . "settings" (include "protes.settings" . | fromYaml) -}}
+{{- $fullname := include "foca-common.fullname" . -}}
+{{- $httpRoute := dig "httpRoute" "enabled" false .Values.protes -}}
+{{- $exposed := or .Values.protes.ingress.enabled $httpRoute (include "foca-common.routeEnabled" $context) -}}
+{{- /*
+HTTPS: TLS is terminated by the ingress, the Gateway, the route or a proxy in
+front of the cluster.
+*/ -}}
+{{- $url := "http://localhost:8080" -}}
+{{- if $exposed -}}
+{{- $url = printf "https://%s" .Values.hostName -}}
+{{- end -}}
+proTES is being deployed as release {{ .Release.Name }}
+in namespace {{ .Release.Namespace }}!
+{{- if and .Values.protes.ingress.enabled (not .Values.protes.ingress.https.enabled) }}
 
-Once deployed:
+WARNING: The Ingress has no TLS (protes.ingress.https.enabled is false), so
+it serves plain HTTP, and clients would send their bearer tokens in
+cleartext: terminate TLS in front of the cluster for the URLs below (see
+deployment/README.md, Exposing the app).
+{{- end }}
+{{- if $httpRoute }}
 
-  1. Access the API via https://{{ .Values.protes.appName }}.{{ .Values.applicationDomain }}/ga4gh/tes/v1/
+The HTTPRoute serves the app via the Gateway in protes.httpRoute.parentRefs:
+make sure that its listener terminates TLS for {{ .Values.hostName }}, and
+check that the route is accepted with
+`kubectl get httproute {{ $fullname }} -n {{ .Release.Namespace }} -o yaml`.
+{{- end }}
+{{- if not $exposed }}
 
-     To test the connection, you can run:
+Neither an Ingress (protes.ingress.enabled is false), an HTTPRoute
+(protes.httpRoute.enabled is false) nor an OpenShift Route (the cluster does
+not serve route.openshift.io/v1) was created, so the app is only reachable
+within the cluster. To access it from this machine, run:
 
-       curl -X GET "https://{{ .Values.protes.appName }}.{{ .Values.applicationDomain }}/ga4gh/tes/v1/service-info" -H "Accept: application/json"
+  kubectl port-forward svc/{{ $fullname }} 8080:8080 -n {{ .Release.Namespace }}
+{{- end }}
+{{- if not (include "foca-common.workerEnabled" .) }}
 
-  2. Access the Swagger UI via https://{{ .Values.protes.appName }}.{{ .Values.applicationDomain }}/ga4gh/tes/v1/ui
+WARNING: The Celery worker is disabled (worker.enabled is false), so the
+states of tasks are not tracked: run a worker elsewhere, connected to the
+same broker and MongoDB.
+{{- end }}
+
+Once deployed (check with
+`kubectl rollout status deploy/{{ $fullname }} -n {{ .Release.Namespace }}`):
+
+  1. Access the API via {{ $url }}/ga4gh/tes/v1/
+
+     To test the connection (no token needed), you can run:
+
+       curl -X GET "{{ $url }}/ga4gh/tes/v1/service-info" -H "Accept: application/json"
+
+  2. Access the Swagger UI via {{ $url }}/ga4gh/tes/v1/ui/
+{{- if dig "enabled" false (.Values.flower | default dict) }}
+
+  3. Access Flower, the monitoring UI of the Celery worker, with the
+     credentials of {{ .Values.flower.existingSecret }} via http://localhost:5555/ after running:
+
+       kubectl port-forward svc/{{ include "protes.flowerFullname" . }} 5555:5555 -n {{ .Release.Namespace }}
+{{- end }}

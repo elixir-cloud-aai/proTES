@@ -2,7 +2,26 @@ apiVersion: v2
 name: protes
 description: >-
   proTES, a gateway for the GA4GH Task Execution Service API by ELIXIR
-  On-Cloud, with MongoDB, RabbitMQ and Celery workers
+  On-Cloud, with its Celery worker, a MongoDB database and a RabbitMQ broker
 type: application
-version: 3.0.0
-appVersion: 2.0.1
+# Placeholders: releases set `version` and `appVersion` from the tag
+# (`vX.Y.Z`, see "Versioning and releases" in `docs/development.md`).
+version: 0.0.0
+# `appVersion` is the default image tag, so the chart in the repository
+# deploys the image of the latest commit on `dev` (`latest`) unless
+# `protes.tag` is set
+appVersion: "latest"
+dependencies:
+  # The library chart of FOCA apps, with the templates of all resources (see
+  # "Helm library chart" in FOCA's docs); `helm dependency build` packages
+  # the version locked in `Chart.lock` into `charts/`.
+  # TEMPORARY: foca-common 0.2.0 (with the Celery worker and broker) is not
+  # released yet, so the chart is taken from a commit on FOCA's `dev` branch,
+  # which `scripts/foca_common.sh` checks out into `.foca-common/` (see
+  # "Helm chart" in `docs/development.md`); replaced by the release
+  # (`oci://ghcr.io/elixir-cloud-aai/charts`) before the next release (#246),
+  # which `scripts/check_release_pins.py` enforces
+  # FOCA commit: 2c0cfa6c1d230b1d9d5bc7dc61995dc1a0b89340
+  - name: foca-common
+    version: 0.2.0
+    repository: file://../.foca-common/charts/foca-common

@@ -1,0 +1,22 @@
+{{- /*
+Service of Flower (port 5555), if `flower.enabled`; within the cluster only.
+*/ -}}
+{{- $context := dict "root" . "settings" (include "protes.settings" . | fromYaml) -}}
+{{- include "foca-common.checkSettings" $context -}}
+{{- if dig "enabled" false (.Values.flower | default dict) -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "protes.flowerFullname" . | quote }}
+  labels:
+    {{- include "foca-common.labels" (dict "root" . "component" "flower") | nindent 4 }}
+spec:
+  ports:
+  - name: http
+    port: 5555
+    protocol: TCP
+    targetPort: http
+  selector:
+    {{- include "foca-common.selectorLabels" (dict "root" . "component" "flower") | nindent 4 }}
+  type: ClusterIP
+{{ end -}}

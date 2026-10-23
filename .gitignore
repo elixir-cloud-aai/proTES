@@ -229,3 +229,7 @@ tests/output/*
 *.modified.yaml
 .netrc
 .idea/*
+# Dependencies of the Helm chart (`helm dependency build deployment`)
+deployment/charts/
+# TEMPORARY: checkout of the library chart (`scripts/foca_common.sh`, #246)
+/.foca-common/
