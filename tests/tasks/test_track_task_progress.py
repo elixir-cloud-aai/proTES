@@ -282,6 +282,65 @@ def test_states_tracked(
     assert document["task"]["state"] == "EXECUTOR_ERROR"
 
 
+def test_preempted_final(
+    tasks: Collection[dict[str, Any]],
+    client_class: type[FakeClient],
+    sleeps: list[float],
+    stored_states: list[str],
+) -> None:
+    """Tracking ends once the backend reports `PREEMPTED` (TES 1.1).
+
+    The final logs are stored; a state reported after `PREEMPTED` would be
+    tracked only if the tracker kept polling.
+    """
+    client_class.states = ["RUNNING", "RUNNING", "PREEMPTED", "COMPLETE"]
+    run()
+    assert stored_states == ["INITIALIZING", "RUNNING", "PREEMPTED"]
+    document = tasks.find_one({"worker_id": ARGS["worker_id"]})
+    assert document is not None
+    assert document["task"]["state"] == "PREEMPTED"
+    assert document["task"]["logs"][0]["outputs"] == [
+        {"url": "s3://bucket/out", "path": "/out", "size_bytes": "10"}
+    ]
+
+
+def test_canceling_tracked(
+    tasks: Collection[dict[str, Any]],
+    client_class: type[FakeClient],
+    sleeps: list[float],
+    stored_states: list[str],
+) -> None:
+    """Tasks in `CANCELING` (TES 1.1) are tracked until they are `CANCELED`."""
+    client_class.states = [
+        "RUNNING",
+        "RUNNING",
+        "CANCELING",
+        "CANCELING",
+        "CANCELED",
+    ]
+    run()
+    assert stored_states == ["INITIALIZING", "RUNNING", "CANCELING", "CANCELED"]
+    document = tasks.find_one({"worker_id": ARGS["worker_id"]})
+    assert document is not None
+    assert document["task"]["state"] == "CANCELED"
+
+
+def test_canceling_poll_attempts_exceeded(
+    tasks: Collection[dict[str, Any]],
+    client_class: type[FakeClient],
+    sleeps: list[float],
+    stored_states: list[str],
+) -> None:
+    """Tasks in `CANCELING` fail like others once polls fail too often."""
+    attempts = get_custom_config().controllers.post_task.polling.attempts
+    client_class.states = ["RUNNING", "CANCELING", None]
+    with pytest.raises(requests.HTTPError):
+        run()
+    assert stored_states == ["INITIALIZING", "CANCELING", "SYSTEM_ERROR"]
+    # the first two requests, the allowed failed attempts, and the last failure
+    assert len(client_class.requested) == attempts + 3
+
+
 def test_poll_retried(
     tasks: Collection[dict[str, Any]],
     client_class: type[FakeClient],
