@@ -26,7 +26,7 @@ from pro_tes.plugins.middlewares.task_distribution.random import (
 )
 from pro_tes.tasks import track_task_progress
 from pro_tes.utils.misc import get_custom_config
-from tests.conftest import DB, USER
+from tests.conftest import DB, OTHER_USER, USER
 from tests.ga4gh.tes.conftest import (
     BACKENDS,
     BASE_PATH,
@@ -938,6 +938,75 @@ def test_task_id_taken(
             runs._write_doc_to_db(
                 document=DbDocument(), owner=USER, collection=f"{BASE_PATH}/tasks"
             )
+
+
+@pytest.mark.parametrize("other_owner", [OTHER_USER, USER])
+def test_task_id_taken_concurrently(
+    app: FlaskApp,
+    monkeypatch: pytest.MonkeyPatch,
+    mongo_client: MongoClient[dict[str, Any]],
+    other_owner: str,
+) -> None:
+    """Tasks are not stored under identifiers stored concurrently (#248).
+
+    Another request stores a task with the same identifier after the
+    identifier was checked: the unique index rejects the task, which gets
+    another identifier. Its owner never gets a role on the first
+    identifier, also not while the task is stored.
+    """
+    ids = iter(["TAKEN1", "UNUSED"])
+    monkeypatch.setattr(task_runs, "generate_id", lambda **kwargs: next(ids))
+    tasks = mongo_client[DB]["tasks"]
+    rules = mongo_client[DB]["policy_rules"]
+    resources = {
+        task: [f"{BASE_PATH}/tasks/{task}", f"{BASE_PATH}/tasks/{task}:cancel"]
+        for task in ("TAKEN1", "UNUSED")
+    }
+    owners_at_insert: list[list[str]] = []
+
+    with app.app.test_request_context():
+        runs = task_runs.TaskRuns()
+        insert_one = runs.db_client.insert_one
+
+        def insert_one_raced(document: dict[str, Any]) -> Any:
+            """Store another task with the identifier first, then the task.
+
+            Args:
+                document: Document to insert.
+
+            Returns:
+                Result of the insert.
+            """
+            task_id = document["task"]["id"]
+            if task_id == "TAKEN1":
+                insert_one(
+                    {"task": {"id": task_id}, "user_id": other_owner, "worker_id": "w"}
+                )
+                ownership.add_task_owner(
+                    collection=f"{BASE_PATH}/tasks", task_id=task_id, owner=other_owner
+                )
+            query = {"ptype": "g2", "v2": resources[task_id][0]}
+            owners_at_insert.append([rule["v0"] for rule in rules.find(query)])
+            return insert_one(document)
+
+        monkeypatch.setattr(runs.db_client, "insert_one", insert_one_raced)
+        task_id, _ = runs._write_doc_to_db(
+            document=DbDocument(user_id=USER),
+            owner=USER,
+            collection=f"{BASE_PATH}/tasks",
+        )
+    assert task_id == "UNUSED"
+    assert owners_at_insert == [[f"user:{other_owner}"], []]
+    assert sorted(
+        (document["task"]["id"], document["user_id"]) for document in tasks.find()
+    ) == [("TAKEN1", other_owner), ("UNUSED", USER)]
+    assert sorted(
+        (rule["v0"], rule["v2"]) for rule in rules.find({"ptype": "g2"})
+    ) == sorted(
+        (f"user:{owner}", resource)
+        for owner, task in [(other_owner, "TAKEN1"), (USER, "UNUSED")]
+        for resource in resources[task]
+    )
 
 
 def test_forward_stored_no_logs(app: FlaskApp) -> None:

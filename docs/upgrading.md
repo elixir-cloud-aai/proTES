@@ -78,6 +78,65 @@ through the API; operators can give them to their users, or purge them (see
 [Task owners](operations.md#task-owners)). Each new task adds two rules to
 the access control database.
 
+## Task identifiers
+
+Task identifiers (`task.id`) are unique in the database: on startup,
+proTES creates a unique index on them (and an index on `worker_id`), and
+drops the index of earlier versions (`task_id_1_worker_id_1`), which never rejected a task identifier
+that was used already. While stored tasks share identifiers, the index
+can't be created, and proTES (the API and the Celery workers) refuses to
+start: the error names the shared identifiers (up to 10), and how many
+tasks have each. proTES doesn't change these tasks; resolve the duplicates in the
+database of the tasks (`taskStore`, unless `MONGO_DBNAME` names another),
+e.g., with `mongosh` (`use <database>`), and start proTES again:
+
+1. Back up the tasks, e.g., with
+   `mongodump --db <database> --collection tasks`.
+2. Find the shared identifiers (`_id: null` stands for tasks without
+   identifier, which the API can't serve anyway):
+
+    ```js
+    db.tasks.aggregate([
+      { $group: { _id: "$task.id", n: { $sum: 1 } } },
+      { $match: { n: { $gt: 1 } } },
+    ])
+    ```
+
+3. List the tasks of each shared identifier:
+
+    ```js
+    db.tasks.find(
+      { "task.id": "<id>" },
+      { "task.id": 1, "task.state": 1, "task.creation_time": 1, user_id: 1 },
+    )
+    ```
+
+4. Keep one task under the identifier, and either delete each of the
+   others, or give it an identifier that is used neither by a task nor by
+   owner roles (and tell its owner the new identifier, as the old one now
+   leads to the task kept):
+
+    ```js
+    db.tasks.deleteOne({ _id: ObjectId("<_id>") })
+    db.tasks.updateOne(
+      { _id: ObjectId("<_id>") },
+      { $set: { "task.id": "<new id>" } },
+    )
+    ```
+
+5. If the tasks have owners (`user_id`), check the owner roles on the
+   identifier: they gave each owner access to all tasks of the identifier.
+   Delete those of the owners of the other tasks, and give the owners of
+   renamed tasks roles on the new identifiers (see [Task
+   owners](operations.md#task-owners)):
+
+    ```js
+    const paths = ["/ga4gh/tes/v1/tasks/<id>", "/ga4gh/tes/v1/tasks/<id>:cancel"]
+    db.policy_rules.find({ ptype: "g2", v2: { $in: paths } })
+    // the roles of a user who doesn't own the task kept
+    db.policy_rules.deleteMany({ ptype: "g2", v0: "user:<sub>", v2: { $in: paths } })
+    ```
+
 ## TES instances and their credentials
 
 The entries of `custom.tes.service_list` are objects with the URL of the TES

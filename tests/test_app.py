@@ -15,7 +15,7 @@ from pro_tes.app import init_app, run_app
 from pro_tes.config_models import TesBackend
 from pro_tes.ga4gh.tes.backends import CLIENT_ID_ENV, CLIENT_SECRET_ENV
 from pro_tes.utils.misc import get_custom_config
-from tests.conftest import set_overlays
+from tests.conftest import DB, set_overlays
 
 BASE_PATH = "/ga4gh/tes/v1"
 # Config overlay of the Compose smoke test
@@ -176,3 +176,14 @@ def test_run_app(app: FlaskApp, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(app, "run", lambda **kwargs: calls.append(kwargs))
     run_app(app)
     assert calls == [{"port": app.port}]
+
+
+def test_task_indexes(app: FlaskApp, mongo_client: MongoClient[dict[str, Any]]) -> None:
+    """Task identifiers are unique, and worker identifiers indexed (#248)."""
+    indexes = {
+        tuple(index["key"]): index
+        for index in mongo_client[DB]["tasks"].index_information().values()
+    }
+    assert indexes[(("task.id", 1),)].get("unique") is True
+    assert not indexes[(("task.id", 1),)].get("sparse")
+    assert not indexes[(("worker_id", 1),)].get("unique")
