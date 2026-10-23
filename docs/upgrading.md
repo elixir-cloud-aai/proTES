@@ -118,8 +118,22 @@ default command), and runs the Celery worker with `celery --app
 pro_tes.celery_worker worker`. `/app/pro_tes`, `gunicorn.py` and `wsgi.py` are
 gone, and the environment variables `GUNICORN_PROCESSES` and
 `GUNICORN_THREADS` are replaced by `GUNICORN_CMD_ARGS` (see
-[Server](configuration.md#server)). The Helm chart 3.0.0 needs images of this
-version, and earlier charts need earlier images.
+[Server](configuration.md#server)). The Helm chart needs images of this
+version, and the legacy chart (versions 2 and 3.0.0) needs earlier images.
+
+## Helm chart
+
+The Helm chart is replaced by a chart on FOCA's library chart `foca-common`
+(see [Deployment](deployment.md)): other values (camelCase, e.g., `hostName`
+instead of `applicationDomain`), resource names and selectors, Secrets of
+your own for MongoDB and the broker instead of credentials in the values
+(the broker's user was `guest:guest`), Flower off by default and with
+credentials from a Secret (was always on, with `admin:admin`),
+NetworkPolicies, pinned images, and an Ingress for all paths (was
+`/ga4gh/tes/v1` only), or a Gateway API HTTPRoute. Releases of the legacy
+chart can't be upgraded: uninstall them and install the new chart, keeping
+the data as described in [From the legacy
+chart](deployment.md#from-the-legacy-chart).
 
 ## Docker Compose
 
