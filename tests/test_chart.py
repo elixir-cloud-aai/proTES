@@ -945,10 +945,12 @@ def test_notes_route_disabled() -> None:
     )
     notes = render_notes(*args, "--set", "protes.route.enabled=false")
     assert "Neither an Ingress" in notes
-    assert "(protes.route.enabled\nis false)" in notes
+    assert (
+        "nor an OpenShift Route\n(protes.route.enabled is false) was created" in notes
+    )
     assert "does not serve" not in notes
     notes = render_notes("--set", "hostName=x", *NO_INGRESS)
-    assert "(the cluster does not serve route.openshift.io/v1)" in notes
+    assert "(the cluster does\nnot serve route.openshift.io/v1)" in notes
     assert "Neither an Ingress" not in render_notes(*args)
 
 
