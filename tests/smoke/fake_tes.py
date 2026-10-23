@@ -29,6 +29,7 @@ AUDIENCE = "smoke-client"
 # Groups of the users (user info), as mapped to roles in `config.yaml`
 GROUPS = {
     "alice": ["smoke-users"],
+    "bob": ["smoke-users"],
     "admin": ["smoke-admins"],
     "eve": ["other-group"],
 }

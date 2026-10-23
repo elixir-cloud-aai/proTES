@@ -3,14 +3,27 @@
 from pathlib import Path
 from typing import Any
 
+from connexion import FlaskApp
 from cryptography.hazmat.primitives.asymmetric import rsa
 from flask.testing import FlaskClient
+from pymongo import MongoClient
 import pytest
 import yaml
 
 from pro_tes.app import init_app
-from tests.conftest import ADMIN, OUTSIDER, USER, make_headers, set_overlays
-from tests.ga4gh.tes.conftest import BASE_PATH, TASK, FakeBackend
+from pro_tes.exceptions import Unauthorized
+from pro_tes.ga4gh.tes import ownership, task_runs
+from tests.conftest import (
+    ADMIN,
+    ADMIN_USER,
+    DB,
+    OTHER_USER,
+    OUTSIDER,
+    USER,
+    make_headers,
+    set_overlays,
+)
+from tests.ga4gh.tes.conftest import BACKENDS, BASE_PATH, TASK, FakeBackend, stored
 
 
 def task_operations(task_id: str) -> list[tuple[str, str]]:
@@ -43,26 +56,171 @@ def body(method: str, path: str) -> dict[str, Any] | None:
     return TASK if (method, path) == ("POST", f"{BASE_PATH}/tasks") else None
 
 
-@pytest.mark.parametrize("user", [USER, ADMIN])
-def test_allowed(
-    client: FlaskClient, task_id: str, backend: type[FakeBackend], user: str
-) -> None:
-    """Users and admins may create, list, read and cancel tasks."""
+def create_task(client: FlaskClient, user: str) -> str:
+    """Create a task as a user.
+
+    Args:
+        client: Test client.
+        user: User creating the task.
+
+    Returns:
+        Identifier of the task.
+    """
+    response = client.post(f"{BASE_PATH}/tasks", json=TASK, headers=make_headers(user))
+    assert response.status_code == 200
+    return str(response.get_json()["id"])
+
+
+def list_ids(client: FlaskClient, user: str) -> list[str]:
+    """List the identifiers of the tasks a user sees.
+
+    Args:
+        client: Test client.
+        user: User listing the tasks.
+
+    Returns:
+        Identifiers of the listed tasks, newest first.
+    """
+    response = client.get(f"{BASE_PATH}/tasks", headers=make_headers(user))
+    assert response.status_code == 200
+    return [task["id"] for task in response.get_json()["tasks"]]
+
+
+def test_allowed(client: FlaskClient, task_id: str, backend: type[FakeBackend]) -> None:
+    """Users may create tasks, and list, read and cancel their own."""
+    for method, path in task_operations(task_id):
+        response = client.open(path, method=method, json=body(method, path))
+        assert response.status_code == 200, (method, path)
+
+
+@pytest.mark.parametrize("user", [OUTSIDER, OTHER_USER, ADMIN, ADMIN_USER])
+def test_forbidden(client: FlaskClient, task_id: str, user: str) -> None:
+    """Only owners may read and cancel tasks; others get `403`.
+
+    Also admins, so that nobody but the owner sees a task's inputs and logs.
+    Users without the role `user` (also admins) can't create or list tasks.
+    Errors are problem details.
+    """
     for method, path in task_operations(task_id):
         response = client.open(
             path, method=method, json=body(method, path), headers=make_headers(user)
         )
-        assert response.status_code == 200, (method, path)
-
-
-def test_forbidden(client: FlaskClient, task_id: str) -> None:
-    """Users without a role get `403`, as problem details."""
-    for method, path in task_operations(task_id):
-        response = client.open(
-            path, method=method, json=body(method, path), headers=make_headers(OUTSIDER)
-        )
+        if user in (OTHER_USER, ADMIN_USER) and path == f"{BASE_PATH}/tasks":
+            assert response.status_code == 200, (method, path)
+            continue
         assert response.status_code == 403, (method, path)
         assert response.get_json()["status"] == 403
+
+
+def test_own_tasks(client: FlaskClient, backend: type[FakeBackend]) -> None:
+    """Users, also admins, list only their own tasks."""
+    alice = [create_task(client, USER) for _ in range(2)]
+    bob = create_task(client, OTHER_USER)
+    carol = create_task(client, ADMIN_USER)
+    assert list_ids(client, USER) == alice[::-1]
+    assert list_ids(client, OTHER_USER) == [bob]
+    assert list_ids(client, ADMIN_USER) == [carol]
+    response = client.get(f"{BASE_PATH}/tasks/{carol}", headers=make_headers(USER))
+    assert response.status_code == 403
+
+
+def test_own_tasks_pages(client: FlaskClient, backend: type[FakeBackend]) -> None:
+    """Pages hold only the tasks of the user."""
+    alice = [create_task(client, USER) for _ in range(3)]
+    create_task(client, OTHER_USER)
+    response = client.get(f"{BASE_PATH}/tasks", query_string={"page_size": 2})
+    first = response.get_json()
+    assert [task["id"] for task in first["tasks"]] == alice[:0:-1]
+    response = client.get(
+        f"{BASE_PATH}/tasks",
+        query_string={"page_size": 2, "page_token": first["next_page_token"]},
+    )
+    last = response.get_json()
+    assert [task["id"] for task in last["tasks"]] == alice[:1]
+    assert last["next_page_token"] == ""
+
+
+def test_owner_stored(
+    client: FlaskClient, task_id: str, mongo_client: MongoClient[dict[str, Any]]
+) -> None:
+    """The owner is stored with the task, and as roles on the task.
+
+    The roles are on the task and on its cancellation, which is not a
+    sub-path of the task.
+    """
+    assert stored(mongo_client, task_id)["user_id"] == USER
+    rules = mongo_client[DB]["policy_rules"].find({"ptype": "g2"})
+    assert sorted((rule["v0"], rule["v1"], rule["v2"]) for rule in rules) == [
+        (f"user:{USER}", "owner", f"{BASE_PATH}/tasks/{task_id}"),
+        (f"user:{USER}", "owner", f"{BASE_PATH}/tasks/{task_id}:cancel"),
+    ]
+
+
+def test_owner_failed_task(client: FlaskClient, backend: type[FakeBackend]) -> None:
+    """Users own tasks that could not be forwarded, too."""
+    backend.failing.update(BACKENDS)
+    response = client.post(f"{BASE_PATH}/tasks", json=TASK)
+    assert response.status_code == 500
+    (task_id,) = list_ids(client, USER)
+    response = client.get(f"{BASE_PATH}/tasks/{task_id}")
+    assert response.get_json()["state"] == "SYSTEM_ERROR"
+
+
+def test_unknown_task(client: FlaskClient) -> None:
+    """Unknown tasks are forbidden (`403`), as tasks of others are.
+
+    So, responses don't tell which tasks exist.
+    """
+    for path in (f"{BASE_PATH}/tasks/UNKNWN", f"{BASE_PATH}/tasks/UNKNWN:cancel"):
+        response = client.open(path, method="POST" if "cancel" in path else "GET")
+        assert response.status_code == 403, path
+
+
+@pytest.mark.parametrize("user", [USER, ADMIN_USER])
+def test_tasks_without_owner(
+    client: FlaskClient,
+    task_id: str,
+    mongo_client: MongoClient[dict[str, Any]],
+    user: str,
+) -> None:
+    """Tasks without owner, e.g., of earlier versions, are visible to nobody.
+
+    Also not to admins.
+    """
+    mongo_client[DB]["policy_rules"].delete_many({"ptype": "g2"})
+    mongo_client[DB]["tasks"].update_one(
+        {"task.id": task_id}, {"$unset": {"user_id": ""}}
+    )
+    assert list_ids(client, user) == []
+    for method, path in task_operations(task_id)[2:]:
+        response = client.open(path, method=method, headers=make_headers(user))
+        assert response.status_code == 403, (method, path)
+
+
+def test_purged_task(
+    client: FlaskClient, task_id: str, mongo_client: MongoClient[dict[str, Any]]
+) -> None:
+    """Owners get `404` for tasks deleted from the database."""
+    mongo_client[DB]["tasks"].delete_one({"task.id": task_id})
+    assert list_ids(client, USER) == []
+    for method, path in task_operations(task_id)[2:]:
+        response = client.open(path, method=method)
+        assert response.status_code == 404, (method, path)
+        assert response.get_json() == {
+            "title": "Not found",
+            "status": 404,
+            "detail": "The requested task wasn't found.",
+        }
+
+
+def test_owner_unidentified(app: FlaskApp, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Tasks are not created if the user can't be identified (`401`)."""
+    monkeypatch.setattr(ownership, "get_current_subject", lambda: None)
+    with (
+        app.app.test_request_context(json=TASK),
+        pytest.raises(Unauthorized, match="could not be identified"),
+    ):
+        task_runs.TaskRuns().create_task()
 
 
 @pytest.mark.parametrize(
@@ -146,15 +304,15 @@ def test_named_policies(
 ) -> None:
     """Overlays change single policy rules by name.
 
-    Here, users may no longer get or cancel tasks, but still create and list
-    them.
+    Here, owners may no longer get or cancel tasks, but users still create
+    and list them.
     """
     overlay = tmp_path / "policies.yaml"
     overlay.write_text(
         yaml.safe_dump(
             {
                 "security": {
-                    "access_control": {"policies": {"users-get-cancel-tasks": None}}
+                    "access_control": {"policies": {"owners-get-cancel-tasks": None}}
                 }
             }
         ),

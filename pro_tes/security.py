@@ -25,12 +25,12 @@ def _groups_of_role(mapping: dict[str, str], role: str) -> list[str]:
 def check_role_groups() -> None:
     """Check that groups are mapped to the role `admin`, and log the mapping.
 
-    Without such groups, nobody has the role `admin` (who may do
-    everything), so this is an error unless
+    Without such groups, nobody has the role `admin` (who may use the
+    permissions API), so this is an error unless
     `custom.access_control.require_admin` is false; so is a group mapping
     without the claim of the groups (`claim_groups`), which no group would
     match. A warning is logged if no group is mapped to the role `user`, as
-    only admins can use the API then, and if access control is not enabled
+    nobody can create tasks then, and if access control is not enabled
     and enforced. Must be called in an app context.
 
     Raises:
@@ -57,8 +57,7 @@ def check_role_groups() -> None:
         logger.info("Groups mapped to the role 'user': %s", ", ".join(users))
     else:
         logger.warning(
-            "No group is mapped to the role 'user', so only admins can create, "
-            "list, read and cancel tasks"
+            "No group is mapped to the role 'user', so nobody can create or list tasks"
         )
     admins = _groups_of_role(mapping, "admin")
     if admins:

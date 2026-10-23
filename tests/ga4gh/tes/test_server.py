@@ -243,12 +243,6 @@ def test_get_task_views(client: FlaskClient, backend: type[FakeBackend]) -> None
     assert [item.get("content") for item in full["inputs"]] == [None, "hello"]
 
 
-def test_get_task_not_found(client: FlaskClient) -> None:
-    """Unknown tasks are not found (`404`)."""
-    response = client.get(f"{BASE_PATH}/tasks/UNKNOWN")
-    assert response.status_code == 404
-
-
 def test_cancel_task(
     client: FlaskClient,
     task_id: str,
@@ -289,12 +283,6 @@ def test_cancel_task_finished(
     assert response.status_code == 200
     assert not backend.canceled
     assert stored(mongo_client, task_id)["task"]["state"] == state
-
-
-def test_cancel_task_not_found(client: FlaskClient) -> None:
-    """Unknown tasks are not found (`404`)."""
-    response = client.post(f"{BASE_PATH}/tasks/UNKNOWN:cancel")
-    assert response.status_code == 404
 
 
 def test_cancel_task_nested_forwards(
@@ -734,19 +722,6 @@ def test_create_task_body_removed(
     response = client.post(f"{BASE_PATH}/tasks", json=TASK)
     assert response.status_code == 500
     assert not relayed(backend)
-
-
-def test_list_tasks_user(
-    app: FlaskApp, task_id: str, mongo_client: MongoClient[dict[str, Any]]
-) -> None:
-    """Tasks are filtered by user if a user is given."""
-    mongo_client[DB]["tasks"].update_one(
-        {"task.id": task_id}, {"$set": {"user_id": "user-1"}}
-    )
-    with app.app.test_request_context():
-        task_list = task_runs.TaskRuns().list_tasks
-        assert task_list(user_id="user-1")["tasks"] == [{"id": task_id, "state": ANY}]
-        assert task_list(user_id="user-2")["tasks"] == []
 
 
 def test_invalid_view(app: FlaskApp) -> None:
