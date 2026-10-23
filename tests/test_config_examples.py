@@ -24,6 +24,14 @@ MARKDOWN = [
 ]
 # YAML code blocks of Markdown files
 YAML_BLOCK = re.compile(r"^```yaml\n(.*?)^```", re.DOTALL | re.MULTILINE)
+# Sources that must contribute examples (collection by heuristics must not
+# silently miss them)
+EXPECTED_SOURCES = {
+    "deployment/README.md",
+    "deployment/values.yaml",
+    "docs/access-control.md",
+    "docs/configuration.md",
+}
 
 
 def _custom(example: dict[str, Any]) -> dict[str, Any] | None:
@@ -69,9 +77,22 @@ def _examples() -> list[Any]:
     return examples
 
 
-@pytest.mark.parametrize("custom", _examples())
+EXAMPLES = _examples()
+
+
+def test_examples_collected() -> None:
+    """Each source with examples of TES backends contributes some."""
+    sources = {str(param.id).split("[")[0] for param in EXAMPLES}
+    assert sources >= EXPECTED_SOURCES
+
+
+@pytest.mark.parametrize("custom", EXAMPLES)
 def test_tes_examples_valid(custom: dict[str, Any]) -> None:
     """The examples, merged into the base config, validate."""
-    base = yaml.safe_load((ROOT / "pro_tes/config.yaml").read_text())["custom"]
+    base_config = (ROOT / "pro_tes/config.yaml").read_text(encoding="utf-8")
+    base = yaml.safe_load(base_config)["custom"]
     config = CustomConfig.model_validate(deep_merge(base, custom))
-    assert config.tes.service_list
+    backends = custom["tes"]["service_list"]
+    assert [backend.url for backend in config.tes.service_list] == [
+        backend["url"] for backend in backends
+    ]
