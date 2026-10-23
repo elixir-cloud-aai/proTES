@@ -5,6 +5,7 @@ tests of its own; these tests check the app's settings, values and checks,
 the app's own templates (Flower) and how the chart fits the image.
 """
 
+import hashlib
 import importlib.util
 import json
 from pathlib import Path
@@ -285,25 +286,30 @@ def test_image_set() -> None:
 
 
 def test_library_dependency() -> None:
-    """The chart depends on the library chart foca-common, as locked.
+    """The chart's templates are those of a released FOCA library chart.
 
-    TEMPORARY (#246): the library chart is taken from a FOCA commit, checked
-    out by `scripts/foca_common.sh`, until foca-common 0.2.0 is released.
+    The library chart foca-common is pinned to a version of its OCI
+    repository, locked in `Chart.lock`, and its archive to the digest in
+    `charts.sha256`, which CI checks; the schema is that of this version.
     """
-    text = (CHART / "Chart.yaml").read_text()
-    chart = yaml.safe_load(text)
+    chart = yaml.safe_load((CHART / "Chart.yaml").read_text())
     (dependency,) = chart["dependencies"]
-    assert dependency == {
-        "name": "foca-common",
-        "version": "0.2.0",
-        "repository": "file://../.foca-common/charts/foca-common",
-    }
+    assert dependency["name"] == "foca-common"
+    assert dependency["repository"] == "oci://ghcr.io/elixir-cloud-aai/charts"
+    assert re.fullmatch(r"\d+\.\d+\.\d+", dependency["version"])
     lock = yaml.safe_load((CHART / "Chart.lock").read_text())
     assert lock["dependencies"] == [dependency]
-    commits = re.findall(r"^\s*# FOCA commit: ([0-9a-f]{40})$", text, re.MULTILINE)
-    assert len(commits) == 1
+    archive = f"charts/foca-common-{dependency['version']}.tgz"
+    digest, name = (CHART / "charts.sha256").read_text().split()
+    assert name == archive
+    assert hashlib.sha256((CHART / archive).read_bytes()).hexdigest() == digest
     library = yaml.safe_load(_library_file("Chart.yaml"))
-    assert (library["name"], library["version"]) == ("foca-common", "0.2.0")
+    assert (library["name"], library["version"]) == (
+        "foca-common",
+        dependency["version"],
+    )
+    schema = json.loads((CHART / "values.schema.json").read_text())
+    assert f"foca-common {dependency['version']} " in schema["$comment"]
 
 
 def test_schema_of_library() -> None:
@@ -865,6 +871,43 @@ def test_http_route() -> None:
     assert route["spec"]["hostnames"] == ["tes.example.org"]
     assert route["spec"]["parentRefs"] == [parent]
     assert ("Ingress", APP) not in docs
+
+
+def test_ingress_no_controller_defaults() -> None:
+    """The Ingress has no annotations for a particular ingress controller.
+
+    In particular, no size limit of request bodies for ingress-nginx, whose
+    default (1 MiB) is the app's; annotations of the values are kept.
+    """
+    ingress = _render()[("Ingress", APP)]
+    assert not ingress["metadata"].get("annotations")
+    annotation = {"nginx.ingress.kubernetes.io/proxy-body-size": "8m"}
+    ingress = _render(
+        "--set-json", f"protes.ingress.annotations={json.dumps(annotation)}"
+    )[("Ingress", APP)]
+    assert ingress["metadata"]["annotations"] == annotation
+
+
+def test_route() -> None:
+    """On OpenShift without an Ingress, a Route is created unless disabled."""
+    openshift = ("--api-versions", "route.openshift.io/v1")
+    docs = _render(*NO_INGRESS, *openshift)
+    assert ("Route", APP) in docs
+    docs = _render(*NO_INGRESS, *openshift, "--set", "protes.route.enabled=false")
+    assert ("Route", APP) not in docs
+
+
+def test_network_policy_app_peers() -> None:
+    """The app's NetworkPolicy has no default peers, and needs some."""
+    values = yaml.safe_load((CHART / "values.yaml").read_text())
+    assert values["protes"]["networkPolicy"] == {"enabled": False, "ingressFrom": []}
+    enabled = ("--set", "protes.networkPolicy.enabled=true")
+    assert "networkpolicy-peers" in _render_error(*enabled)
+    peer = {"podSelector": {"matchLabels": {"app": "proxy"}}}
+    docs = _render(
+        *enabled, "--set-json", f"protes.networkPolicy.ingressFrom={json.dumps([peer])}"
+    )
+    assert _peers(_policies(docs)[APP]) == [peer]
 
 
 @pytest.mark.parametrize(

@@ -154,10 +154,11 @@ jobs:
           version: v3.22.1
       # `appVersion` (the default image tag) is the release version. The
       # library chart foca-common is packaged with the chart, in the version
-      # locked in `Chart.lock` (TEMPORARY: from the FOCA commit of
-      # `Chart.yaml`, which the pin check refuses to release, #246). The
-      # chart is packaged from a copy whose README links to the docs and files
-      # of the release instead of the latest docs and branch `dev` (see
+      # locked in `Chart.lock` and checked against its digest
+      # (`charts.sha256`), so that it installs without access to its
+      # repository. The chart is packaged from a copy whose README links to
+      # the docs and files of the release instead of the latest docs and
+      # branch `dev` (see
       # `scripts/chart_readme.py`; fails if any link to a version that moves
       # is left)
       - name: Package chart
@@ -165,8 +166,8 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
           CHART_VERSION: ${{ steps.version.outputs.chart_version }}
         run: |
-          scripts/foca_common.sh
           helm dependency build deployment
+          (cd deployment && sha256sum -c charts.sha256)
           helm lint deployment --strict -f deployment/ci/test-values.yaml
           chart="$(mktemp -d)/protes"
           cp -R deployment "${chart}"

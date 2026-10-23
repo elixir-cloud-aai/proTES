@@ -96,11 +96,12 @@ jobs:
           pip install -e ".[dev]"
       # The chart tests (run if Helm is installed, as on GitHub's runners)
       # need the library chart, the version locked in `Chart.lock`;
-      # TEMPORARY: from the FOCA commit of `deployment/Chart.yaml` (#246)
       - name: Build chart dependencies
         run: |
-          scripts/foca_common.sh
           helm dependency build deployment
+          # The library chart as checked when it was pinned: OCI tags can
+          # be pushed again
+          (cd deployment && sha256sum -c charts.sha256)
       - name: Calculate unit test coverage
         run: |
           coverage run -m pytest -W ignore::DeprecationWarning
@@ -151,11 +152,12 @@ jobs:
           pip install -e ".[dev]"
       # The chart tests (run if Helm is installed, as on GitHub's runners)
       # need the library chart, the version locked in `Chart.lock`;
-      # TEMPORARY: from the FOCA commit of `deployment/Chart.yaml` (#246)
       - name: Build chart dependencies
         run: |
-          scripts/foca_common.sh
           helm dependency build deployment
+          # The library chart as checked when it was pinned: OCI tags can
+          # be pushed again
+          (cd deployment && sha256sum -c charts.sha256)
       # Fails instead of falling back to mongomock if the URI is missing
       - name: Run tests
         run: |
@@ -197,11 +199,12 @@ jobs:
         with:
           version: v3.22.1
       # The library chart foca-common, the version locked in `Chart.lock`;
-      # TEMPORARY: from the FOCA commit of `deployment/Chart.yaml` (#246)
       - name: Build chart dependencies
         run: |
-          scripts/foca_common.sh
           helm dependency build deployment
+          # The library chart as checked when it was pinned: OCI tags can
+          # be pushed again
+          (cd deployment && sha256sum -c charts.sha256)
       - name: Lint chart
         run: |
           helm lint deployment --strict -f deployment/ci/test-values.yaml
@@ -213,7 +216,7 @@ jobs:
       - name: Test chart
         run: |
           helm version
-          pytest -W ignore::DeprecationWarning tests/test_chart.py tests/test_foca_common.py
+          pytest -W ignore::DeprecationWarning tests/test_chart.py
   docs:
     name: Build documentation
     runs-on: ubuntu-latest

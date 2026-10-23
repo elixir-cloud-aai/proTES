@@ -84,9 +84,9 @@ suppress a false positive, add a comment with the reason to the line:
 ## Helm chart
 
 The [Helm chart](deployment.md) in `deployment/` is a thin chart over FOCA's
-library chart `foca-common` (see [Helm library
-chart](https://foca.readthedocs.io/en/latest/helm-chart/)): its templates
-are one-line includes of the library's templates, with the app's settings
+library chart `foca-common` (see the [library chart's
+documentation](https://github.com/elixir-cloud-aai/foca/blob/chart-v0.2.0/docs/helm-chart.md)):
+its templates are one-line includes of the library's templates, with the app's settings
 and checks in `templates/_helpers.tpl` (`protes.settings`,
 `protes.validate`), and templates of its own for Flower. `values.yaml` has
 all values of the library chart, and `values.schema.json` is the library's
@@ -100,25 +100,29 @@ of `.github/workflows/checks.yaml`) and the library chart in
 `deployment/charts/`; they are skipped if Helm is not installed:
 
 ```bash
-scripts/foca_common.sh  # TEMPORARY, see below
 helm dependency build deployment  # the version locked in `Chart.lock`
+(cd deployment && sha256sum -c charts.sha256)  # as CI checks it
 helm lint deployment --strict -f deployment/ci/test-values.yaml
 pytest tests/test_chart.py
 ```
 
-TEMPORARY: until `foca-common` 0.2.0 (with the Celery worker and broker) is
-released, the chart depends on the library chart of a commit on FOCA's `dev`
-branch, recorded as `# FOCA commit: <sha>` in `deployment/Chart.yaml`:
-`scripts/foca_common.sh` checks out that commit (only the library chart)
-into `.foca-common/` (ignored by Git), which the chart's `file://`
-repository points to. To move to another commit, change the line, remove
-`.foca-common/`, run the script and `helm dependency update deployment`
-(which updates `Chart.lock`), and update the values and the schema. Once
-0.2.0 is released, the chart depends on it from
-`oci://ghcr.io/elixir-cloud-aai/charts` instead, and the script is removed
-([#246](https://github.com/elixir-cloud-aai/proTES/issues/246));
-`scripts/check_release_pins.py` fails until then (see [Versioning and
-releases](#versioning-and-releases)).
+`deployment/Chart.yaml` pins the version of the library chart, from
+`oci://ghcr.io/elixir-cloud-aai/charts`, and `deployment/Chart.lock` locks
+it; `helm dependency build deployment` downloads it into
+`deployment/charts/` (ignored by Git), and the release workflow packages it
+with the chart. CI and the release workflow check the downloaded archive
+against its digest in `deployment/charts.sha256`, as OCI tags can be pushed
+again. Dependabot doesn't update it: to bump it, change the version in
+`Chart.yaml`, run `helm dependency update deployment` (which rewrites
+`Chart.lock`), update `deployment/charts.sha256` (`cd deployment &&
+sha256sum charts/foca-common-X.Y.Z.tgz > charts.sha256`, after checking the
+archive), copy the library's `app-values.schema.json` to
+`deployment/values.schema.json` with the changes noted in its `$comment`
+(which names the new version), add values it introduces to
+`deployment/values.yaml`, update the links to the library's docs in
+`deployment/README.md` (the tests check that they point to the pinned
+version, `chart-vX.Y.Z`), and check the rendered chart with the tests and
+`helm template`.
 
 ## Documentation
 
@@ -262,14 +266,15 @@ development image of that commit as the base image (tagged by date, e.g.,
 later commits of that day). The `Dockerfile` records the commit as
 `## FOCA commit: <sha>`, which the tests check (`tests/test_build.py`); the
 image build doesn't reinstall FOCA, but fails unless the base image has FOCA
-of that commit (`scripts/image_requirements.py`). Dependabot ignores the base
-image meanwhile. Such pins are temporary: the release workflow fails while a
+of that commit (`scripts/image_requirements.py`). Meanwhile, have Dependabot
+ignore the base image (`.github/dependabot.yml`), as updates of its digest
+would change FOCA. Such pins are temporary: the release workflow fails while a
 requirement (also an optional one, a dependency group or a build
 requirement) is a direct reference or names a pre-release or a local version
 (e.g., `+g<commit>`), a FOCA image (in any stage) has no release tag, or a
 chart dependency has no version, another version than a release or no chart
-repository (`oci://`, `https://`; e.g., the `file://` checkout of a FOCA
-commit, see [Helm chart](#helm-chart)) (`scripts/check_release_pins.py`,
+repository (`oci://`, `https://`; e.g., a `file://` path to a checkout of
+the library chart) (`scripts/check_release_pins.py`,
 tested in `tests/test_check_release_pins.py`, whose tests also fail for
 checkouts of release tags with such pins), so replace them by the released
 versions before tagging. It also fails unless `deployment/Chart.yaml` and

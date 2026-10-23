@@ -85,8 +85,7 @@ def render(
     assert HELM is not None
     if chart.is_dir() and not list((chart / "charts").glob("foca-common-*.tgz")):
         raise RuntimeError(
-            "The library chart is missing: run `scripts/foca_common.sh` and "
-            "`helm dependency build deployment`"
+            "The library chart is missing: run `helm dependency build deployment`"
         )
     defaults: list[str] = []
     if mongodb_secret is not None:

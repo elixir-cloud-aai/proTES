@@ -6,9 +6,9 @@ MongoDB database and a RabbitMQ broker, and optionally Flower, the monitoring
 UI of the worker. It is a thin chart over FOCA's library chart `foca-common`
 (the version in `Chart.yaml`), which renders most resources from the values
 described here and in `values.yaml` (see the [library chart's
-documentation](https://foca.readthedocs.io/en/latest/helm-chart/)). The chart
-in the repository builds the library chart with `helm dependency build` (see
-[Installation](#installation)).
+documentation](https://github.com/elixir-cloud-aai/foca/blob/chart-v0.2.0/docs/helm-chart.md)).
+The chart in the repository downloads the library chart with `helm
+dependency build` (see [Installation](#installation)).
 
 ## Configuration
 
@@ -146,20 +146,14 @@ helm install protes \
 ```
 
 To install the chart from the `deployment` folder of the repository instead
-(e.g., to test changes of the chart), build the library chart (into
+(e.g., to test changes of the chart), download the library chart (into
 `charts/`, the version locked in `Chart.lock`), and set `protes.tag` (see
 [Image](#image)), as the chart deploys the moving `dev` image otherwise:
 
 ```bash
-scripts/foca_common.sh  # TEMPORARY, see below
 helm dependency build deployment
 helm install protes deployment -n <namespace> -f values-prod.yaml
 ```
-
-Until `foca-common` 0.2.0 is released, the chart in the repository takes
-the library chart from a commit of FOCA (`# FOCA commit:` in `Chart.yaml`),
-which `scripts/foca_common.sh` checks out into `.foca-common/` (see [Helm
-chart](https://protes.readthedocs.io/en/latest/development/#helm-chart)).
 
 `<namespace>` is the namespace to deploy to; `protes` is the name of the
 release, which is referenced when upgrading or uninstalling. Helm prints the
@@ -253,16 +247,17 @@ kubectl get pods -n <namespace> -l app.kubernetes.io/instance=protes
 
 The chart exposes the app for `hostName` in one of three ways (see
 [Exposing the
-app](https://foca.readthedocs.io/en/latest/helm-chart/#exposing-the-app) in
+app](https://github.com/elixir-cloud-aai/foca/blob/chart-v0.2.0/docs/helm-chart.md#exposing-the-app) in
 the library chart's documentation for TLS, body size and rate limits,
 NetworkPolicy peers and keep-alive settings of ingress-nginx, Traefik, the
 Gateway API, OpenShift and cloud load balancers):
 
-- an Ingress (`protes.ingress`, enabled by default), for an ingress
+- an Ingress (`protes.ingress`, enabled by default), for any ingress
   controller; `className` sets its class, `annotations` its annotations
-  (they take precedence over those set by the chart, `null` removes one),
-  and `https.enabled` requests a certificate from cert-manager (via the
-  ClusterIssuer `https.issuer`);
+  (e.g., for the ingress controller; they take precedence over those set
+  by the chart for `https`, `null` removes one), and `https.enabled`
+  requests a certificate from cert-manager (via the ClusterIssuer
+  `https.issuer`);
 - a Gateway API HTTPRoute (`protes.httpRoute`), attached to an existing
   Gateway (`parentRefs`), optionally with a second HTTPRoute that redirects
   HTTP to HTTPS (`httpsRedirect`); set `protes.ingress.enabled: false` to use
@@ -287,23 +282,45 @@ Gateway API, OpenShift and cloud load balancers):
     ```
 
 - an OpenShift Route, with TLS termination at the router, if neither is
-  enabled and the cluster serves Routes (`route.openshift.io/v1`); otherwise
-  the app is only reachable within the cluster, and Helm prints a warning
-  after installing.
+  enabled, the cluster serves Routes (`route.openshift.io/v1`) and
+  `protes.route.enabled` is true (the default); otherwise the app is only
+  reachable within the cluster, and Helm prints a warning after
+  installing.
+
+The chart sets no defaults for a particular ingress controller or Gateway
+implementation: their annotations, policies and NetworkPolicy peers go
+into the values (see the library chart's documentation, linked above, for
+examples).
 
 All of them route all paths (`/`) to the app, including FOCA's permissions
 API (`/admin/access-control/`, for admins only; see [Permissions
 API](https://protes.readthedocs.io/en/latest/access-control/#permissions-api)).
 To keep that API off the internet, block `/admin/` in the proxy in front of
-the cluster, or disable the chart's Ingress and create one of your own that
-routes only `/ga4gh/tes/v1/` to the app's Service (port `http`).
+the cluster, or disable the chart's Ingress (and, on OpenShift, its Route:
+`protes.route.enabled: false`) and create one of your own that routes only
+`/ga4gh/tes/v1/` to the app's Service (port `http`).
 
 Clients send bearer tokens, so serve the app over HTTPS only: by default, the
 Ingress has no TLS (`https.enabled: false`) and serves plain HTTP, so TLS
 must be terminated in front of the cluster (e.g., by a load balancer); Helm's
-notes after installing say so. The app rejects request bodies over
-`config.server.max_content_length` bytes (default: 1 MiB); the Ingress sets
-the same limit for ingress-nginx (`nginx.ingress.kubernetes.io/proxy-body-size`).
+notes after installing say so.
+
+The app rejects request bodies over `config.server.max_content_length`
+bytes (default: 1 MiB) in every setup; the chart sets no limit at the
+proxy. ingress-nginx limits request bodies to 1 MiB by default, the
+app's default: if you raise the app's limit, e.g., to 8 MiB, raise that
+of ingress-nginx with an annotation, too (other ingress controllers
+ignore it):
+
+```yaml
+config:
+  server:
+    max_content_length: 8388608
+protes:
+  ingress:
+    annotations:
+      nginx.ingress.kubernetes.io/proxy-body-size: 8m
+```
 
 ## Celery worker and broker
 
@@ -338,7 +355,7 @@ change the password later, change it in the Secret and in RabbitMQ
 <namespace> -- rabbitmqctl change_password protes`), then restart the app,
 the worker and Flower. For an external broker, set `broker.enabled: false`
 and only `broker.existingSecret` (with `broker-url`). See [Deployment
-notes](https://foca.readthedocs.io/en/latest/helm-chart/#deployment-notes)
+notes](https://github.com/elixir-cloud-aai/foca/blob/chart-v0.2.0/docs/helm-chart.md#deployment-notes)
 of the library chart for the persistence of queued tasks and the result
 backend (key `result-backend`; by default `jobs.backend` of the config).
 
@@ -417,12 +434,33 @@ them allows.
 - **Flower** (`flower.networkPolicy.enabled`, default `true`): only the peers
   in `flower.networkPolicy.ingressFrom` (none by default).
 - **App** (`protes.networkPolicy.enabled`, default `false`): only the
-  NetworkPolicy peers in `protes.networkPolicy.ingressFrom` may connect, by
-  default the namespace `ingress-nginx`. Before enabling it, check that the
-  peers match the cluster's ingress controller, Gateway or OpenShift router
-  (see [Exposing the app](#exposing-the-app)), and add other clients in the
-  cluster that call the app's Service directly; rendering fails if
-  `ingressFrom` is empty (which would allow all sources).
+  NetworkPolicy peers in `protes.networkPolicy.ingressFrom` may connect.
+  There are none by default, as they depend on the cluster: when enabling
+  the policy, set them to the pods of the cluster's ingress controller,
+  Gateway or OpenShift router (see [NetworkPolicy
+  peers](https://github.com/elixir-cloud-aai/foca/blob/chart-v0.2.0/docs/helm-chart.md#networkpolicy-peers)
+  in the library chart's documentation), and add other clients in the
+  cluster that call the app's Service directly; otherwise, the app is
+  unreachable through the Ingress (or Route). Rendering fails if the
+  policy is enabled without peers (which would allow all sources), e.g.:
+
+    ```yaml
+    protes:
+      networkPolicy:
+        enabled: true
+        ingressFrom:
+        # ingress-nginx: its pods in the namespace `ingress-nginx`
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: ingress-nginx
+        # A client in the release's namespace
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: my-portal
+    ```
 
 `kubectl exec` and `kubectl port-forward` don't go through the pod network
 and are not affected. The policies don't block the probes: connections from
@@ -509,7 +547,7 @@ the app user gets access to it too, for new databases; for existing ones,
 grant it with `mongosh` as the root user. Changing the Secret does not change
 the users: change a password in MongoDB first, then in the Secret, and
 restart the app and the worker. See [Deployment
-notes](https://foca.readthedocs.io/en/latest/helm-chart/#deployment-notes)
+notes](https://github.com/elixir-cloud-aai/foca/blob/chart-v0.2.0/docs/helm-chart.md#deployment-notes)
 of the library chart for creating the users of an existing database.
 
 ### Persistence
