@@ -1,21 +1,25 @@
 """Tests of the app created from `config.yaml`."""
 
+from copy import deepcopy
 from importlib.metadata import version
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 from connexion import FlaskApp
 from flask.testing import FlaskClient
 from foca import get_config
 from pymongo import MongoClient
+from pymongo.errors import DuplicateKeyError
 import pytest
 import yaml
 
-from pro_tes.app import init_app, run_app
+from pro_tes import app as app_module
+from pro_tes.app import check_unique_task_ids, init_app, run_app
 from pro_tes.config_models import TesBackend
 from pro_tes.ga4gh.tes.backends import CLIENT_ID_ENV, CLIENT_SECRET_ENV
 from pro_tes.utils.misc import get_custom_config
-from tests.conftest import set_overlays
+from tests.conftest import DB, set_overlays
 
 BASE_PATH = "/ga4gh/tes/v1"
 # Config overlay of the Compose smoke test
@@ -176,3 +180,92 @@ def test_run_app(app: FlaskApp, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(app, "run", lambda **kwargs: calls.append(kwargs))
     run_app(app)
     assert calls == [{"port": app.port}]
+
+
+def test_task_indexes(app: FlaskApp, mongo_client: MongoClient[dict[str, Any]]) -> None:
+    """Task identifiers are unique, and worker identifiers indexed (#248)."""
+    indexes = {
+        tuple(index["key"]): index
+        for index in mongo_client[DB]["tasks"].index_information().values()
+    }
+    assert indexes[(("task.id", 1),)].get("unique") is True
+    assert not indexes[(("task.id", 1),)].get("sparse")
+    assert not indexes[(("worker_id", 1),)].get("unique")
+
+
+@pytest.mark.parametrize(
+    ("max_reported", "reported"),
+    [
+        (10, "tasks per identifier: 'A': 3, 'B': 2, (none): 2)"),
+        (1, "tasks per identifier: 'A': 3, and 2 more)"),
+    ],
+)
+def test_duplicate_task_ids(
+    app_env: None,
+    mongo_client: MongoClient[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+    max_reported: int,
+    reported: str,
+) -> None:
+    """The app refuses to start while stored tasks share identifiers (#248).
+
+    The identifiers are named (up to `MAX_REPORTED_DUPLICATES`), and no task
+    is changed.
+    """
+    monkeypatch.setattr(app_module, "MAX_REPORTED_DUPLICATES", max_reported)
+    collection = mongo_client[DB]["tasks"]
+    documents: list[dict[str, Any]] = [
+        *[{"task": {"id": "A"}, "user_id": f"user-{n}"} for n in range(3)],
+        *[{"task": {"id": "B"}, "user_id": f"user-{n}"} for n in range(2)],
+        {"task": {"id": "C"}},
+        *[{"worker_id": f"worker-{n}"} for n in range(2)],
+    ]
+    collection.insert_many(deepcopy(documents))
+    with pytest.raises(RuntimeError, match="share 3 identifiers") as exc_info:
+        init_app()
+    assert reported in str(exc_info.value)
+    assert "upgrading notes" in str(exc_info.value)
+    assert isinstance(exc_info.value.__cause__, ValueError)
+    stored = list(collection.find({}, projection={"_id": False}))
+    assert sorted(map(str, stored)) == sorted(map(str, documents))
+
+
+def test_duplicate_middlewares(
+    app_env: None, mongo_client: MongoClient[dict[str, Any]]
+) -> None:
+    """Other unique indexes that fail fail the start with FOCA's error."""
+    mongo_client[DB]["middlewares"].insert_many(
+        [{"name": "a", "class_path": "x.A"}, {"name": "a", "class_path": "x.B"}]
+    )
+    with pytest.raises(ValueError, match="conflicts with an existing index"):
+        init_app()
+
+
+@pytest.mark.parametrize(
+    "db",
+    [
+        None,
+        SimpleNamespace(dbs=None),
+        SimpleNamespace(dbs={}),
+        SimpleNamespace(dbs={"taskStore": SimpleNamespace(collections=None)}),
+        SimpleNamespace(
+            dbs={
+                "taskStore": SimpleNamespace(
+                    collections={"tasks": SimpleNamespace(client=None)}
+                )
+            }
+        ),
+    ],
+)
+def test_check_unique_task_ids_no_collection(db: SimpleNamespace | None) -> None:
+    """Without a registered task collection, nothing is reported."""
+    exc = ValueError("index failed")
+    exc.__cause__ = DuplicateKeyError("duplicate")
+    foca = SimpleNamespace(conf=SimpleNamespace(db=db))
+    check_unique_task_ids(foca=foca, exc=exc)  # type: ignore[arg-type]
+
+
+def test_check_unique_task_ids_other_error() -> None:
+    """Errors other than duplicate keys are not checked."""
+    foca = SimpleNamespace(conf=None)
+    check_unique_task_ids(foca=foca, exc=ValueError("other"))  # type: ignore[arg-type]

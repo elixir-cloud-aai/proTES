@@ -20,6 +20,8 @@ FILE_FIELDS = (
 )
 # Field of stored tasks with the outputs logged by backends (in each log)
 LOG_OUTPUTS_FIELD = "task.logs.outputs"
+# Name of the index of the tasks of earlier versions (`task_id`, `worker_id`)
+LEGACY_TASK_INDEX = "task_id_1_worker_id_1"
 
 
 def _strip_urls(items: Any) -> bool:
@@ -90,6 +92,52 @@ def remove_stored_credentials(collection: Collection[dict[str, Any]]) -> None:
             stripped += 1
     if stripped:
         logger.info("Removed credentials from the URLs of %d stored tasks", stripped)
+
+
+def find_duplicate_task_ids(
+    collection: Collection[dict[str, Any]],
+) -> dict[str | None, int]:
+    """Find identifiers that stored tasks share.
+
+    Such tasks prevent the unique index on task identifiers (`task.id`, cf.
+    `db` in `config.yaml`); earlier versions didn't have it.
+
+    Args:
+        collection: Database collection of the tasks.
+
+    Returns:
+        Number of tasks per shared identifier, in the order of the
+        identifiers; `None` for tasks without identifier (more than one
+        prevents the index, too).
+    """
+    pipeline: list[dict[str, Any]] = [
+        {"$group": {"_id": "$task.id", "count": {"$sum": 1}}},
+        {"$match": {"count": {"$gt": 1}}},
+    ]
+    duplicates = {
+        group["_id"]: group["count"] for group in collection.aggregate(pipeline)
+    }
+    return dict(sorted(duplicates.items(), key=lambda item: str(item[0])))
+
+
+def drop_legacy_task_index(collection: Collection[dict[str, Any]]) -> None:
+    """Drop the index of earlier versions on `task_id` and `worker_id`.
+
+    The fields of the index didn't identify tasks (task identifiers are
+    stored as `task.id`), so it never rejected a duplicate identifier; it is
+    replaced by a unique index on `task.id` and an index on `worker_id`
+    (cf. `db` in `config.yaml`). Run on startup; idempotent.
+
+    Args:
+        collection: Database collection of the tasks.
+    """
+    if LEGACY_TASK_INDEX in collection.index_information():
+        collection.drop_index(LEGACY_TASK_INDEX)
+        logger.info(
+            "Dropped index '%s' of collection '%s' of earlier versions",
+            LEGACY_TASK_INDEX,
+            collection.name,
+        )
 
 
 class DbDocumentConnector:

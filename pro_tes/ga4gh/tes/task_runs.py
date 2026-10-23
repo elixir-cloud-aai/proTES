@@ -440,7 +440,11 @@ class TaskRuns:
         gets access to the task of someone else. The owner is granted the
         role before the task is stored, so that tasks are never stored
         without owner, and the identifier is taken right away; the role is
-        revoked again if the task can't be stored.
+        revoked again if the task can't be stored. Concurrent requests may
+        still draw the same unused identifier: the unique index on task
+        identifiers (cf. `db` in `config.yaml`) lets only one of them store
+        its task, and the others try again with another identifier,
+        revoking their roles, unless the stored task has the same owner.
 
         Args:
             document: Document to be written to database.
@@ -479,7 +483,15 @@ class TaskRuns:
                     document.model_dump(mode="json", exclude_none=True)
                 )
             except DuplicateKeyError:
-                remove_task_owner(collection=collection, task_id=task_id, owner=owner)
+                # another request stored a task with the identifier first
+                # (unique index on `task.id`); if it is the owner's, too, the
+                # role is that task's
+                if not self.db_client.count_documents(
+                    {"task.id": task_id, "user_id": owner}, limit=1
+                ):
+                    remove_task_owner(
+                        collection=collection, task_id=task_id, owner=owner
+                    )
                 continue
             except Exception:
                 remove_task_owner(collection=collection, task_id=task_id, owner=owner)

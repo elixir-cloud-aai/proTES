@@ -26,7 +26,7 @@ from pro_tes.plugins.middlewares.task_distribution.random import (
 )
 from pro_tes.tasks import track_task_progress
 from pro_tes.utils.misc import get_custom_config
-from tests.conftest import DB, USER
+from tests.conftest import DB, OTHER_USER, USER
 from tests.ga4gh.tes.conftest import (
     BACKENDS,
     BASE_PATH,
@@ -938,6 +938,59 @@ def test_task_id_taken(
             runs._write_doc_to_db(
                 document=DbDocument(), owner=USER, collection=f"{BASE_PATH}/tasks"
             )
+
+
+@pytest.mark.parametrize("other_owner", [OTHER_USER, USER])
+def test_task_id_taken_concurrently(
+    app: FlaskApp,
+    monkeypatch: pytest.MonkeyPatch,
+    mongo_client: MongoClient[dict[str, Any]],
+    other_owner: str,
+) -> None:
+    """Tasks are not stored under identifiers stored concurrently (#248).
+
+    Another request stores a task with the same identifier after the
+    identifier was checked: the unique index rejects the task, which gets
+    another identifier. The owner role on the first identifier is revoked,
+    unless the other task has the same owner, whose role it is then.
+    """
+    ids = iter(["TAKEN1", "UNUSED"])
+    monkeypatch.setattr(task_runs, "generate_id", lambda **kwargs: next(ids))
+    add_task_owner = task_runs.add_task_owner
+    tasks = mongo_client[DB]["tasks"]
+
+    def add_task_owner_raced(collection: str, task_id: str, owner: str) -> None:
+        """Store another task with the identifier first, then grant the owner.
+
+        Args:
+            collection: Request path of the tasks.
+            task_id: Identifier of the task.
+            owner: Owner of the task.
+        """
+        if task_id == "TAKEN1":
+            add_task_owner(collection=collection, task_id=task_id, owner=other_owner)
+            tasks.insert_one(
+                {"task": {"id": task_id}, "user_id": other_owner, "worker_id": "w"}
+            )
+        add_task_owner(collection=collection, task_id=task_id, owner=owner)
+
+    monkeypatch.setattr(task_runs, "add_task_owner", add_task_owner_raced)
+    with app.app.test_request_context():
+        task_id, _ = task_runs.TaskRuns()._write_doc_to_db(
+            document=DbDocument(user_id=USER),
+            owner=USER,
+            collection=f"{BASE_PATH}/tasks",
+        )
+    assert task_id == "UNUSED"
+    assert sorted(
+        (document["task"]["id"], document["user_id"]) for document in tasks.find()
+    ) == [("TAKEN1", other_owner), ("UNUSED", USER)]
+    rules = mongo_client[DB]["policy_rules"].find({"ptype": "g2"})
+    assert sorted((rule["v0"], rule["v2"]) for rule in rules) == sorted(
+        (f"user:{owner}", f"{BASE_PATH}/tasks/{resource}")
+        for owner, task in [(other_owner, "TAKEN1"), (USER, "UNUSED")]
+        for resource in (task, f"{task}:cancel")
+    )
 
 
 def test_forward_stored_no_logs(app: FlaskApp) -> None:

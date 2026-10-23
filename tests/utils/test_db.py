@@ -6,7 +6,13 @@ from pymongo import MongoClient
 import pytest
 
 from pro_tes.app import init_app
-from pro_tes.utils.db import DbDocumentConnector, remove_stored_credentials
+from pro_tes.utils.db import (
+    LEGACY_TASK_INDEX,
+    DbDocumentConnector,
+    drop_legacy_task_index,
+    find_duplicate_task_ids,
+    remove_stored_credentials,
+)
 from tests.conftest import DB
 
 
@@ -140,3 +146,54 @@ def test_remove_stored_credentials_on_startup(
     document = collection.find_one({"worker_id": "worker-1"})
     assert document is not None
     assert "basic_auth" not in document
+
+
+def test_find_duplicate_task_ids(mongo_client: MongoClient[dict[str, Any]]) -> None:
+    """Shared task identifiers are found, also of tasks without identifier."""
+    collection = mongo_client[DB]["tasks"]
+    collection.insert_many(
+        [
+            {"task": {"id": "B"}},
+            {"task": {"id": "B"}},
+            {"task": {"id": "A"}},
+            {"task": {"id": "A"}},
+            {"task": {"id": "A"}},
+            {"task": {"id": "C"}},
+            {"task": {}},
+            {"worker_id": "worker-1"},
+        ]
+    )
+    assert find_duplicate_task_ids(collection=collection) == {
+        "A": 3,
+        "B": 2,
+        None: 2,
+    }
+
+
+def test_find_duplicate_task_ids_none(
+    mongo_client: MongoClient[dict[str, Any]],
+) -> None:
+    """Unique task identifiers are not reported."""
+    collection = mongo_client[DB]["tasks"]
+    collection.insert_many([{"task": {"id": "A"}}, {"task": {"id": "B"}}])
+    assert find_duplicate_task_ids(collection=collection) == {}
+
+
+def test_legacy_task_index_dropped(
+    app_env: None,
+    mongo_client: MongoClient[dict[str, Any]],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The index of earlier versions is dropped when the app starts, once."""
+    collection = mongo_client[DB]["tasks"]
+    collection.create_index(
+        [("task_id", 1), ("worker_id", 1)], unique=True, sparse=True
+    )
+    assert LEGACY_TASK_INDEX in collection.index_information()
+    init_app()
+    indexes = collection.index_information()
+    assert LEGACY_TASK_INDEX not in indexes
+    assert f"Dropped index '{LEGACY_TASK_INDEX}'" in capsys.readouterr().err
+    drop_legacy_task_index(collection=collection)
+    assert collection.index_information() == indexes
+    assert "Dropped index" not in capsys.readouterr().err
