@@ -299,8 +299,8 @@ uploaded to code scanning. Accepted findings are left out of all results. To
 accept a finding (e.g., if it doesn't affect the app), add it to
 `.trivyignore.yaml` with the affected package versions (`purls`), the reason
 (`statement`) and an expiry date (`expired_at`), after which the scans fail
-again. Trivy also scans for secrets (critical and high ones fail
-the scans too); accept those under `secrets:` in the same file. Dependabot
+again. Trivy also scans for secrets (critical and high ones fail the scans
+too); accept those under `secrets:` in the same file. Dependabot
 updates the actions, but not the Trivy version (`version:` in
 `.github/actions/scan-image/action.yml`): bump it by hand. Images of commits
 on `dev` are signed and attested like release images, by the CI workflow.

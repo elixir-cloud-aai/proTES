@@ -145,7 +145,7 @@ code scanning alerts show the findings that have a fix, which the maintainers
 can act on; findings without a fix (often OS packages of the base image)
 appear there once a fix is released. The weekly scan also keeps a full report,
 those findings included, as a workflow artifact of each run. The published
-images (releases and `dev`) are the
-scanned ones: the workflows push each image by digest, untagged, scan
-exactly that digest, and only if the scan passes (no fixable critical or
-high vulnerabilities, except accepted ones) sign and tag it.
+images (releases and `dev`) are the scanned ones: the workflows push each
+image by digest, untagged, scan exactly that digest, and only if the scan
+passes (no fixable critical or high vulnerabilities, except accepted ones)
+sign and tag it.
