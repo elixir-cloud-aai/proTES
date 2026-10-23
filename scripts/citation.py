@@ -2,12 +2,13 @@
 
 Zenodo archives each GitHub release with the `CITATION.cff` of the tagged
 commit, so `version` and `date-released` are set before the release is
-tagged, and the release workflow checks them. Errors are printed as GitHub
-annotations to standard error.
+tagged, and `check` verifies them on the release commit. Errors are printed
+as GitHub annotations to standard error.
 
 Commands:
     `set <version> [--date YYYY-MM-DD]`: set `version` and `date-released`
-        (default: today, in UTC), adding the keys if they are missing.
+        (default: today, in UTC; not a later date), adding the keys if they
+        are missing.
     `check <version>`: check that `version` is the release version and that
         `date-released` is a date (YYYY-MM-DD) that is not in the future
         (UTC).
@@ -21,15 +22,18 @@ schema itself is checked by `cffconvert --validate` in CI.
 import argparse
 from collections.abc import Sequence
 import datetime
+import os
 from pathlib import Path
 import re
+import stat
 import sys
+import tempfile
 
 CITATION = Path(__file__).resolve().parents[1] / "CITATION.cff"
 
-# Release versions as in the release tags (checked by the release workflow
-# before this script runs), without the `v`: `X.Y.Z`, or `X.Y.ZaN`,
-# `X.Y.ZbN` and `X.Y.ZrcN` for alpha, beta and release candidates
+# Release versions as in the release tags (`vX.Y.Z`), without the `v`:
+# `X.Y.Z`, or `X.Y.ZaN`, `X.Y.ZbN` and `X.Y.ZrcN` for alpha, beta and release
+# candidates
 VERSION = re.compile(
     r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)"
     r"(?:(?:a|b|rc)(?:0|[1-9][0-9]*))?",
@@ -168,9 +172,11 @@ def check_release(text: str, version: str, today: datetime.date) -> None:
         today: Current date; `date-released` must not be later.
 
     Raises:
-        ValueError: If `version` differs or is missing, or `date-released` is
-            missing, invalid or later than `today`.
+        ValueError: If the version is not a release version, `version`
+            differs or is missing, or `date-released` is missing, invalid or
+            later than `today`.
     """
+    _check_version(version)
     actual = _value(text, "version")
     if actual != version:
         raise ValueError(
@@ -187,13 +193,23 @@ def check_release(text: str, version: str, today: datetime.date) -> None:
 def _write(path: Path, text: str) -> None:
     """Replace a file atomically, so that it is never left half-written.
 
+    The temporary file next to it gets a new, unpredictable name, so that
+    no existing file or link is written to and concurrent writes don't share
+    it, and the permissions of the file.
+
     Args:
-        path: File.
+        path: File, which must exist.
         text: New content.
     """
-    temporary = path.with_name(f".{path.name}.tmp")
+    mode = stat.S_IMODE(path.stat().st_mode)
+    descriptor, name = tempfile.mkstemp(
+        prefix=f".{path.name}.", suffix=".tmp", dir=path.parent
+    )
+    temporary = Path(name)
     try:
-        temporary.write_text(text, encoding="utf-8")
+        with os.fdopen(descriptor, "w", encoding="utf-8") as file:
+            file.write(text)
+        temporary.chmod(mode)
         temporary.replace(path)
     finally:
         temporary.unlink(missing_ok=True)
@@ -230,7 +246,11 @@ def main(argv: Sequence[str] | None = None, path: Path = CITATION) -> int:
     try:
         text = path.read_text(encoding="utf-8")
         if args.command == "set":
-            text = set_release(text, args.version, args.date or today)
+            date = args.date or today
+            # `check` would reject it
+            if date > today:
+                raise ValueError(f"'{date.isoformat()}' is in the future (UTC)")
+            text = set_release(text, args.version, date)
             _write(path, text)
         else:
             check_release(text, args.version, today)
