@@ -221,6 +221,7 @@ def test_main_mode_not_by_name(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setattr(citation.os, "chmod", fail)
     monkeypatch.setattr(Path, "chmod", fail)
     assert citation.main(["set", "1.0.0"], path) == 0
+    assert 'version: "1.0.0"\n' in path.read_text(encoding="utf-8")
     assert stat.S_IMODE(path.stat().st_mode) == 0o604
     assert not list(tmp_path.glob(".*.tmp"))
 
