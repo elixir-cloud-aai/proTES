@@ -7,7 +7,13 @@ from connexion import FlaskApp
 from foca import Foca, get_collection, get_config
 
 from pro_tes.security import check_backends, check_role_groups, check_task_ownership
-from pro_tes.utils.db import remove_stored_credentials
+from pro_tes.utils.db import (
+    TASK_COLLECTION,
+    TASK_DB,
+    check_unique_task_ids,
+    drop_legacy_task_index,
+    remove_stored_credentials,
+)
 
 logger = logging.getLogger(__name__)
 # Placeholders of the service info in `config.yaml`, with reserved example
@@ -51,8 +57,8 @@ def init_app() -> FlaskApp:
 
     Checks that only owners can access tasks, the groups of the roles and
     the credentials of the TES backends, warns of placeholders in the
-    service info, and removes credentials of callers from tasks stored by
-    earlier versions.
+    service info, removes credentials of callers from tasks stored by
+    earlier versions, and drops the index of earlier versions on the tasks.
 
     Returns:
         FOCA application.
@@ -60,23 +66,31 @@ def init_app() -> FlaskApp:
     Raises:
         RuntimeError: Access control is not enabled and enforced, service
             clients are configured, no group is mapped to the role `admin`
-            (unless admins are optional), or credentials of TES backends
-            are missing.
+            (unless admins are optional), credentials of TES backends
+            are missing, or stored tasks share identifiers (cf.
+            :py:func:`pro_tes.utils.db.check_unique_task_ids`).
         pydantic.ValidationError: The config is invalid, e.g., access control
             is enabled without trusted token issuers, or issuers are trusted
             without audience.
+        ValueError: A configured index conflicts with an existing index.
     """
     foca = Foca(
         config_file=Path(__file__).resolve().parent / "config.yaml",
         custom_config_model="pro_tes.config_models.CustomConfig",
     )
-    app = foca.create_app()
+    try:
+        app = foca.create_app()
+    except ValueError as exc:
+        check_unique_task_ids(foca=foca, exc=exc)
+        raise
     with app.app.app_context():
         check_task_ownership()
         check_role_groups()
         check_backends()
         warn_placeholder_service_info()
-        remove_stored_credentials(collection=get_collection("taskStore", "tasks"))
+        collection = get_collection(TASK_DB, TASK_COLLECTION)
+        remove_stored_credentials(collection=collection)
+        drop_legacy_task_index(collection=collection)
     return app
 
 
