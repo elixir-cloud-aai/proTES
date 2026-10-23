@@ -160,7 +160,7 @@ def test_main_default_date(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
         @classmethod
         def now(cls, tz: datetime.tzinfo | None = None) -> "Clock":
             """Return the time in a time zone (local time if `None`)."""
-            utc = cls(2026, 10, 23, 0, 30, tzinfo=datetime.timezone.utc)
+            utc = cls(2026, 10, 23, 0, 30, tzinfo=datetime.UTC)
             return utc.astimezone(tz or datetime.timezone(-datetime.timedelta(hours=1)))
 
     monkeypatch.setattr(citation.datetime, "datetime", Clock)

@@ -1,6 +1,6 @@
 """Tests of the TES models, their conversion and the forwarding log."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from connexion import FlaskApp
@@ -115,7 +115,7 @@ def test_forward_logged(app: FlaskApp) -> None:
 
 def test_task_converted() -> None:
     """Tasks of backends are converted with all their fields."""
-    time = datetime(2026, 10, 22, 12, 0, tzinfo=timezone.utc)
+    time = datetime(2026, 10, 22, 12, 0, tzinfo=UTC)
     task = tes.Task(
         id="remote-1",
         state="COMPLETE",

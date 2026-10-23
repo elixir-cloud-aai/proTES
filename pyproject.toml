@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 
 [tool.ruff]
 line-length = 88
-target-version = "py310"
+target-version = "py313"
 
 [tool.ruff.lint]
 # The rule set shared by FOCA and FOCA apps: FOCA's rules plus `G` and `S`;
@@ -52,6 +52,7 @@ convention = "google"
 
 [tool.mypy]
 files = ["pro_tes", "docs/hooks.py", "scripts", "tests"]
+python_version = "3.13"
 # Complete type hints: all functions annotated, generic types parametrized
 # (instead of ruff's `ANN` rules, which report missing hints only, without
 # checking them)
@@ -101,19 +102,22 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Bio-Informatics",
     "Natural Language :: English",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
 ]
-requires-python = ">=3.10"
+# The Python version of the base image in the `Dockerfile`, the only one the
+# app is tested with
+requires-python = ">=3.13"
 description = "Proxy for GA4GH Task Execution Service (TES) instances by ELIXIR On-Cloud"
 license = "Apache-2.0"
 dynamic = ["version"]
 dependencies = [
     "connexion>=2.15.1,<3.0.0",
     # FOCA minors are bumped by hand, together with the base image in the
-    # `Dockerfile` (`.github/dependabot.yml`)
-    "foca>=0.15.0,<0.16",
+    # `Dockerfile` (`.github/dependabot.yml`).
+    # TEMPORARY: a commit on FOCA's `dev` branch, to test unreleased changes
+    # of FOCA 0.17 (#214); replaced by the release before the next release,
+    # which `scripts/check_release_pins.py` enforces
+    "foca @ git+https://github.com/elixir-cloud-aai/foca@29af8a64a2b0aae21845fa37a4a54076811f62bf",
     "geopy>=2.2.0,<3",
     "gunicorn>=26.2.0,<27",
     "py-tes>=1.1,<2",
@@ -136,15 +140,13 @@ dev = [
     "pytest>=9.1",
     # Used by the tests; builds use `build-system.requires`
     "setuptools-scm>=10.3",
-    # Used by the tests on Python 3.10 (`tomllib` from 3.11 on)
-    "tomli>=2.3; python_version < '3.11'",
     "types-PyYAML>=6.0.12",
     "types-requests>=2.28.5",
 ]
 # Documentation (`mkdocs.yml`), built by Read the Docs (`.readthedocs.yaml`)
-# and in CI; needs Python 3.11 or later. The packages that add warnings,
-# which fail the strict build, are listed too, to bound their major versions
-# (new warnings of minor releases still fail it)
+# and in CI. The packages that add warnings, which fail the strict build, are
+# listed too, to bound their major versions (new warnings of minor releases
+# still fail it)
 docs = [
     "griffelib>=2.4,<3",
     "mkdocs>=1.6.1,<2",

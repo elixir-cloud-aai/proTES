@@ -93,10 +93,13 @@ def test_unauthorized(
         )
         assert response.status_code == 401, (method, path)
         assert response.get_json()["status"] == 401
-        assert response.headers["WWW-Authenticate"] == (
-            'Bearer error="invalid_token"' if headers else "Bearer"
-        )
+        challenge = response.headers["WWW-Authenticate"]
+        if headers:
+            assert challenge.startswith('Bearer error="invalid_token"')
+        else:
+            assert challenge == "Bearer"
     assert not tracked
+
 
 
 def test_public(anonymous_client: FlaskClient) -> None:

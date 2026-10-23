@@ -7,10 +7,11 @@ FOCA 0.12).
 
 ## Configuration
 
-Since the upgrade to FOCA 0.15, custom configs must apply the config changes
-of FOCA 0.14 and 0.15 (see the FOCA release notes and migration guides),
-e.g., `exceptions.mapping` instead of the old exception members, and no
-`validation_methods`, `validation_checks`, `environment` or `use_reloader`.
+proTES runs on FOCA 0.17 and Python 3.13. Custom configs must apply the
+config changes of FOCA 0.14 to 0.17 (see the FOCA release notes and
+migration guides), e.g., `exceptions.mapping` instead of the old exception
+members, and no `validation_methods`, `validation_checks`, `environment` or
+`use_reloader`.
 The service info is configured in `service_info.service` (see [Service
 info](configuration.md#service-info)); it is no longer stored in the
 database, so the `service_info` collection can be dropped.
