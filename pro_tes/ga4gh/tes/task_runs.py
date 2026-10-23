@@ -45,7 +45,7 @@ from pro_tes.ga4gh.tes.ownership import (
 from pro_tes.ga4gh.tes.states import States
 from pro_tes.middleware.middleware_handler import MiddlewareHandler
 from pro_tes.tasks.track_task_progress import task__track_task_progress
-from pro_tes.utils.db import DbDocumentConnector
+from pro_tes.utils.db import TASK_COLLECTION, TASK_DB, DbDocumentConnector
 from pro_tes.utils.misc import (
     get_custom_config,
     has_credentials,
@@ -93,7 +93,7 @@ class TaskRuns:
         """Construct object instance."""
         self.custom_config: CustomConfig = get_custom_config()
         self.db_client: Collection[dict[str, Any]] = get_collection(
-            "taskStore", "tasks"
+            TASK_DB, TASK_COLLECTION
         )
         self.store_logs = self.custom_config.storeLogs.execution_trace
 
@@ -483,10 +483,11 @@ class TaskRuns:
                     document.model_dump(mode="json", exclude_none=True)
                 )
             except DuplicateKeyError:
-                # another request stored a task with the identifier first
-                # (unique index on `task.id`; that on `worker_id` doesn't
-                # fail for new Celery identifiers); if it is the owner's,
-                # too, the role is that task's; revoked if the check fails
+                # Another request stored a task with the identifier first
+                # (unique index on `task.id`; the one on `worker_id` doesn't
+                # fail for new Celery identifiers). If that task is the
+                # owner's, too, the role is its role, and kept. Otherwise,
+                # or if the check fails, the role is revoked.
                 keep = False
                 try:
                     keep = bool(
