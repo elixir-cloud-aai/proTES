@@ -45,7 +45,7 @@ USER 1000
 ## Probe the Swagger UI, which needs neither the database nor the message
 ## broker; set `HEALTHCHECK_URL` if Gunicorn's `--bind` changes the port, or
 ## the config changes the API base path or the Swagger UI setting
-## (`api.specs[]`). Containers of the Celery worker (same image, other
+## (`api.specs.tes`). Containers of the Celery worker (same image, other
 ## command) need a health check of their own (see `docker-compose.yaml`)
 ENV HEALTHCHECK_URL=http://localhost:8080/ga4gh/tes/v1/ui/
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \

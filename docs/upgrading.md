@@ -16,6 +16,19 @@ The service info is configured in `service_info.service` (see [Service
 info](configuration.md#service-info)); it is no longer stored in the
 database, so the `service_info` collection can be dropped.
 
+API specifications (`api.specs`) and access control rules
+(`security.access_control.policies`) of the base config are named entries
+(the spec `tes`; rules `users-create-list-tasks` and
+`users-get-cancel-tasks`), which overlays change by name (see
+[Roles](access-control.md#roles)); overlays that give lists still replace
+them. The configured rules replace the stored ones atomically on startup,
+and stored configured rules are removed if an overlay sets no rules. During
+a rolling update, instances of earlier versions don't get this guarantee:
+update all instances before changing the configured rules, and don't start
+earlier versions again afterwards (see FOCA's [migration guide to
+0.17](https://foca.readthedocs.io/en/latest/migration-0.17/), also for
+downgrades).
+
 ## Authentication
 
 The TES API requires access tokens of trusted issuers, and roles from groups

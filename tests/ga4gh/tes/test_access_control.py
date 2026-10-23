@@ -138,6 +138,38 @@ def test_clients(
     assert response.status_code == status
 
 
+def test_named_policies(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    app_env: None,
+    backend: type[FakeBackend],
+) -> None:
+    """Overlays change single policy rules by name.
+
+    Here, users may no longer get or cancel tasks, but still create and list
+    them.
+    """
+    overlay = tmp_path / "policies.yaml"
+    overlay.write_text(
+        yaml.safe_dump(
+            {
+                "security": {
+                    "access_control": {"policies": {"users-get-cancel-tasks": None}}
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    set_overlays(monkeypatch, overlay)
+    client = init_app().app.test_client()
+    client.environ_base["HTTP_AUTHORIZATION"] = make_headers()["Authorization"]
+    response = client.post(f"{BASE_PATH}/tasks", json=TASK)
+    assert response.status_code == 200
+    assert client.get(f"{BASE_PATH}/tasks").status_code == 200
+    task_id = response.get_json()["id"]
+    assert client.get(f"{BASE_PATH}/tasks/{task_id}").status_code == 403
+
+
 def test_public(anonymous_client: FlaskClient) -> None:
     """The service info and the Swagger UI are public."""
     assert anonymous_client.get(f"{BASE_PATH}/service-info").status_code == 200

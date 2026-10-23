@@ -69,11 +69,13 @@ security:
     model: access_control/model.conf
     db_name: taskStore
     collection_name: policy_rules
-    # Managed on startup (removed rules are deleted)
+    # Managed on startup (removed rules are deleted); cannot be changed via
+    # the permissions API. Named, so that overlays can change, add or remove
+    # single rules by name (`null` removes a rule)
     policies:
-      - [p, user, /ga4gh/tes/v1/tasks, (GET)|(HEAD)|(POST)]
+      users-create-list-tasks: [p, user, /ga4gh/tes/v1/tasks, (GET)|(HEAD)|(POST)]
       # `POST` is cancellation (`/tasks/{id}:cancel`)
-      - [p, user, "/ga4gh/tes/v1/tasks/:id", (GET)|(HEAD)|(POST)]
+      users-get-cancel-tasks: [p, user, "/ga4gh/tes/v1/tasks/:id", (GET)|(HEAD)|(POST)]
 
 # Database configuration
 # Cf. https://foca.readthedocs.io/en/latest/configuration/db/
@@ -104,10 +106,12 @@ db:
 
 # API configuration
 # Cf. https://foca.readthedocs.io/en/latest/configuration/api/
-# Spec paths are relative to this file
+# Spec paths are relative to this file. Named, so that overlays can change
+# single specs by name, e.g., add `patches`
 api:
   specs:
-    - path:
+    tes:
+      path:
         - api/9e9c5aa.task_execution_service.openapi.yaml
         - api/additions.openapi.yaml
         - api/security_schemes.yaml

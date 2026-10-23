@@ -53,8 +53,22 @@ cancel all tasks, not only their own.
 
 The roles and their permissions are the policies of
 `security.access_control.policies` in the base config (see
-[FOCA's access control](https://foca.readthedocs.io/en/latest/access-control/));
-change them with a config overlay (the list replaces the base config's).
+[FOCA's access control](https://foca.readthedocs.io/en/latest/access-control/)),
+named rules (`users-create-list-tasks` and `users-get-cancel-tasks`): a config
+overlay adds, changes or removes (`null`) single rules by name, e.g., a rule
+that lets the role `user` only list and read tasks:
+
+```yaml
+security:
+  access_control:
+    policies:
+      users-create-list-tasks: [p, user, /ga4gh/tes/v1/tasks, (GET)|(HEAD)]
+      users-get-cancel-tasks: [p, user, "/ga4gh/tes/v1/tasks/:id", (GET)|(HEAD)]
+```
+
+A list replaces all rules of the base config. The configured rules replace
+the stored ones atomically on each startup; if an overlay leaves no rules,
+the stored ones are removed.
 The role `admin` comes only from groups in `group_mapping`: the startup
 check doesn't count `g` rules of the policies or of the permissions API.
 
