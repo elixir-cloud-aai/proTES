@@ -729,52 +729,31 @@ def test_admins_not_required(value: str) -> None:
 
 
 @pytest.mark.parametrize(
-    ("args", "kwargs"),
+    "args",
     [
+        ("--set", "config.security.access_control.enabled=false"),
+        ("--set", "config.security.access_control.enforce=off"),
         (
-            (
-                "--set",
-                "config.security.access_control.enabled=false",
-                "--set",
-                "config.security.access_control.enforce=false",
-            ),
-            {"group_claim": None, "admin_group": None},
-        ),
-        (
-            ("--set", "config.security.access_control.enforce=off"),
-            {"group_claim": None, "admin_group": None},
-        ),
-        (
-            (
-                "--set-json",
-                'config.security.access_control.group_mapping={"x": "user"}',
-                "--set",
-                "config.security.access_control.enforce=false",
-            ),
-            {"group_claim": None, "admin_group": None},
+            "--set",
+            "config.security.access_control.enabled=false",
+            "--set",
+            "config.security.access_control.enforce=false",
         ),
     ],
-    ids=["disabled", "not-enforced", "mapping-not-enforced"],
+    ids=["disabled", "not-enforced", "both"],
 )
-def test_access_control_off(args: tuple[str, ...], kwargs: dict[str, Any]) -> None:
-    """If access control is disabled or not enforced, no groups or admins.
+def test_access_control_required(args: tuple[str, ...]) -> None:
+    """Access control must be enabled and enforced, as the app requires.
 
-    Issuers are still required, as the app rejects every token without them.
+    So that only the owners of tasks can access them.
     """
-    assert ("Deployment", APP) in _render(*args, **kwargs)
+    error = _render_error(*args)
+    assert "access_control.enabled and enforce must be true" in error
 
 
 @pytest.mark.parametrize(
     ("args", "error"),
     [
-        (
-            ("--set", "config.security.access_control.enforce=off"),
-            "config.security.auth.issuers must list",
-        ),
-        (
-            ("--set", "config.security.access_control.enabled=false"),
-            "config.security.auth.issuers must list",
-        ),
         (
             ("--set", "config.security.access_control.enabled=maybe"),
             "config.security.access_control.enabled must be true or false",
@@ -785,9 +764,21 @@ def test_access_control_off(args: tuple[str, ...], kwargs: dict[str, Any]) -> No
         ),
     ],
 )
-def test_access_control_off_invalid(args: tuple[str, ...], error: str) -> None:
-    """Issuers are always required, and the booleans are checked."""
-    assert error in _render_error(*args, issuer=None)
+def test_access_control_invalid(args: tuple[str, ...], error: str) -> None:
+    """The booleans of access control are parsed as the app parses them."""
+    assert error in _render_error(*args)
+
+
+@pytest.mark.parametrize("value", ["true", '"yes"', "1"])
+def test_access_control_enabled(value: str) -> None:
+    """Access control may be enabled and enforced explicitly, too."""
+    docs = _render(
+        "--set-json",
+        f"config.security.access_control.enabled={value}",
+        "--set-json",
+        f"config.security.access_control.enforce={value}",
+    )
+    assert ("Deployment", APP) in docs
 
 
 def test_upgrade() -> None:

@@ -140,24 +140,51 @@ def test_access_control_not_enforced(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     app_env: None,
-    capsys: pytest.CaptureFixture[str],
     access_control: dict[str, object],
 ) -> None:
-    """Without enforced access control, the roles are not checked."""
+    """The app refuses to start without enforced access control.
+
+    Otherwise, users could access the tasks of others.
+    """
     overlay = write_overlay(
-        tmp_path / "overlay.yaml",
-        {
-            "security": {
-                "access_control": {
-                    **access_control,
-                    "group_mapping": {ADMIN_GROUP: "user"},
-                }
-            }
-        },
+        tmp_path / "overlay.yaml", {"security": {"access_control": access_control}}
     )
     set_overlays(monkeypatch, overlay)
-    init_app()
-    assert "Access control is not enforced" in capsys.readouterr().err
+    with pytest.raises(RuntimeError, match="must be enabled and enforced"):
+        init_app()
+
+
+@pytest.mark.parametrize(
+    "security",
+    [
+        {"auth": {"service_clients": [{"client_id": "portal"}]}},
+        {
+            "auth": {"service_clients": [{"client_id": "portal"}]},
+            "access_control": {"client_mapping": {"portal": "user"}},
+        },
+        {
+            "auth": {
+                "service_clients": [{"client_id": "portal", "on_behalf_of": True}],
+                "on_behalf_of_header": "X-On-Behalf-Of",
+            }
+        },
+    ],
+    ids=["clients", "mapping", "on behalf of"],
+)
+def test_service_clients(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    app_env: None,
+    security: dict[str, object],
+) -> None:
+    """The app refuses to start with service clients (not supported yet).
+
+    Tasks are owned by users, but service clients are enforced as clients.
+    """
+    overlay = write_overlay(tmp_path / "overlay.yaml", {"security": security})
+    set_overlays(monkeypatch, overlay)
+    with pytest.raises(RuntimeError, match="Service clients"):
+        init_app()
 
 
 def test_dev_config(monkeypatch: pytest.MonkeyPatch, app_env: None) -> None:

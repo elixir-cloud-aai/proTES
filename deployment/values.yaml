@@ -26,8 +26,8 @@ hostName: ""
 # `security.auth.verify_audience` is false), and map an admin group to the
 # role `admin` (unless `custom.access_control.require_admin` is false), with
 # the claim with the groups of users (`security.access_control.claim_groups`),
-# unless access control is disabled or not enforced; rendering fails without
-# them (see deployment/README.md, Configuration).
+# and must not disable access control; rendering fails otherwise (see
+# deployment/README.md, Configuration).
 # Examples:
 config: {}
 #   security:

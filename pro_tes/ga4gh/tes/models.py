@@ -637,7 +637,8 @@ class DbDocument(CustomBaseModel):
     Args:
         task: Information about task.
         task_original: Information about original task.
-        user_id: Identifier of resource owner.
+        user_id: Owner of the task (user identifier); `None` for tasks
+            created by earlier versions, which have no owner.
         worker_id: Identifier of worker task.
         basic_auth: Basic authentication credentials.
         tes_endpoint: External TES endpoint.
@@ -645,7 +646,8 @@ class DbDocument(CustomBaseModel):
     Attributes:
         task: Information about task.
         task_original: Information about original task.
-        user_id: Identifier of resource owner.
+        user_id: Owner of the task (user identifier); `None` for tasks
+            created by earlier versions, which have no owner.
         worker_id: Identifier of worker task.
         basic_auth: Basic authentication credentials.
         tes_endpoint: External TES endpoint.

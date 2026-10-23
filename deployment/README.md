@@ -34,18 +34,18 @@ The identity provider is deployment configuration, without defaults (see
 Rendering fails, as the app would refuse to start, unless each deployment
 sets:
 
+- access control, enabled and enforced (as by default:
+  `config.security.access_control.enabled` and `enforce`), so that only the
+  owners of tasks can access them;
 - the trusted token issuers (`config.security.auth.issuers`);
 - the audience (`config.security.auth.audience`), unless
   `config.security.auth.verify_audience` is `false`, which accepts tokens for
   any audience;
 - an admin group mapped to the role `admin`
   (`config.security.access_control.group_mapping`), unless
-  `config.custom.access_control.require_admin` is `false` or access control
-  is disabled or not enforced (`config.security.access_control.enabled` or
-  `enforce` is `false`);
+  `config.custom.access_control.require_admin` is `false`;
 - the claim with the groups of users
-  (`config.security.access_control.claim_groups`), if groups are mapped and
-  access control is enabled and enforced.
+  (`config.security.access_control.claim_groups`), if groups are mapped.
 
 These booleans are checked as the app parses them (e.g., `"no"` is
 `false`); rendering fails on other values.

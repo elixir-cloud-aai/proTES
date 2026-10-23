@@ -66,14 +66,17 @@ def test_middleware_api_not_registered(client: FlaskClient) -> None:
 
 
 def test_error_problem_details(client: FlaskClient) -> None:
-    """Errors are problem details, sent as `application/json`."""
+    """Errors are problem details, sent as `application/json`.
+
+    Here, for a task the user doesn't own (an unknown one).
+    """
     response = client.get(f"{BASE_PATH}/tasks/UNKNOWN")
-    assert response.status_code == 404
+    assert response.status_code == 403
     assert response.mimetype == "application/json"
     assert response.get_json() == {
-        "title": "Not found",
-        "status": 404,
-        "detail": "The requested task wasn't found.",
+        "title": "Forbidden",
+        "status": 403,
+        "detail": "The requester is not authorized to perform this action.",
     }
 
 

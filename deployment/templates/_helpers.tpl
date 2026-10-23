@@ -67,13 +67,12 @@ chart), which the chart would otherwise ignore; renders nothing.
 {{- end -}}
 
 {{/*
-As the app on startup, refuse to render with a group mapping but no group
-claim, or without a group mapped to the role `admin` (unless admins are
-explicitly not required), if access control is enabled and enforced
-(`security.access_control.enabled` and `enforce`); renders nothing. Trusted
-token issuers are always required: the app starts without them only if
-access control is disabled, but then rejects every token. The audience is
-checked by the library (`requireAudience`).
+As the app on startup, refuse to render unless access control is enabled
+and enforced (`security.access_control.enabled` and `enforce`, so that only
+the owners of tasks can access them), without trusted token issuers, with a
+group mapping but no group claim, or without a group mapped to the role
+`admin` (unless admins are explicitly not required); renders nothing. The
+audience is checked by the library (`requireAudience`).
 */}}
 {{- define "protes.checkSecurity" -}}
 {{- $config := .Values.config | default dict -}}
@@ -138,8 +137,10 @@ whitespace is refused, too
 {{- else if not (kindIs "map" $mapping) -}}
 {{- fail "config.security.access_control.group_mapping must be a map of groups to roles" -}}
 {{- end -}}
-{{- $enforced := and (eq $enabled "true") (eq $enforce "true") -}}
-{{- if and $enforced $mapping (not $claimGroups) -}}
+{{- if not (and (eq $enabled "true") (eq $enforce "true")) -}}
+{{- fail "config.security.access_control.enabled and enforce must be true (as by default), so that only the owners of tasks can access them" -}}
+{{- end -}}
+{{- if and $mapping (not $claimGroups) -}}
 {{- fail "config.security.access_control.claim_groups must name the claim with the groups of users (e.g., groups), as groups are mapped to roles (group_mapping); also add it to config.security.auth.userinfo_claims if the identity provider releases it via user info only" -}}
 {{- end -}}
 {{- $requireAdmin := "true" -}}
@@ -154,7 +155,7 @@ whitespace is refused, too
   "key" "config.custom.access_control.require_admin"
 ) -}}
 {{- end -}}
-{{- if and $enforced (eq $requireAdmin "true") (not (has "admin" (values $mapping))) -}}
+{{- if and (eq $requireAdmin "true") (not (has "admin" (values $mapping))) -}}
 {{- fail "config.security.access_control.group_mapping must map a group to the role admin (e.g., the admin group of the identity provider), or set config.custom.access_control.require_admin to false" -}}
 {{- end -}}
 {{- end -}}
