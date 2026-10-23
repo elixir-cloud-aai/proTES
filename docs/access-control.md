@@ -228,10 +228,10 @@ custom:
 ```
 
 The Docker Compose setup passes `PROTES_CLIENT_ID` and
-`PROTES_CLIENT_SECRET` of the host to the app and the Celery worker; the
-Helm chart doesn't set them yet
-([#216](https://github.com/elixir-cloud-aai/proTES/issues/216)). The Celery
-worker checks the credentials on startup, too.
+`PROTES_CLIENT_SECRET` of the host to the app and the Celery worker; with
+the Helm chart, set them (and the variables of Basic credentials) from a
+Secret with `protes.extraEnv` (see the chart's README). The Celery worker
+checks the credentials on startup, too.
 
 The client of proTES is registered at the identity provider for the client
 credentials grant; it is a client of its own, not the client of the front
