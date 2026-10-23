@@ -135,8 +135,9 @@ image build doesn't reinstall FOCA, but fails unless the base image has FOCA
 of that commit (`scripts/image_requirements.py`). Dependabot ignores the base
 image meanwhile. Such pins are temporary: `scripts/check_release_pins.py`
 fails while a dependency (also an optional one) is a direct reference or
-names a pre-release, the base image has no release tag, or a chart
-dependency has another version than a release. It runs for each pushed
+names a pre-release or a local version (e.g., `+g<commit>`), the base image
+has no release tag, or a chart dependency has another version than a
+release. It runs for each pushed
 release tag (`.github/workflows/release-pins.yaml`; check its result before
 publishing the GitHub release), and in the tests of checkouts of release tags
 (`tests/test_check_release_pins.py`), so replace the pins by the released

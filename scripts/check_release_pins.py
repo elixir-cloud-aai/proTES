@@ -10,7 +10,8 @@ annotations on standard error, if:
 - a dependency of the app (`project.dependencies` or
   `project.optional-dependencies` of `pyproject.toml`) is a direct reference
   (`<name> @ <URL>`, e.g., a Git commit) or names a pre-release or
-  development version (e.g., `>=0.17.0rc1`);
+  development version (e.g., `>=0.17.0rc1`), or a local version (e.g.,
+  `==0.17.0+gabc1234`, a build of a commit);
 - the base image of the `Dockerfile` (`elixircloud/foca`) has no release
   tag (`<X.Y.Z>-py<X.Y>`, e.g., a dated development image);
 - a dependency of the Helm chart (`deployment/Chart.yaml`) has another
@@ -40,6 +41,9 @@ PRE_RELEASE = re.compile(
     r"[0-9][._-]?(a|b|c|rc|alpha|beta|pre|preview|dev)[0-9]*(?![a-z])",
     re.IGNORECASE,
 )
+# A local version label (PEP 440) in a version specifier, e.g.,
+# `0.17.0+gabc1234`
+LOCAL_VERSION = re.compile(r"[0-9]\+[A-Za-z0-9]")
 # The base image, with its tag
 BASE_IMAGE = re.compile(r"^FROM\s+elixircloud/foca:(?P<tag>[^@\s]+)", re.MULTILINE)
 RELEASE_IMAGE_TAG = re.compile(SEMVER + r"-py3\.[0-9]+")
@@ -101,13 +105,19 @@ def find_dev_pins(root: Path) -> list[str]:
         ),
     ]
     for requirement in requirements:
+        # The version specifiers, without name, extras and markers
+        specifier = re.sub(NAME, "", requirement).split(";")[0]
         if DIRECT_REFERENCE.match(requirement):
             pins.append(
                 f"pyproject.toml: dependency '{requirement}' is a direct reference"
             )
-        elif PRE_RELEASE.search(re.sub(NAME, "", requirement).split(";")[0]):
+        elif PRE_RELEASE.search(specifier):
             pins.append(
                 f"pyproject.toml: dependency '{requirement}' names a pre-release"
+            )
+        elif LOCAL_VERSION.search(specifier):
+            pins.append(
+                f"pyproject.toml: dependency '{requirement}' names a local version"
             )
     match = BASE_IMAGE.search((root / "Dockerfile").read_text())
     if match is None:
