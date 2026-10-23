@@ -163,6 +163,8 @@ jobs:
           name: chart
           path: dist/
           if-no-files-found: error
+          # Re-runs of all jobs replace the chart of the earlier attempt
+          overwrite: true
 
   # Builds the image of the release commit once and pushes it by digest only
   # (untagged), for `publish` to tag; checks that the app reports the release

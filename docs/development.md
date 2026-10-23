@@ -228,7 +228,9 @@ prevents moving or deleting them; `main` protected against non-fast-forward
 pushes; and the Docker Hub secrets (`DOCKERHUB_LOGIN`, `DOCKERHUB_TOKEN`)
 only in the two environments, not as repository secrets. The Docker Hub
 organization is the repository variable `DOCKERHUB_ORG` (by default
-`elixircloud`; forks set it to the organization they publish to). On Read
+`elixircloud`; forks set it to the organization they publish to, and change
+the chart's default image, `protes.image` in `deployment/values.yaml`, to
+match). On Read
 the Docs, an automation rule activates the versions of tags (`v*`), so that
 the docs linked from packaged charts exist.
 
