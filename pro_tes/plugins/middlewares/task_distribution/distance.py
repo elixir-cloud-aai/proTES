@@ -308,7 +308,8 @@ class TaskDistributionDistance(TaskDistributionBaseClass):
         Raises:
             MiddlewareException: If location cannot be determined for an IP.
         """
-        # Each address once (Nominatim allows one request per second)
+        # Each address once, in order of the arguments (requests to Nominatim
+        # are not throttled, which allows one per second)
         return {ip_addr: locate_ip(ip_addr) for ip_addr in dict.fromkeys(args)}
 
     @staticmethod
