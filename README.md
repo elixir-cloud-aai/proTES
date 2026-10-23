@@ -61,8 +61,10 @@ curl -X GET "http://localhost:8080/ga4gh/tes/v1/service-info" -H "accept: applic
 ```
 
 Tasks are forwarded to the TES instances listed in `custom.tes.service_list`
-of the
-[config](https://github.com/elixir-cloud-aai/proTES/blob/dev/pro_tes/config.yaml).
+of the config, with the credentials of proTES for each; list yours in
+[`config.dev.yaml`](https://github.com/elixir-cloud-aai/proTES/blob/dev/config.dev.yaml)
+(see [Credentials of TES
+instances](https://protes.readthedocs.io/en/latest/access-control/#credentials-of-tes-instances)).
 All endpoints except `GET /service-info`, the specification and the Swagger
 UI require access tokens of the identity provider set in
 [`config.dev.yaml`](https://github.com/elixir-cloud-aai/proTES/blob/dev/config.dev.yaml):

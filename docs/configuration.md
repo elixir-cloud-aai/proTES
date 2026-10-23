@@ -16,10 +16,26 @@ reads the same config.
 
 ## TES instances
 
-Tasks are forwarded to the TES instances listed in `custom.tes.service_list`
-(their base URLs, without the API path `/ga4gh/tes/v1`). The base config lists
-some public TES instances as examples; deployments set their own list. The [middlewares](middlewares.md) decide which of them
-are tried, and in which order (see [Tasks](api.md#tasks)).
+Tasks are forwarded to the TES instances listed in `custom.tes.service_list`:
+each with its base URL (`url`, without the API path `/ga4gh/tes/v1`), and
+how proTES authenticates at it (`auth`: with its own access token, the
+default, with HTTP Basic credentials from environment variables, or not at
+all; see [Credentials of TES
+instances](access-control.md#credentials-of-tes-instances)). The base config
+lists none; deployments set their own list, e.g.:
+
+```yaml
+custom:
+  tes:
+    service_list:
+      - url: https://tes.example.org
+      - url: https://tes.example.com
+        auth: none
+```
+
+URLs must use one of the schemes of `custom.tes.url_schemes` (default:
+`https` only). The [middlewares](middlewares.md) decide which of the TES
+instances are tried, and in which order (see [Tasks](api.md#tasks)).
 
 ## Middlewares
 
@@ -49,6 +65,11 @@ custom:
   polls the TES instance for the task's state every `wait` seconds until the
   task has finished, and gives up (state `SYSTEM_ERROR`) after `attempts`
   failed requests;
+- `post_task.url_credentials`: what happens to tasks with credentials in the
+  URLs of their inputs or outputs (`https://user:password@host/...`): they
+  are rejected with `400 Bad Request` (`reject`, the default), or the
+  credentials are removed (`strip`); credentials are never stored or
+  forwarded;
 - `list_tasks.default_page_size`: the number of tasks per page of
   `GET /tasks` if the request sets no `page_size` (default 256, as in the
   TES specification);
