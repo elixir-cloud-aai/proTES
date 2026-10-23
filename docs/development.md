@@ -92,7 +92,7 @@ by Read the Docs (configured in
 and in CI; warnings, e.g., of broken links, fail the build. The [API
 reference](reference.md) is generated from the docstrings with
 [mkdocstrings](https://mkdocstrings.github.io/). To build it locally, or serve
-it with live reloading (Python 3.11 or later):
+it with live reloading:
 
 ```bash
 pip install -e ".[docs]"
@@ -197,6 +197,24 @@ release (stable, GitHub pre-release) and whether the image is tagged `latest`
 from the tag with `scripts/release_version.py`, which is tested over a table
 of tags (`tests/test_release_version.py`) and checked like the app (ruff,
 mypy, coverage); change these rules there, not in the workflow.
+
+To test unreleased changes of FOCA, `pyproject.toml` may pin a FOCA commit
+(`foca @ git+https://github.com/elixir-cloud-aai/foca@<sha>`), with FOCA's
+development image of that commit as the base image (tagged by date, e.g.,
+`elixircloud/foca:20261023-py3.13`, pinned by digest, as the tag moves with
+later commits of that day). The `Dockerfile` records the commit as
+`## FOCA commit: <sha>`, which the tests check (`tests/test_build.py`); the
+image build doesn't reinstall FOCA, but fails unless the base image has FOCA
+of that commit (`scripts/image_requirements.py`). Dependabot ignores the base
+image meanwhile. Such pins are temporary: the release workflow fails while a
+dependency (also an optional one) is a direct reference or names a
+pre-release or a local version (e.g., `+g<commit>`), the base image has no
+release tag, or a chart dependency has another version than a release
+(`scripts/check_release_pins.py`, tested in
+`tests/test_check_release_pins.py`, whose tests also fail for checkouts of
+release tags with such pins), so replace them by the released versions
+before tagging. This applies to pre-releases of the app, too: they are built
+on FOCA releases.
 
 In curated notes, link all changes of the release as the compare view from
 the previous release's tag (e.g.,

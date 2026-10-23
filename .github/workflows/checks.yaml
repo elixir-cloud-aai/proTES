@@ -28,7 +28,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.10"
+          python-version: "3.13"
           cache: pip
           cache-dependency-path: pyproject.toml
       # mypy checks imports, so runtime dependencies are needed too
@@ -62,15 +62,12 @@ jobs:
           grep -qx 'pro_tes/config.yaml' wheel-contents.txt
           grep -Eqx 'pro_tes-[^/]+\.dist-info/licenses/LICENSE' wheel-contents.txt
           grep -q '^pro_tes/api/.*\.yaml$' wheel-contents.txt
+  # Job names don't name the Python version (that of the base image in the
+  # Dockerfile), so that the required checks stay the same when it changes
   test:
-    name: Run tests (Python ${{ matrix.python-version }})
+    name: Run tests (mongomock)
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        # 3.12: Python version of the base image in the Dockerfile
-        python-version: ["3.10", "3.12"]
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -79,7 +76,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.13"
           cache: pip
           cache-dependency-path: pyproject.toml
       - name: Install dependencies
@@ -93,18 +90,17 @@ jobs:
       # Upload errors fail the workflow only on pushes, because pull requests
       # from forks and Dependabot get no access to the Codecov token
       - name: Submit Report to Codecov
-        if: matrix.python-version == '3.12'
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: ./coverage.xml
           fail_ci_if_error: ${{ github.event_name == 'push' }}
           verbose: true
-  # The other test jobs use mongomock; this one runs all tests against
+  # The `test` job uses mongomock; this one runs all tests against
   # MongoDB (`MONGODB_TEST_URI`, see `tests/conftest.py`), the version of
   # `docker-compose.yaml` (8.0 doesn't start on some kernels of the runners:
-  # https://jira.mongodb.org/browse/SERVER-121912). One Python version (that
-  # of the Dockerfile) suffices; coverage is reported by `test`
+  # https://jira.mongodb.org/browse/SERVER-121912); coverage is reported by
+  # `test`
   test_mongodb:
     name: Run tests (MongoDB 7.0)
     runs-on: ubuntu-latest
@@ -128,7 +124,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.12"
+          python-version: "3.13"
           cache: pip
           cache-dependency-path: pyproject.toml
       - name: Install dependencies
@@ -140,7 +136,7 @@ jobs:
         run: |
           test -n "${MONGODB_TEST_URI}"
           pytest -W ignore::DeprecationWarning
-  # Stable check name for branch protection, independent of the matrix
+  # Stable check name for branch protection, independent of the test jobs
   tests_passed:
     name: Run tests
     runs-on: ubuntu-latest
@@ -164,7 +160,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.12"
+          python-version: "3.13"
           cache: pip
           cache-dependency-path: pyproject.toml
       - name: Install dependencies
