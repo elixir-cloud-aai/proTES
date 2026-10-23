@@ -24,9 +24,10 @@ ways of distributing tasks. Both forward to the TES instances of
   [OpenStreetMap](https://www.openstreetmap.org/) its coordinates. Both are
   called over HTTPS, and thus learn the IP addresses of the hosts (DB-IP) and
   their places (Nominatim); mind their usage limits (e.g., DB-IP's daily
-  requests, and Nominatim's one request per second). The middleware can't be
-  applied to tasks without input URLs, or if a location can't be
-  determined.
+  requests, and Nominatim's one request per second). Addresses that are not
+  global (e.g., private ones, as of hosts in the same cluster) are not sent
+  to them. The middleware can't be applied to tasks without input URLs, or if
+  a location can't be determined, e.g., of such an address.
 - **Load balancing:**
   `pro_tes.plugins.middlewares.task_distribution.random.TaskDistributionRandom`
   orders the TES instances randomly.

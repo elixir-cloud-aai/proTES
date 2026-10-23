@@ -1,4 +1,4 @@
-"""Tests of the app created from `config.yaml`, with FOCA 0.15."""
+"""Tests of the app created from `config.yaml`."""
 
 from importlib.metadata import version
 from pathlib import Path

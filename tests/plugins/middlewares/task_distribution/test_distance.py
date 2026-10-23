@@ -108,6 +108,14 @@ def test_rank_duplicates(located: list[str]) -> None:
     assert rank(INPUTS * 2, TES_URLS * 2) == list(reversed(TES_URLS))
 
 
+def test_rank_same_address(monkeypatch: pytest.MonkeyPatch, located: list[str]) -> None:
+    """Hosts with the same IP address are located once."""
+    monkeypatch.setitem(HOSTS, "data-zurich.example.org", "192.0.2.1")
+    inputs = [{"url": "https://data-zurich.example.org/in", "path": "/in"}]
+    assert rank(inputs, TES_URLS) == list(reversed(TES_URLS))
+    assert sorted(located) == ["192.0.2.1", "192.0.2.2"]
+
+
 def test_no_input_urls(located: list[str]) -> None:
     """Tasks without input URLs can't be distributed by distance."""
     with pytest.raises(MiddlewareException, match="No input URIs available"):
@@ -161,7 +169,7 @@ def test_no_json() -> None:
 # Places of IP addresses, as DB-IP's API returns them, and their coordinates,
 # as Nominatim returns them for the queries of `locate_ip()`
 PLACE = {
-    "ipAddress": "192.0.2.1",
+    "ipAddress": "9.9.9.9",
     "countryCode": "CH",
     "stateProv": "Basel-City",
     "city": "Basel",
@@ -240,9 +248,9 @@ def services(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, dict[str, Any]]
     requested: list[tuple[str, dict[str, Any]]] = []
 
     def get(url: str, **kwargs: Any) -> FakeResponse:
-        """Get the place of `192.0.2.1`, or an error of DB-IP's API."""
+        """Get the place of `9.9.9.9`, or an error of DB-IP's API."""
         requested.append((url, kwargs))
-        if url.endswith("/192.0.2.1"):
+        if url.endswith("/9.9.9.9"):
             return FakeResponse(PLACE)
         return FakeResponse({"error": "invalid address"})
 
@@ -260,9 +268,9 @@ def test_locate_ip(services: list[tuple[str, dict[str, Any]]]) -> None:
     Both services are called with a timeout, and Nominatim with a user agent
     naming the app, as its usage policy requires.
     """
-    assert locate_ip("192.0.2.1") == Location(latitude=47.56, longitude=7.59)
+    assert locate_ip("9.9.9.9") == Location(latitude=47.56, longitude=7.59)
     assert services == [
-        ("https://api.db-ip.com/v2/free/192.0.2.1", {"timeout": distance.TIMEOUT})
+        ("https://api.db-ip.com/v2/free/9.9.9.9", {"timeout": distance.TIMEOUT})
     ]
     assert FakeNominatim.created == [
         {"user_agent": distance.USER_AGENT, "timeout": distance.TIMEOUT}
@@ -277,7 +285,7 @@ def test_locate_ip_fallback_query(
     monkeypatch.setattr(
         FakeNominatim, "RESULTS", {FALLBACK_QUERY: FakePoint(47.56, 7.59)}
     )
-    assert locate_ip("192.0.2.1") == Location(latitude=47.56, longitude=7.59)
+    assert locate_ip("9.9.9.9") == Location(latitude=47.56, longitude=7.59)
     assert FakeNominatim.queries == [QUERY, FALLBACK_QUERY]
 
 
@@ -287,7 +295,7 @@ def test_locate_ip_unknown_place(
     """IP addresses whose place Nominatim can't find can't be located."""
     monkeypatch.setattr(FakeNominatim, "RESULTS", {})
     with pytest.raises(MiddlewareException, match="Could not determine location"):
-        locate_ip("192.0.2.1")
+        locate_ip("9.9.9.9")
     assert FakeNominatim.queries == [QUERY, FALLBACK_QUERY]
 
 
@@ -296,7 +304,7 @@ def test_locate_ip_unknown_address(
 ) -> None:
     """IP addresses that DB-IP doesn't know can't be located."""
     with pytest.raises(MiddlewareException, match="Could not determine location"):
-        locate_ip("203.0.113.1")
+        locate_ip("1.1.1.1")
     assert not FakeNominatim.created
 
 
@@ -325,7 +333,7 @@ def test_locate_ip_service_error(
 
     monkeypatch.setattr(distance.requests, "get", get)
     with pytest.raises(MiddlewareException, match="Could not determine location"):
-        locate_ip("192.0.2.1")
+        locate_ip("9.9.9.9")
     assert not FakeNominatim.created
 
 
@@ -335,13 +343,63 @@ def test_locate_ip_geocoder_error(
     """Errors of Nominatim fail the location of an IP address."""
     monkeypatch.setattr(FakeNominatim, "error", GeocoderServiceError("unavailable"))
     with pytest.raises(MiddlewareException, match="Could not determine location"):
-        locate_ip("192.0.2.1")
+        locate_ip("9.9.9.9")
 
 
-def test_locate_ip_escapes_address(
-    services: list[tuple[str, dict[str, Any]]],
+@pytest.mark.parametrize(
+    "ip_address, reason",
+    [
+        ("10.0.0.1", "not a global address"),
+        ("127.0.0.1", "not a global address"),
+        ("192.0.2.1", "not a global address"),
+        ("../9.9.9.9", "Could not determine location"),
+    ],
+    ids=["private", "loopback", "documentation", "invalid"],
+)
+def test_locate_ip_not_global(
+    services: list[tuple[str, dict[str, Any]]], ip_address: str, reason: str
 ) -> None:
-    """Addresses are escaped in the URL of DB-IP's API."""
-    with pytest.raises(MiddlewareException):
-        locate_ip("../192.0.2.1")
-    assert services[0][0] == "https://api.db-ip.com/v2/free/..%2F192.0.2.1"
+    """Addresses that are not global, or invalid, are not sent to the services."""
+    with pytest.raises(MiddlewareException, match=reason):
+        locate_ip(ip_address)
+    assert not services
+    assert not FakeNominatim.created
+
+
+@pytest.mark.parametrize(
+    "place",
+    [
+        {"ipAddress": "9.9.9.9", "countryCode": "ZZ"},
+        {**PLACE, "city": ""},
+        {**PLACE, "countryCode": None},
+        {**PLACE, "countryCode": "ZZ"},
+    ],
+    ids=["reserved", "no city", "no country", "unknown country"],
+)
+def test_locate_ip_no_place(
+    monkeypatch: pytest.MonkeyPatch,
+    services: list[tuple[str, dict[str, Any]]],
+    place: dict[str, Any],
+) -> None:
+    """Places without city or country are not geocoded."""
+    monkeypatch.setattr(
+        distance.requests, "get", lambda url, **kwargs: FakeResponse(place)
+    )
+    with pytest.raises(MiddlewareException, match="Could not determine location"):
+        locate_ip("9.9.9.9")
+    assert not FakeNominatim.created
+
+
+def test_locate_ip_no_region(
+    monkeypatch: pytest.MonkeyPatch, services: list[tuple[str, dict[str, Any]]]
+) -> None:
+    """Places without region are looked up by city and country only."""
+    place = {**PLACE, "stateProv": None}
+    monkeypatch.setattr(
+        distance.requests, "get", lambda url, **kwargs: FakeResponse(place)
+    )
+    monkeypatch.setattr(
+        FakeNominatim, "RESULTS", {FALLBACK_QUERY: FakePoint(47.56, 7.59)}
+    )
+    assert locate_ip("9.9.9.9") == Location(latitude=47.56, longitude=7.59)
+    assert FakeNominatim.queries == [FALLBACK_QUERY]

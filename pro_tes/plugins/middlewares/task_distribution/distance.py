@@ -1,5 +1,6 @@
 """Module for distance-based task distribution logic."""
 
+from ipaddress import ip_address as ip_address_info
 import logging
 from socket import gaierror, gethostbyname
 from urllib.parse import quote, urlparse
@@ -45,7 +46,10 @@ def locate_ip(ip_address: str) -> Location:
 
     Gets the place of the IP address (city, region and country) from DB-IP's
     free API, and its coordinates from Nominatim; places that Nominatim
-    doesn't find are looked up without the region.
+    doesn't find are looked up without the region. Addresses that are not
+    global (e.g., private or loopback ones) are not sent to the services, and
+    places without city or country (e.g., of reserved addresses) are not
+    looked up, as they have no meaningful location.
 
     Args:
         ip_address: IP address.
@@ -60,6 +64,12 @@ def locate_ip(ip_address: str) -> Location:
     """
     error = f"Could not determine location for IP: {ip_address}"
     try:
+        is_global = ip_address_info(ip_address).is_global
+    except ValueError as exc:
+        raise MiddlewareException(error) from exc
+    if not is_global:
+        raise MiddlewareException(f"{error} (not a global address)")
+    try:
         response = requests.get(
             DB_IP_URL.format(ip=quote(ip_address, safe="")), timeout=TIMEOUT
         )
@@ -70,10 +80,17 @@ def locate_ip(ip_address: str) -> Location:
     if not isinstance(place, dict) or "error" in place:
         raise MiddlewareException(error)
     city, region, country = (
-        str(place.get(key) or "") for key in ("city", "stateProv", "countryCode")
+        str(place.get(key) or "").strip()
+        for key in ("city", "stateProv", "countryCode")
     )
+    # `ZZ`: unknown country
+    if not city or not country or country == "ZZ":
+        raise MiddlewareException(error)
+    queries = [f"{city}, {country}"]
+    if region:
+        queries.insert(0, f"{city}, {region} {country}")
     geocoder = Nominatim(user_agent=USER_AGENT, timeout=TIMEOUT)
-    for query in (f"{city}, {region} {country}", f"{city}, {country}"):
+    for query in queries:
         try:
             point = geocoder.geocode(query)
         except GeopyError as exc:
@@ -291,7 +308,8 @@ class TaskDistributionDistance(TaskDistributionBaseClass):
         Raises:
             MiddlewareException: If location cannot be determined for an IP.
         """
-        return {ip_addr: locate_ip(ip_addr) for ip_addr in set(args)}
+        # Each address once (Nominatim allows one request per second)
+        return {ip_addr: locate_ip(ip_addr) for ip_addr in dict.fromkeys(args)}
 
     @staticmethod
     def _get_distances(

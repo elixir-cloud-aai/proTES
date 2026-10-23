@@ -94,11 +94,15 @@ regular expression. proTES no longer starts if
 
 ## Distance-based task distribution
 
-The distance-based middleware looks up the places of IP addresses with
-DB-IP's API over HTTPS (was HTTP), and their coordinates with Nominatim (see
-[Built-in middlewares](middlewares.md#built-in-middlewares)), as before, but
-no longer with the unmaintained package `ip2geotools`, which doesn't install
-on Python 3.13. Requests time out after 10 seconds (was 62).
+The distance-based middleware still looks up the places of IP addresses with
+DB-IP's API, now over HTTPS (was HTTP), and geocodes the place names with
+Nominatim (see [Built-in middlewares](middlewares.md#built-in-middlewares)),
+but no longer with the unmaintained package `ip2geotools`, which doesn't
+install on Python 3.13. Requests time out after 10 seconds (was 62). It no
+longer locates addresses that are not global (e.g., private ones), which
+aren't sent to the services anymore, nor places without city or country:
+it falls back to the next middleware for them, instead of distributing
+tasks by an arbitrary location.
 
 ## Middleware management API
 
