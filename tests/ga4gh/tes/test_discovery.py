@@ -292,6 +292,10 @@ def select(registry: FakeRegistry, **kwargs: Any) -> discovery.Selection:
         ("64:ff9b::5db8:d70e", True),
         ("::7f00:1", False),
         ("::5db8:d70e", True),
+        # 6to4 and Teredo addresses are not global, whatever they embed
+        ("2002:a00:1::", False),
+        ("2002:5db8:d70e::", False),
+        ("2001:0:4136:e378:8000:63bf:3fff:fdd2", False),
         ("ff02::1", False),
     ],
 )
