@@ -31,6 +31,10 @@ custom:
       - url: https://tes.example.org
       - url: https://tes.example.com
         auth: none
+    # Identity provider of proTES, for the TES instances with
+    # `auth: client_credentials` (the default)
+    client_credentials:
+      issuer: https://login.example.org/oidc/
 ```
 
 URLs must use one of the schemes of `custom.tes.url_schemes` (default:
