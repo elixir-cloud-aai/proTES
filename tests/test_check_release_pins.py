@@ -1,6 +1,7 @@
 """Tests of the release pin check (`scripts/check_release_pins.py`)."""
 
 import importlib.util
+import json
 from pathlib import Path
 import shutil
 import subprocess
@@ -37,7 +38,14 @@ dependencies:
   # A comment
   - name: foca-common
     version: {version}
-    repository: {repository}
+    repository: oci://ghcr.io/elixir-cloud-aai/charts
+"""
+LOCK = """dependencies:
+- name: foca-common
+  repository: oci://ghcr.io/elixir-cloud-aai/charts
+  version: {version}
+digest: sha256:{digest}
+generated: "2026-10-22T22:26:15.352841967+02:00"
 """
 DIGEST = "0" * 64
 
@@ -47,7 +55,6 @@ def _write(
     dependencies: str = '"foca>=0.17.0,<0.18",',
     tag: str = "0.17.0-py3.13",
     chart_version: str = "0.2.0",
-    chart_repository: str = "oci://ghcr.io/elixir-cloud-aai/charts",
 ) -> Path:
     """Write the files that the script checks.
 
@@ -55,8 +62,8 @@ def _write(
         root: Directory to write them to.
         dependencies: Lines of `project.dependencies` in `pyproject.toml`.
         tag: Tag of the base image in the `Dockerfile`.
-        chart_version: Version of the chart's dependency.
-        chart_repository: Repository of the chart's dependency.
+        chart_version: Version of the chart's dependency, also locked and
+            named by the values schema.
 
     Returns:
         The directory.
@@ -64,10 +71,24 @@ def _write(
     (root / "deployment").mkdir()
     (root / "pyproject.toml").write_text(PYPROJECT.format(dependencies=dependencies))
     (root / "Dockerfile").write_text(DOCKERFILE.format(tag=tag, digest=DIGEST))
-    (root / "deployment" / "Chart.yaml").write_text(
-        CHART.format(version=chart_version, repository=chart_repository)
+    (root / "deployment" / "Chart.yaml").write_text(CHART.format(version=chart_version))
+    (root / "deployment" / "Chart.lock").write_text(
+        LOCK.format(version=chart_version, digest=DIGEST)
     )
+    _write_schema(root, f"Schema of the library chart foca-common {chart_version}.")
     return root
+
+
+def _write_schema(root: Path, comment: object) -> None:
+    """Write the chart's values schema.
+
+    Args:
+        root: Root directory of the repository.
+        comment: The schema's `$comment`.
+    """
+    (root / "deployment" / "values.schema.json").write_text(
+        json.dumps({"$schema": "x", "$comment": comment, "type": "object"})
+    )
 
 
 def test_release_pins(tmp_path: Path) -> None:
@@ -125,12 +146,12 @@ def test_release_pins(tmp_path: Path) -> None:
         ),
         (
             {"tag": "20261022-py3.13"},
-            "Dockerfile: base image tag '20261022-py3.13' is not a release tag "
+            "Dockerfile: FOCA image tag '20261022-py3.13' is not a release tag "
             "(<X.Y.Z>-py<X.Y>)",
         ),
         (
             {"tag": "0.17.0"},
-            "Dockerfile: base image tag '0.17.0' is not a release tag "
+            "Dockerfile: FOCA image tag '0.17.0' is not a release tag "
             "(<X.Y.Z>-py<X.Y>)",
         ),
         (
@@ -148,22 +169,6 @@ def test_release_pins(tmp_path: Path) -> None:
             "deployment/Chart.yaml: dependency version '0.2.0 || 0.2.1-rc1' is "
             "not a release version",
         ),
-        (
-            {"chart_repository": "file://../.foca-common/charts/foca-common"},
-            "deployment/Chart.yaml: dependency repository "
-            "'file://../.foca-common/charts/foca-common' is not an OCI or HTTPS "
-            "repository",
-        ),
-        (
-            {"chart_repository": '"http://charts.example.org"  # a comment'},
-            "deployment/Chart.yaml: dependency repository "
-            "'http://charts.example.org' is not an OCI or HTTPS repository",
-        ),
-        (
-            {"chart_repository": "../foca/charts/foca-common"},
-            "deployment/Chart.yaml: dependency repository "
-            "'../foca/charts/foca-common' is not an OCI or HTTPS repository",
-        ),
     ],
     ids=[
         "git",
@@ -179,9 +184,6 @@ def test_release_pins(tmp_path: Path) -> None:
         "chart-rc",
         "chart-range",
         "chart-alternatives",
-        "chart-file",
-        "chart-http",
-        "chart-path",
     ],
 )
 def test_dev_pins(tmp_path: Path, kwargs: dict[str, str], error: str) -> None:
@@ -256,7 +258,7 @@ def test_main(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     dev.mkdir()
     assert check_release_pins.main([str(_write(dev, tag="20261022-py3.13"))]) == 1
     assert capsys.readouterr().err == (
-        "::error::Dockerfile: base image tag '20261022-py3.13' is not a release "
+        "::error::Dockerfile: FOCA image tag '20261022-py3.13' is not a release "
         "tag (<X.Y.Z>-py<X.Y>): pin the released version before releasing\n"
     )
 
@@ -279,7 +281,8 @@ def test_chart_dependencies_indentless(tmp_path: Path) -> None:
     root = _write(tmp_path)
     (root / "deployment" / "Chart.yaml").write_text(
         "name: app\ndependencies:\n- name: a\n  version: 1.0.0-rc1\n"
-        "  repository: oci://x\nversion: 0.0.0\n"
+        "  repository: https://example.org/charts\n  tags:\n  - b\n  - c\n"
+        "version: 0.0.0\n"
     )
     assert check_release_pins.find_dev_pins(root) == [
         "deployment/Chart.yaml: dependency version '1.0.0-rc1' is not a release version"
@@ -287,10 +290,7 @@ def test_chart_dependencies_indentless(tmp_path: Path) -> None:
 
 
 def test_chart_dependencies(tmp_path: Path) -> None:
-    """All dependencies of the chart are checked, and only their pins.
-
-    That is their versions and repositories.
-    """
+    """All dependencies of the chart are checked, and only their versions."""
     root = _write(tmp_path)
     (root / "deployment" / "Chart.yaml").write_text(
         """apiVersion: v2
@@ -303,29 +303,25 @@ dependencies:  # A comment
   # A comment
   - version: "1.0.0-rc1"
     name: other
-  - name: local
-    version: 1.0.0
-    repository: "file://charts/local"
+    repository: "https://example.org/charts"  # A comment
+    import-values:
+      - child: x
+        version: 2.0.0-rc1
 
 maintainers:
   - name: someone
     version: not-a-dependency
 annotations:
   version: dev
-  repository: file://not-a-dependency
 """
     )
     assert check_release_pins.find_dev_pins(root) == [
-        "deployment/Chart.yaml: dependency version '1.0.0-rc1' is not a release "
-        "version",
-        "deployment/Chart.yaml: a dependency has no repository (an OCI or HTTPS one)",
-        "deployment/Chart.yaml: dependency repository 'file://charts/local' is not "
-        "an OCI or HTTPS repository",
+        "deployment/Chart.yaml: dependency version '1.0.0-rc1' is not a release version"
     ]
 
 
 def test_script(tmp_path: Path) -> None:
-    """The script runs as the workflows call it."""
+    """The script runs as the release workflow calls it."""
     shutil.copytree(ROOT / "scripts", tmp_path / "scripts")
     _write(tmp_path, chart_version="0.2.0-rc1")
     result = subprocess.run(  # noqa: S603 (fixed arguments, no shell)
@@ -337,6 +333,257 @@ def test_script(tmp_path: Path) -> None:
     )
     assert (result.returncode, result.stdout) == (1, "")
     assert "dependency version '0.2.0-rc1'" in result.stderr
+
+
+@pytest.mark.parametrize(
+    ("dockerfile", "errors"),
+    [
+        (
+            "FROM elixircloud/foca:0.17.0-py3.13 AS build\n"
+            f"FROM elixircloud/foca:20261022-py3.13@sha256:{DIGEST}\n",
+            [
+                "Dockerfile: FOCA image tag '20261022-py3.13' is not a release "
+                "tag (<X.Y.Z>-py<X.Y>)"
+            ],
+        ),
+        (
+            "from --platform=linux/amd64 docker.io/elixircloud/foca:dev\n",
+            ["Dockerfile: FOCA image tag 'dev' is not a release tag (<X.Y.Z>-py<X.Y>)"],
+        ),
+        (
+            f"FROM elixircloud/foca@sha256:{DIGEST}\n",
+            ["Dockerfile: FOCA image has no tag (<X.Y.Z>-py<X.Y>)"],
+        ),
+        (
+            "FROM elixircloud/foca-other:dev\n",
+            ["Dockerfile: no elixircloud/foca base image"],
+        ),
+        (
+            "FROM elixircloud/foca:0.17.0-py3.13\n"
+            "FROM elixircloud/foca:0.17.0-py3.12\n",
+            [],
+        ),
+        (
+            "FROM elixircloud/foca:0.17.0-py3.13\nFROM \\\n  elixircloud/foca:dev\n",
+            ["Dockerfile: FOCA image tag 'dev' is not a release tag (<X.Y.Z>-py<X.Y>)"],
+        ),
+        (
+            "FROM elixircloud/foca:0.17.0-py3.13\n"
+            "FROM index.docker.io/elixircloud/foca:dev\n",
+            ["Dockerfile: FOCA image tag 'dev' is not a release tag (<X.Y.Z>-py<X.Y>)"],
+        ),
+        (
+            "FROM elixircloud/foca:0.17.0-py3.13\n"
+            "FROM ${REGISTRY}elixircloud/foca:dev\n",
+            ["Dockerfile: FOCA image tag 'dev' is not a release tag (<X.Y.Z>-py<X.Y>)"],
+        ),
+        (
+            "FROM elixircloud/foca:0.17.0-py3.13\n"
+            "COPY --from=elixircloud/foca:dev /app /app\n",
+            ["Dockerfile: FOCA image tag 'dev' is not a release tag (<X.Y.Z>-py<X.Y>)"],
+        ),
+        (
+            "FROM elixircloud/foca:0.17.0-py3.13\n"
+            "RUN --mount=type=bind,from=elixircloud/foca:dev,target=/x true\n",
+            ["Dockerfile: FOCA image tag 'dev' is not a release tag (<X.Y.Z>-py<X.Y>)"],
+        ),
+        (
+            "FROM elixircloud/foca:0.17.0-py3.13\n"
+            "RUN --mount=from=elixircloud/foca:dev,target=/x true\n",
+            ["Dockerfile: FOCA image tag 'dev' is not a release tag (<X.Y.Z>-py<X.Y>)"],
+        ),
+        (
+            "FROM elixircloud/foca:0.17.0-py3.13\n"
+            'RUN --mount="type=bind,from=elixircloud/foca:dev" true\n',
+            ["Dockerfile: FOCA image tag 'dev' is not a release tag (<X.Y.Z>-py<X.Y>)"],
+        ),
+        (
+            "# COPY --from=elixircloud/foca:dev /x /x\n"
+            "FROM \\\n  # a comment\n  elixircloud/foca:dev\n",
+            ["Dockerfile: FOCA image tag 'dev' is not a release tag (<X.Y.Z>-py<X.Y>)"],
+        ),
+        (
+            "FROM python:3.13\nCOPY --from=elixircloud/foca:0.17.0-py3.13 /x /x\n",
+            ["Dockerfile: no elixircloud/foca base image"],
+        ),
+    ],
+    ids=[
+        "later-stage",
+        "options",
+        "no-tag",
+        "other-image",
+        "all-releases",
+        "continued-line",
+        "registry",
+        "variable",
+        "copy-from",
+        "mount-from",
+        "mount-from-first",
+        "quoted-mount",
+        "comments",
+        "copy-from-only",
+    ],
+)
+def test_base_images(tmp_path: Path, dockerfile: str, errors: list[str]) -> None:
+    """All FOCA base images of the `Dockerfile` are checked, in any stage."""
+    root = _write(tmp_path)
+    (root / "Dockerfile").write_text(dockerfile)
+    assert check_release_pins.find_dev_pins(root) == errors
+
+
+@pytest.mark.parametrize(
+    ("dependency", "errors"),
+    [
+        (
+            "  - name: foca-common\n    version: 0.2.0\n"
+            "    repository: file://../../foca/deployment/foca-common\n",
+            [
+                "deployment/Chart.yaml: dependency 'foca-common' has repository "
+                "'file://../../foca/deployment/foca-common', not a chart repository "
+                "(oci:// or https://)"
+            ],
+        ),
+        (
+            "  - name: foca-common\n"
+            "    repository: oci://ghcr.io/elixir-cloud-aai/charts\n",
+            ["deployment/Chart.yaml: dependency 'foca-common' has no version"],
+        ),
+        (
+            "  - name: foca-common\n    version: 0.2.0\n    repository: '@local'\n",
+            [
+                "deployment/Chart.yaml: dependency 'foca-common' has repository "
+                "'@local', not a chart repository (oci:// or https://)"
+            ],
+        ),
+        (
+            "  -\n    name: foca-common\n    version: 0.2.0\n"
+            "    repository: oci://ghcr.io/elixir-cloud-aai/charts\n",
+            [],
+        ),
+    ],
+    ids=["file-repository", "no-version", "alias-repository", "item-on-own-line"],
+)
+@pytest.mark.parametrize("key", ["dependencies", '"dependencies"', "'dependencies'"])
+def test_chart_dependency_sources(
+    tmp_path: Path, dependency: str, errors: list[str], key: str
+) -> None:
+    """Chart dependencies need a version and a chart repository.
+
+    The key `dependencies` may be quoted.
+    """
+    root = _write(tmp_path)
+    (root / "deployment" / "Chart.yaml").write_text(f"name: app\n{key}:\n{dependency}")
+    assert check_release_pins.find_dev_pins(root) == errors
+
+
+def test_build_requirements(tmp_path: Path) -> None:
+    """Build requirements and dependency groups are checked, too."""
+    root = _write(tmp_path)
+    pyproject = root / "pyproject.toml"
+    pyproject.write_text(
+        '[build-system]\nrequires = ["setuptools>=77", '
+        '"setuptools-scm @ git+https://example.org/scm"]\n'
+        + pyproject.read_text()
+        + '[dependency-groups]\ntest = ["pytest>=9.0rc1", {include-group = "x"}]\n'
+    )
+    assert check_release_pins.find_dev_pins(root) == [
+        "pyproject.toml: dependency 'pytest>=9.0rc1' names a pre-release",
+        "pyproject.toml: build requirement 'setuptools-scm @ "
+        "git+https://example.org/scm' is a direct reference",
+    ]
+
+
+def _schema_error(named: str, pinned: str) -> str:
+    """Return the error for a values schema of another library version.
+
+    Args:
+        named: The versions that the schema's `$comment` names.
+        pinned: The version that the chart pins.
+
+    Returns:
+        The error.
+    """
+    return (
+        f"deployment/values.schema.json: its $comment names foca-common {named} "
+        "(the version that the release requires, whose values schema it is), but "
+        f"deployment/Chart.yaml pins {pinned}"
+    )
+
+
+def test_repository_schema_names_library() -> None:
+    """The values schema of this repository names one library chart version.
+
+    Whether it is the version that the chart pins is checked for releases
+    only, as the chart may wait for a release of the library.
+    """
+    schema = json.loads((ROOT / "deployment" / "values.schema.json").read_text())
+    assert (
+        len(list(check_release_pins.LIBRARY_VERSION.finditer(schema["$comment"]))) == 1
+    )
+
+
+@pytest.mark.parametrize(
+    ("comment", "named"),
+    [
+        ("Schema of the library chart foca-common 0.1.0.", "0.1.0"),
+        ("Schema of the library chart foca-common.", "(no version)"),
+        ("foca-common 0.2.0 or foca-common 0.3.0", "0.2.0, 0.3.0"),
+        ("foca-common 0.2.0-rc1", "(no version)"),
+        ("my-foca-common 0.2.0", "(no version)"),
+        (["foca-common 0.2.0"], "(no version)"),
+    ],
+    ids=["other", "none", "several", "pre-release", "other-chart", "not-text"],
+)
+def test_library_schema(tmp_path: Path, comment: object, named: str) -> None:
+    """The values schema must name the version of the library chart."""
+    root = _write(tmp_path)
+    _write_schema(root, comment)
+    assert check_release_pins.find_dev_pins(root) == [_schema_error(named, "0.2.0")]
+
+
+@pytest.mark.parametrize("schema", ["{", "[]"], ids=["invalid", "not-object"])
+def test_library_schema_unreadable(tmp_path: Path, schema: str) -> None:
+    """A values schema without a readable `$comment` names no version."""
+    root = _write(tmp_path)
+    (root / "deployment" / "values.schema.json").write_text(schema)
+    assert check_release_pins.find_dev_pins(root) == [
+        _schema_error("(no version)", "0.2.0")
+    ]
+
+
+@pytest.mark.parametrize(
+    ("lock", "locked"),
+    [
+        (LOCK.format(version="0.1.0", digest=DIGEST), "0.1.0"),
+        ("dependencies:\n- name: foca-common\n", "no version"),
+        ("dependencies: []\n", "no version"),
+        (None, "no version"),
+    ],
+    ids=["other", "no-version", "none", "no-lock"],
+)
+def test_library_lock(tmp_path: Path, lock: str | None, locked: str) -> None:
+    """The lock file must lock the version of the library chart."""
+    root = _write(tmp_path)
+    path = root / "deployment" / "Chart.lock"
+    if lock is None:
+        path.unlink()
+    else:
+        path.write_text(lock)
+    assert check_release_pins.find_dev_pins(root) == [
+        f"deployment/Chart.lock: 'foca-common' is locked at {locked}, not at "
+        "0.2.0 as in deployment/Chart.yaml"
+    ]
+
+
+def test_library_version_mismatch(tmp_path: Path) -> None:
+    """A chart on another library version than the release requires fails.
+
+    E.g., if the app requires a new FOCA release, but the chart was not moved
+    to the matching library version.
+    """
+    root = _write(tmp_path, chart_version="0.1.0")
+    _write_schema(root, "Schema of the library chart foca-common 0.2.0.")
+    assert check_release_pins.find_dev_pins(root) == [_schema_error("0.2.0", "0.1.0")]
 
 
 def test_release_checkout() -> None:
