@@ -1,3 +1,7 @@
+# Build the project, lint, run tests, scan the Docker image for known
+# vulnerabilities, and, on pushes, push the Docker image by digest (with SBOM
+# and provenance attestations), scan exactly that digest, then attest, sign
+# (Sigstore) and tag it
 name: proTES checks
 
 on:
@@ -8,6 +12,13 @@ on:
 
 permissions:
   contents: read
+
+# Fully qualified (`docker.io/`), as the attestation needs it. The Docker Hub
+# organization is the repository variable `DOCKERHUB_ORG` (by default
+# `elixircloud`), as in `scan.yaml`, so that the scan job, which has no
+# secrets, scans the image that is published
+env:
+  IMAGE_NAME: docker.io/${{ vars.DOCKERHUB_ORG || 'elixircloud' }}/protes
 
 # Cancel superseded runs of a pull request; runs for pushes get their own
 # group, so that queued runs for successive pushes are not dropped
@@ -262,27 +273,155 @@ jobs:
       - name: Show app logs
         if: failure()
         run: docker compose logs
-  # Images of commits on `dev`, tagged `dev` and `sha-<commit>` (never
-  # `latest`, which is for releases, see `release.yaml`)
-  publish:
-    name: Build and publish app image
+  # On pushes, builds the image once and pushes it by digest only (untagged,
+  # with SBOM and provenance attestations, `mode=max`), for `scan` to scan and
+  # `publish` to sign and tag, as in `release.yaml`. Runs alongside the tests,
+  # so that the scan starts early; digests of runs that fail (or fail the
+  # scan) are never signed or tagged, but stay on Docker Hub, untagged
+  # (pullable by digest only)
+  push:
+    name: Push app image
     runs-on: ubuntu-latest
     timeout-minutes: 30
     if: ${{ github.event_name == 'push' }}
-    needs: [analyze_code, tests_passed, helm, docs, smoke_test]
     # Docker Hub secrets; the environment only allows branch `dev`
     environment: dev-images
     permissions:
       contents: read
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # Full history and tags, to derive the version
+          fetch-depth: 0
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+      # The Docker build gets no Git metadata, so the version (e.g.,
+      # `0.3.1.dev4+g<commit>`) is passed as a build argument
+      - name: Derive version
+        id: version
+        # Same bound as in `build-system.requires` of `pyproject.toml`
+        run: |
+          pip install "setuptools-scm>=8"
+          echo "version=$(python -m setuptools_scm)" >> "$GITHUB_OUTPUT"
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      # OCI labels with the version, commit and source; the tags are set by
+      # `publish`, after the scan
+      - name: Generate image labels
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          flavor: latest=false
+          tags: type=raw,value=dev
+          labels: |
+            org.opencontainers.image.version=${{ steps.version.outputs.version }}
+      - name: Log in to Docker Hub
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          username: ${{ secrets.DOCKERHUB_LOGIN }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Build and push image by digest
+        id: push
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          outputs: type=image,name=${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
+          sbom: true
+          provenance: mode=max
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: SETUPTOOLS_SCM_PRETEND_VERSION=${{ steps.version.outputs.version }}
+  # Scans the image with Trivy (`.github/actions/scan-image`): for pull
+  # requests a local build, for pushes exactly the digest pushed by `push`
+  # (`<image>@<digest>`; public, so pulling it needs no login), in a job
+  # without credentials or signing permissions, as the Trivy action resolves
+  # the Trivy binary from a mutable tag. The findings that have a fix are
+  # uploaded to code scanning (not for pull requests from forks, whose token
+  # cannot write them), and the job fails on critical and high
+  # vulnerabilities that have a fix. Accepted findings are listed, with a
+  # reason and an expiry date, in `.trivyignore.yaml`. The release workflow
+  # scans the release image the same way (`release.yaml`), and `latest` is
+  # scanned weekly (`scan.yaml`)
+  scan:
+    name: Scan image
+    # For pull requests, `push` is skipped
+    needs: push
+    if: ${{ !cancelled() && (github.event_name == 'pull_request' || needs.push.result == 'success') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      security-events: write # upload SARIF to code scanning
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Docker Buildx
+        if: ${{ github.event_name != 'push' }}
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Build image
+        if: ${{ github.event_name != 'push' }}
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          load: true
+          # Single image, for the local Docker daemon (no attestations)
+          provenance: false
+          # Named as the pushed image, so that code scanning matches the
+          # findings of both
+          tags: ${{ env.IMAGE_NAME }}:scan
+      - name: Determine image
+        id: image
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          DIGEST: ${{ needs.push.outputs.digest }}
+        run: |
+          if [[ "${EVENT_NAME}" != "push" ]]; then
+            echo "image=${IMAGE_NAME}:scan" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [[ ! "${DIGEST}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::Invalid image digest '${DIGEST}'"
+            exit 1
+          fi
+          echo "image=${IMAGE_NAME}@${DIGEST}" >> "$GITHUB_OUTPUT"
+      - name: Scan image
+        uses: ./.github/actions/scan-image
+        with:
+          image: ${{ steps.image.outputs.image }}
+          category: image
+          upload: ${{ github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository }}
+  # Attests the build provenance of the scanned digest (GitHub artifact
+  # attestation, also pushed to the registry), signs it with Sigstore keyless
+  # signing (`cosign`, via the workflow's OIDC token) and only then tags
+  # exactly that digest, so that the published image is the scanned one; see
+  # "Verifying images and charts" in `docs/operations.md`
+  publish:
+    name: Publish app image
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    if: ${{ github.event_name == 'push' }}
+    needs: [analyze_code, tests_passed, helm, docs, smoke_test, push, scan]
+    # Docker Hub secrets; the environment only allows branch `dev`
+    environment: dev-images
+    permissions:
+      contents: read
+      id-token: write # Sigstore signing certificates
+      attestations: write # GitHub artifact attestations
     # Publish one image at a time, and only for the newest commit on the
     # branch, so that an older run cannot overwrite `dev` with older code
     concurrency:
       group: ${{ github.workflow }}-publish-${{ github.ref }}
       cancel-in-progress: false
     env:
-      # The Docker Hub organization is the repository variable
-      # `DOCKERHUB_ORG` (by default `elixircloud`), as in `release.yaml`
-      IMAGE_NAME: docker.io/${{ vars.DOCKERHUB_ORG || 'elixircloud' }}/protes
+      DIGEST: ${{ needs.push.outputs.digest }}
     steps:
       - name: Check that commit is still the branch head
         id: head
@@ -298,27 +437,13 @@ jobs:
           else
             echo "::notice::Skipping publish: ${REF} has moved on to ${head}"
           fi
-      - name: Check out repository
+      - name: Check image digest
         if: steps.head.outputs.current == 'true'
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          # Full history and tags, to derive the version
-          fetch-depth: 0
-      - name: Set up Python
-        if: steps.head.outputs.current == 'true'
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.13"
-      # The Docker build gets no Git metadata, so the version (e.g.,
-      # `0.3.1.dev4+g<commit>`) is passed as a build argument
-      - name: Derive version
-        if: steps.head.outputs.current == 'true'
-        id: version
-        # Same bound as in `build-system.requires` of `pyproject.toml`
         run: |
-          pip install "setuptools-scm>=8"
-          echo "version=$(python -m setuptools_scm)" >> "$GITHUB_OUTPUT"
+          if [[ ! "${DIGEST}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::Invalid image digest '${DIGEST}'"
+            exit 1
+          fi
       - name: Set up Docker Buildx
         if: steps.head.outputs.current == 'true'
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
@@ -328,28 +453,36 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_LOGIN }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-      # Tags `dev` and `sha-<commit>` (full SHA); OCI labels with the
-      # version, commit and source
-      - name: Generate image tags and labels
+      - name: Attest build provenance
         if: steps.head.outputs.current == 'true'
-        id: meta
-        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
-          images: ${{ env.IMAGE_NAME }}
-          flavor: latest=false
-          tags: |
-            type=raw,value=dev
-            type=sha,format=long
-          labels: |
-            org.opencontainers.image.version=${{ steps.version.outputs.version }}
-      - name: Build and push image
+          subject-name: ${{ env.IMAGE_NAME }}
+          subject-digest: ${{ env.DIGEST }}
+          push-to-registry: true
+          # No artifact metadata storage record (needs another permission)
+          create-storage-record: false
+      - name: Install cosign
         if: steps.head.outputs.current == 'true'
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
-        with:
-          context: .
-          push: true
-          # Single image, without attestations
-          provenance: false
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          build-args: SETUPTOOLS_SCM_PRETEND_VERSION=${{ steps.version.outputs.version }}
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      # The signature covers the digest, and so every tag of it
+      - name: Sign image
+        if: steps.head.outputs.current == 'true'
+        run: cosign sign --yes "${IMAGE_NAME}@${DIGEST}"
+      # Tags `dev` and `sha-<commit>` (never `latest`, which is for releases)
+      # point to the scanned and signed digest: a single source is copied as
+      # is
+      - name: Tag image
+        if: steps.head.outputs.current == 'true'
+        env:
+          SHA: ${{ github.sha }}
+        run: |
+          for tag in "${IMAGE_NAME}:dev" "${IMAGE_NAME}:sha-${SHA}"; do
+            docker buildx imagetools create --tag "${tag}" "${IMAGE_NAME}@${DIGEST}"
+            actual="$(docker buildx imagetools inspect "${tag}" \
+              --format '{{ json .Manifest }}' | jq -r .digest)"
+            if [[ "${actual}" != "${DIGEST}" ]]; then
+              echo "::error::${tag} points to ${actual}, expected ${DIGEST}"
+              exit 1
+            fi
+          done
