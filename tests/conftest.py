@@ -58,7 +58,11 @@ ISSUER = "https://login.example.org/oidc/"
 JWKS_URI = f"{ISSUER}jwk"
 USERINFO_URI = f"{ISSUER}userinfo"
 USER = "alice@example.org"
+# Another user with the role `user`
+OTHER_USER = "bob@example.org"
 ADMIN = "admin@example.org"
+# Admin with the role `user`, too
+ADMIN_USER = "carol@example.org"
 # Member of no group with a role
 OUTSIDER = "eve@example.org"
 # Groups mapped to the roles `user` and `admin` in the test overlay
@@ -68,7 +72,9 @@ ADMIN_GROUP = "urn:example:group:compute-admins#login.example.org"
 # access tokens)
 GROUPS = {
     USER: [USER_GROUP],
+    OTHER_USER: [USER_GROUP],
     ADMIN: [ADMIN_GROUP],
+    ADMIN_USER: [USER_GROUP, ADMIN_GROUP],
     OUTSIDER: ["other-group"],
 }
 KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)

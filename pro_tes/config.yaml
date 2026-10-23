@@ -54,10 +54,11 @@ security:
     # clients:
     #   - my-portal-client-id
     issuers: []
-  # Access control: users (the role `user`) may create, list, read and cancel
-  # tasks; admins (the role `admin`) may do everything. Roles are given to
-  # groups of the identity provider (values of the claim `claim_groups`) by
-  # `group_mapping`, e.g.:
+  # Access control: users (the role `user`) may create tasks, and list their
+  # own; the user creating a task becomes its owner, and only owners may read
+  # and cancel a task. Admins (the role `admin`) may only use the permissions
+  # API, not the tasks of others. Roles are given to groups of the identity
+  # provider (values of the claim `claim_groups`) by `group_mapping`, e.g.:
   # claim_groups: groups
   # group_mapping:
   #   compute-users: user
@@ -69,13 +70,18 @@ security:
     model: access_control/model.conf
     db_name: taskStore
     collection_name: policy_rules
+    # Owners only, tasks are not shared
+    resource_roles: [owner]
     # Managed on startup (removed rules are deleted); cannot be changed via
     # the permissions API. Named, so that overlays can change, add or remove
     # single rules by name (`null` removes a rule)
     policies:
+      # `GET` lists the tasks of the user only
       users-create-list-tasks: [p, user, /ga4gh/tes/v1/tasks, (GET)|(HEAD)|(POST)]
       # `POST` is cancellation (`/tasks/{id}:cancel`)
-      users-get-cancel-tasks: [p, user, "/ga4gh/tes/v1/tasks/:id", (GET)|(HEAD)|(POST)]
+      owners-get-cancel-tasks: [p, owner, "/ga4gh/tes/v1/tasks/:id", (GET)|(HEAD)|(POST)]
+      admins-list-add-permissions: [p, admin, /admin/access-control/permissions, (GET)|(POST)]
+      admins-manage-permissions: [p, admin, "/admin/access-control/permissions/:id", (GET)|(PUT)|(DELETE)]
 
 # Database configuration
 # Cf. https://foca.readthedocs.io/en/latest/configuration/db/

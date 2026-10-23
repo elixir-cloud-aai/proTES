@@ -18,8 +18,9 @@ database, so the `service_info` collection can be dropped.
 
 API specifications (`api.specs`) and access control rules
 (`security.access_control.policies`) of the base config are named entries
-(the spec `tes`; rules `users-create-list-tasks` and
-`users-get-cancel-tasks`), which overlays change by name (see
+(the spec `tes`; rules `users-create-list-tasks`,
+`owners-get-cancel-tasks`, `admins-list-add-permissions` and
+`admins-manage-permissions`), which overlays change by name (see
 [Roles](access-control.md#roles)); overlays that give lists still replace
 them. The configured rules replace the stored ones atomically on startup,
 and stored configured rules are removed if an overlay sets no rules. During
@@ -53,6 +54,30 @@ providers that set another `typ` header, or none). The challenge of `401`
 responses for invalid tokens has an `error_description`, too. The new
 option `security.auth.clients` limits the accepted tokens to those of
 certain clients (by default, clients are not restricted).
+
+## Task ownership
+
+Users see, read and cancel only their own tasks, and admins no longer may do
+everything: they can't see the tasks of others, and only manage the access
+control rules (see [Task ownership](access-control.md#task-ownership)).
+Tasks of others and unknown tasks get `403 Forbidden` (was `404 Not Found`
+for unknown tasks). The rule `users-get-cancel-tasks` is replaced by
+`owners-get-cancel-tasks`, and the access control model
+(`pro_tes/access_control/model.conf`) has owner roles (`g2`) and no longer
+lets admins do everything: overlays naming the old rule, or custom models,
+must be updated. Rules added via the permissions API are kept: check that
+none of them gives users or admins access to all tasks (e.g., `p, user,
+/ga4gh/tes/v1/tasks/:id, GET`).
+
+proTES refuses to start if access control is not enabled and enforced, or
+if service clients are configured (`security.auth.service_clients`,
+`on_behalf_of_header`, `security.access_control.client_mapping`), which it
+doesn't support yet.
+
+Tasks stored by earlier versions have no owner, so nobody can see them
+through the API; operators can give them to their users, or purge them (see
+[Task owners](operations.md#task-owners)). Each new task adds two rules to
+the access control database.
 
 ## Errors
 
