@@ -10,8 +10,9 @@ On-Cloud](https://elixir-cloud-aai.github.io/contribute/); in short:
   policy](SECURITY.md).
 - Work on [issues](https://github.com/elixir-cloud-aai/proTES/issues): open
   or find one and agree on the approach before you change code.
-- Branch off `dev` and open a pull request against `dev` that closes the
-  issue; it is squash-merged once the checks pass and it has been reviewed.
+- Branch off `dev` and open a pull request against `dev` (not `main`, which
+  only holds releases) that closes the issue; it is squash-merged once the
+  checks pass and it has been reviewed.
 - Title pull requests as [Conventional
   Commits](https://www.conventionalcommits.org/)
   (`<type>[(<scope>)][!]: <description>`, at most 50 characters).
