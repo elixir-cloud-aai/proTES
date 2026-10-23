@@ -3,7 +3,7 @@
 import importlib.util
 from pathlib import Path
 from types import SimpleNamespace
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 
 import pytest
 
@@ -68,6 +68,43 @@ def test_adapt_links_skips_code_blocks() -> None:
     ]
 
 
+def _is_docs(url: str) -> bool:
+    """Tell whether a URL points to the docs of this repository.
+
+    Args:
+        url: URL to check.
+
+    Returns:
+        Whether the URL's host is that of the docs on Read the Docs, also if
+        spelled with percent-encodings, in capitals or with a trailing dot.
+    """
+    host = unquote(urlsplit(url).hostname or "").rstrip(".")
+    return host == urlsplit(DOCS_URL).hostname
+
+
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        (DOCS_URL, True),
+        ("https://protes.readthedocs.io./en/0.2.0/", True),
+        ("https://protes.readthedocs%2Eio/en/0.2.0/", True),
+        ("https://PROTES.readthedocs.io/en/0.2.0/", True),
+        ("https://foca.readthedocs.io/en/latest/", False),
+        ("https://protes.readthedocs.io.example.com/", False),
+        ("https://example.com/protes.readthedocs.io/", False),
+        ("#protes.readthedocs.io", False),
+    ],
+)
+def test_is_docs(url: str, expected: bool) -> None:
+    """Only URLs on the host of the docs count as links to the docs.
+
+    Args:
+        url: URL to check.
+        expected: Whether the URL is on the host of the docs.
+    """
+    assert _is_docs(url) is expected
+
+
 def test_readme_links_are_absolute() -> None:
     """The chart's README has no relative links (they break in the package)."""
     readme = (ROOT / "deployment/README.md").read_text(encoding="utf-8")
@@ -80,8 +117,7 @@ def test_readme_links_are_absolute() -> None:
     assert [
         target
         for target in targets
-        if urlsplit(target).hostname == urlsplit(DOCS_URL).hostname
-        and not target.startswith(DOCS_URL)
+        if _is_docs(target) and not target.startswith(DOCS_URL)
     ] == []
 
 

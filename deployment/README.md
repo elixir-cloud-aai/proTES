@@ -435,7 +435,9 @@ The image serves the app with Gunicorn on port 8080 (see
 chart passes the settings in `protes.gunicorn` to it (via
 `GUNICORN_CMD_ARGS`); the defaults are the image's (one worker process with
 4 threads, a timeout of 30 seconds, a graceful timeout of 20 seconds, and a
-keep-alive of 75 seconds). Rendering fails if `extraArgs` set
+keep-alive of 100 seconds, longer than the upstream keep-alive timeout of
+common ingress controllers: 60 seconds for ingress-nginx, 90 seconds for
+Traefik). Rendering fails if `extraArgs` set
 `--bind`/`-b`, `--preload` or `--graceful-timeout`. Each Gunicorn worker
 loads the whole app, so raise `protes.resources` before raising `workers`.
 On shutdown, the app keeps serving for `protes.preStopSleepSeconds` (default

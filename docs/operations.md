@@ -105,17 +105,19 @@ later, which reads the signatures in the Sigstore bundle format):
 ```bash
 gh attestation verify oci://docker.io/elixircloud/protes:X.Y.Z \
     --repo elixir-cloud-aai/proTES \
-    --signer-workflow elixir-cloud-aai/proTES/.github/workflows/release.yaml
+    --signer-workflow elixir-cloud-aai/proTES/.github/workflows/release.yaml \
+    --source-ref refs/tags/vX.Y.Z
 cosign verify docker.io/elixircloud/protes:X.Y.Z \
     --certificate-oidc-issuer https://token.actions.githubusercontent.com \
     --certificate-identity https://github.com/elixir-cloud-aai/proTES/.github/workflows/release.yaml@refs/tags/vX.Y.Z
 ```
 
-Replace `X.Y.Z` with the version to verify. Images of commits on `dev`
-(`dev`, `sha-<commit>`) are signed and attested by the CI workflow instead:
-use `--signer-workflow
-elixir-cloud-aai/proTES/.github/workflows/checks.yaml` and
-`--certificate-identity
+Replace `X.Y.Z` with the version to verify. `--source-ref` and the ref in
+`--certificate-identity` check that the workflow ran for the release tag,
+not for another branch. Images of commits on `dev` (`dev`, `sha-<commit>`)
+are signed and attested by the CI workflow instead: use `--signer-workflow
+elixir-cloud-aai/proTES/.github/workflows/checks.yaml`,
+`--source-ref refs/heads/dev` and `--certificate-identity
 https://github.com/elixir-cloud-aai/proTES/.github/workflows/checks.yaml@refs/heads/dev`.
 To show an image's SBOM or provenance, run:
 
@@ -135,7 +137,8 @@ gh release download vX.Y.Z --repo elixir-cloud-aai/proTES \
     --pattern 'protes-X.Y.Z.tgz*'
 gh attestation verify protes-X.Y.Z.tgz \
     --repo elixir-cloud-aai/proTES \
-    --signer-workflow elixir-cloud-aai/proTES/.github/workflows/release.yaml
+    --signer-workflow elixir-cloud-aai/proTES/.github/workflows/release.yaml \
+    --source-ref refs/tags/vX.Y.Z
 cosign verify-blob protes-X.Y.Z.tgz \
     --bundle protes-X.Y.Z.tgz.sigstore.json \
     --certificate-oidc-issuer https://token.actions.githubusercontent.com \

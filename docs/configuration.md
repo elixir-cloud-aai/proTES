@@ -14,6 +14,30 @@ FOCA merges overlays into the config on startup (see the [FOCA deployment
 guide](https://foca.readthedocs.io/en/latest/deployment/)). The Celery worker
 reads the same config.
 
+## Local overrides
+
+Docker Compose mounts
+[`config.dev.yaml`](https://github.com/elixir-cloud-aai/proTES/blob/dev/config.dev.yaml),
+an overlay for local development (see [Getting
+started](getting-started.md#usage)), into the app and the Celery worker. To
+override values locally without changing it, put them in
+`config.local.yaml` and mount it in a `docker-compose.override.yaml` (both
+are ignored by Git), for both services:
+
+```yaml
+services:
+    protes:
+        environment:
+            FOCA_CONFIG_OVERLAY: /etc/protes/config.dev.yaml:/etc/protes/config.local.yaml
+        volumes:
+            - ./config.local.yaml:/etc/protes/config.local.yaml:ro
+    protes-worker:
+        environment:
+            FOCA_CONFIG_OVERLAY: /etc/protes/config.dev.yaml:/etc/protes/config.local.yaml
+        volumes:
+            - ./config.local.yaml:/etc/protes/config.local.yaml:ro
+```
+
 ## TES instances
 
 Tasks are forwarded to the TES instances listed in `custom.tes.service_list`:
