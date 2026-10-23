@@ -1,0 +1,49 @@
+cff-version: 1.2.0
+message: >-
+  If you use this software, please cite it using the metadata from this file.
+  Authors are listed by the number of lines they committed, then by the
+  number of their commits; equal contributors, if any, are listed
+  alphabetically by family name and marked with an asterisk (*) after their
+  family names. See "Citation metadata" in the contributing guide of the
+  documentation for who is an author and how to add or correct your entry.
+title: proTES
+abstract: >-
+  proTES is a gateway for the GA4GH Task Execution Service (TES) API that
+  federates TES instances. Clients send their tasks to proTES as to any TES
+  instance; proTES passes each task through a configurable stack of
+  middlewares, which pick the TES instance to run it on (e.g., randomly, for
+  load balancing, or the one closest to the task's input data) or change the
+  request, forwards it there and tracks its state. It is built with FOCA and
+  deployed with Docker Compose or its Helm chart.
+type: software
+authors:
+  - given-names: Alexander
+    family-names: Kanitz
+    orcid: "https://orcid.org/0000-0002-3468-0652"
+    affiliation: >-
+      Biozentrum, University of Basel, Basel, Switzerland; SIB Swiss Institute
+      of Bioinformatics, Lausanne, Switzerland
+  - given-names: Ayush
+    family-names: Kumar
+  - given-names: Yacine
+    family-names: Khettab
+  - given-names: Keshav
+    family-names: Dayal
+    orcid: "https://orcid.org/0009-0008-2594-0548"
+  - name: Nidhi
+  - given-names: Tristan
+    family-names: Perard
+  - given-names: Risto
+    family-names: Laurikainen
+repository-code: "https://github.com/elixir-cloud-aai/proTES"
+url: "https://protes.readthedocs.io/"
+keywords:
+  - GA4GH
+  - Task Execution Service
+  - TES
+  - gateway
+  - federation
+  - task distribution
+  - REST API
+  - FOCA
+license: Apache-2.0

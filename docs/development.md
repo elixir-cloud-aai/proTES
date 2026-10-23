@@ -16,10 +16,11 @@ coverage run -m pytest  # the tests, with coverage
 coverage report  # fails below 100%
 ```
 
-Coverage of `pro_tes` is kept at 100%, which is enforced: `coverage report`
-(and CI) fails below 100% (`fail_under` in `pyproject.toml`), and so do
-Codecov's checks of the whole code and of the changes of a pull request
-(`codecov.yml`). Add tests that fail without your change.
+Coverage of `pro_tes` and `scripts` is kept at 100%, which is enforced:
+`coverage report` (and CI) fails below 100% (`fail_under` in
+`pyproject.toml`), and so do Codecov's checks of the whole code and of the
+changes of a pull request (`codecov.yml`). Add tests that fail without your
+change.
 
 The tests in `tests/` mirror the package (`pro_tes/`). They need neither a
 database nor TES backends: they use an in-memory database
@@ -123,3 +124,14 @@ info reports it. Builds without Git metadata, such as local Docker builds
 (e.g., with Docker Compose), report `0.0.0.dev0`, unless the version is
 passed as build argument `SETUPTOOLS_SCM_PRETEND_VERSION`, as the CI
 workflow does for the images it publishes.
+
+Zenodo archives each GitHub release with the citation metadata
+(`CITATION.cff`) of the tagged commit, so they must have the release version.
+Shortly before the release, set its version and date and merge the change
+into `dev`; each version, also each pre-release (e.g., `X.Y.Zrc1`), needs its
+own such change. Before tagging the release commit, check it:
+
+```bash
+python scripts/citation.py set X.Y.Z  # date: today (UTC), or --date YYYY-MM-DD
+python scripts/citation.py check X.Y.Z  # on the release commit
+```

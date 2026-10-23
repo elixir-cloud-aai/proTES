@@ -103,6 +103,25 @@ deployed: the app (`pro_tes/`) and its Helm chart (`deployment/`).
 Commit messages on feature branches may follow the same format, which makes the
 history easier to review.
 
+## Citation metadata
+
+proTES is cited with the metadata in
+[`CITATION.cff`](https://github.com/elixir-cloud-aai/proTES/blob/dev/CITATION.cff)
+([Citation File Format](https://citation-file-format.github.io/)), which
+GitHub ("Cite this repository") and Zenodo use. Its authors are the people
+who committed at least 100 lines (lines added) to `main`, the release
+branch (to `dev` before the first release), not counting bots, vendored or
+generated files and the reformatting commits in `.git-blame-ignore-revs`.
+They are ordered by lines, then by commits; equal contributors are listed
+alphabetically by family name and marked with an asterisk (*). Affiliations
+come from public ORCID records only. To add or correct your entry (e.g.,
+your name, [ORCID iD](https://orcid.org/) or affiliation), open a pull
+request that changes only your entry; don't add e-mail addresses. CI
+validates the file (`cffconvert --validate`). Before each release, `python
+scripts/citation.py set X.Y.Z` sets its `version` and `date-released`, and
+`python scripts/citation.py check X.Y.Z` checks that they match the release
+(see [Versioning and releases](development.md#versioning-and-releases)).
+
 ## Python guidelines
 
 The app supports Python 3.10 or later (`requires-python` in
@@ -140,7 +159,7 @@ checked in reviews.
   `disallow_any_generics`); reviews check those of variables.
 - **Tests:** [pytest](https://docs.pytest.org/), with coverage measured by
   [coverage](https://coverage.readthedocs.io/): keep it at 100% of
-  `pro_tes`, which is enforced: `coverage report` (and
+  `pro_tes` and `scripts`, which is enforced: `coverage report` (and
   CI) fails below 100% (`fail_under` in `pyproject.toml`), and so do
   Codecov's checks of the whole code and of the changes of a pull request
   (`codecov.yml`). Add tests that fail without your change.

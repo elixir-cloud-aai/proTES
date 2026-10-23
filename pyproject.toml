@@ -51,7 +51,7 @@ known-first-party = ["pro_tes", "tests"]
 convention = "google"
 
 [tool.mypy]
-files = ["pro_tes", "docs/hooks.py", "tests"]
+files = ["pro_tes", "docs/hooks.py", "scripts", "tests"]
 # Complete type hints: all functions annotated, generic types parametrized
 # (instead of ruff's `ANN` rules, which report missing hints only, without
 # checking them)
@@ -81,7 +81,7 @@ module = ["gunicorn", "gunicorn.*"]
 ignore_missing_imports = true
 
 [tool.coverage.run]
-source = ["pro_tes"]
+source = ["pro_tes", "scripts"]
 
 [tool.coverage.report]
 exclude_also = ['if __name__ == "__main__":']
