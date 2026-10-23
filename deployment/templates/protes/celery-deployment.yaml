@@ -24,7 +24,13 @@ spec:
           name: protes-volume
       containers:
       - name: celery-worker
-        image: {{ .Values.celeryWorker.image }}
+        {{- if .Values.celeryWorker.image }}
+        image: {{ include "protes.image" (dict "root" . "values" .Values.celeryWorker "key" "celeryWorker") }}
+        {{- else if .Values.celeryWorker.tag }}
+        {{- fail "celeryWorker.tag must not be set if celeryWorker.image is empty (the worker then runs the app's image: set protes.tag)" }}
+        {{- else }}
+        image: {{ include "protes.image" (dict "root" . "values" .Values.protes "key" "protes") }}
+        {{- end }}
         imagePullPolicy: Always
         command: [ 'celery' ]
         args: [ '-A', 'pro_tes.celery_worker', 'worker', '-E', '--loglevel=info', '-c', '1', '-Q', 'celery' ]
