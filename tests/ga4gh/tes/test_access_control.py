@@ -1,12 +1,15 @@
 """Tests of authentication and access control of the TES API."""
 
+from pathlib import Path
 from typing import Any
 
 from cryptography.hazmat.primitives.asymmetric import rsa
 from flask.testing import FlaskClient
 import pytest
+import yaml
 
-from tests.conftest import ADMIN, OUTSIDER, USER, make_headers
+from pro_tes.app import init_app
+from tests.conftest import ADMIN, OUTSIDER, USER, make_headers, set_overlays
 from tests.ga4gh.tes.conftest import BASE_PATH, TASK, FakeBackend
 
 
@@ -72,8 +75,9 @@ def test_forbidden(client: FlaskClient, task_id: str) -> None:
         ),
         make_headers(issuer="https://other.example.org/oidc/"),
         make_headers(audience="other-client"),
+        make_headers(typ="JWT"),
     ],
-    ids=["no token", "malformed", "signature", "issuer", "audience"],
+    ids=["no token", "malformed", "signature", "issuer", "audience", "ID token"],
 )
 def test_unauthorized(
     anonymous_client: FlaskClient,
@@ -83,8 +87,9 @@ def test_unauthorized(
 ) -> None:
     """Requests without a valid token get `401`, with a Bearer challenge.
 
-    Only tokens of the trusted issuers, for the configured audiences, are
-    valid; rejected tasks are not relayed.
+    Only access tokens (RFC 9068; not, e.g., ID tokens) of the trusted
+    issuers, for the configured audiences, are valid; rejected tasks are not
+    relayed.
     """
     tracked.clear()
     for method, path in task_operations(task_id):
@@ -100,6 +105,37 @@ def test_unauthorized(
             assert challenge == "Bearer"
     assert not tracked
 
+
+@pytest.mark.parametrize(
+    "claims, status",
+    [
+        ({"client_id": "portal"}, 200),
+        ({"azp": "portal"}, 200),
+        ({"client_id": "other-portal"}, 401),
+        ({}, 401),
+    ],
+    ids=["listed client", "listed party", "other client", "no client"],
+)
+def test_clients(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    app_env: None,
+    claims: dict[str, Any],
+    status: int,
+) -> None:
+    """With `security.auth.clients`, only tokens of these clients are valid.
+
+    The client is the `client_id` claim, or the authorized party (`azp`).
+    """
+    overlay = tmp_path / "clients.yaml"
+    overlay.write_text(
+        yaml.safe_dump({"security": {"auth": {"clients": ["portal"]}}}),
+        encoding="utf-8",
+    )
+    set_overlays(monkeypatch, overlay)
+    client = init_app().app.test_client()
+    response = client.get(f"{BASE_PATH}/tasks", headers=make_headers(claims=claims))
+    assert response.status_code == status
 
 
 def test_public(anonymous_client: FlaskClient) -> None:

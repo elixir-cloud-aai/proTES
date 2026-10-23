@@ -33,6 +33,14 @@ can't be used until proTES has credentials of its own for them
 ([#213](https://github.com/elixir-cloud-aai/proTES/issues/213)). The Helm
 chart sets the config overlay from the value `config`.
 
+Only access tokens as per RFC 9068 (`typ` header `at+jwt`) are accepted;
+other tokens of the trusted issuers, such as ID tokens, are rejected with
+`401` (see [Authentication](access-control.md#authentication) for identity
+providers that set another `typ` header, or none). The challenge of `401`
+responses for invalid tokens has an `error_description`, too. The new
+option `security.auth.clients` limits the accepted tokens to those of
+certain clients (by default, clients are not restricted).
+
 ## Errors
 
 Errors are [problem details](api.md#errors) (`title`, `status`, `detail`)

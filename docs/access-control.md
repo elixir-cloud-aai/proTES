@@ -20,13 +20,22 @@ with `403 Forbidden` (both as [problem details](api.md#errors)).
 
 proTES accepts only tokens that:
 
+- are access tokens as per [RFC 9068](https://www.rfc-editor.org/rfc/rfc9068)
+  (`typ` header `at+jwt`), not, e.g., ID tokens;
 - are issued by one of the trusted issuers (`security.auth.issuers`, the
   `iss` claim), and verified with the issuer's keys (from its OpenID Connect
   discovery document);
 - are for one of the configured audiences (`security.auth.audience`, the
   `aud` claim), i.e., were issued to one of the apps that call proTES (e.g.,
   its front ends, by their client IDs);
+- if `security.auth.clients` is set, were obtained by one of these clients
+  (the `client_id` claim, or `azp` if there is none);
 - have not expired.
+
+If your identity provider sets another `typ` header on its access tokens,
+list it in `security.auth.token_types`; if it sets none, disable the check
+with `security.auth.verify_token_type: false` (see [FOCA's authentication
+options](https://foca.readthedocs.io/en/latest/configuration/auth/)).
 
 ## Roles
 

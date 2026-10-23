@@ -33,6 +33,9 @@ security:
     algorithms:
       - RS256
     allow_expired: False
+    # Only access tokens as per RFC 9068 (`typ` header `at+jwt`); other
+    # tokens of the issuers, such as ID tokens, are rejected
+    verify_token_type: True
     # Trusted token issuers (`iss` claim); tokens of other issuers are
     # rejected. Deployments set them, and `audience`: only tokens for the
     # apps calling proTES (e.g., the client IDs of its front ends) are
@@ -45,6 +48,11 @@ security:
     # (if the identity provider doesn't put them into access tokens):
     # userinfo_claims:
     #   - groups
+    # Deployments may also accept only tokens obtained by certain clients
+    # (`client_id` claim, or `azp` if there is none), e.g., their front ends;
+    # by default, clients are not restricted:
+    # clients:
+    #   - my-portal-client-id
     issuers: []
   # Access control: users (the role `user`) may create, list, read and cancel
   # tasks; admins (the role `admin`) may do everything. Roles are given to
