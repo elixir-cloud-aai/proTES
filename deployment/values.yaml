@@ -44,7 +44,11 @@ flower:
 
 protes:
   appName: protes
-  image: elixircloud/protes:latest
+  # Image and tag; the tag defaults to the chart's `appVersion`. An image
+  # with a tag or digest (e.g., `elixircloud/protes:0.3.0`) is used as it
+  # is (then `tag` must be empty)
+  image: elixircloud/protes
+  tag: ""
   initResources:
     limits:
       memory: 16Mi
@@ -61,7 +65,11 @@ protes:
 
 celeryWorker:
   appName: celery-worker
-  image: elixircloud/protes:latest
+  # Image and tag, as `protes.image` and `protes.tag`; if `image` is empty,
+  # the worker runs the app's image (`protes.image` and `protes.tag`), and
+  # `tag` must be empty
+  image: ""
+  tag: ""
   initResources:
     limits:
       memory: 16Mi

@@ -91,7 +91,10 @@ fail_under = 100
 
 [project]
 name = "pro-tes"
-authors = [{name = "ELIXIR On-Cloud"}, {email = "alexander.kanitz@alumni.ethz.ch"}]
+authors = [
+    {name = "ELIXIR On-Cloud", email = "cloud-service@elixir-europe.org"},
+    {name = "Alexander Kanitz"},
+]
 keywords = [
     "ga4gh", "tes", "proxy", "gateway", "elixir", "cloud", "rest", "restful",
     "api", "app", "server", "openapi", "swagger", "mongodb", "python", "flask"
@@ -163,7 +166,7 @@ file = "README.md"
 content-type = "text/markdown"
 
 [project.urls]
-homepage = "https://github.com/elixir-cloud-aai/proTES.git"
+homepage = "https://github.com/elixir-cloud-aai/proTES"
 Tracker = "https://github.com/elixir-cloud-aai/proTES/issues"
 Documentation = "https://protes.readthedocs.io"
 

@@ -121,9 +121,81 @@ The version is only stored in Git tags (`vX.Y.Z`): the package version is
 derived from them (via
 [setuptools-scm](https://setuptools-scm.readthedocs.io/)), and the service
 info reports it. Builds without Git metadata, such as local Docker builds
-(e.g., with Docker Compose), report `0.0.0.dev0`, unless the version is
-passed as build argument `SETUPTOOLS_SCM_PRETEND_VERSION`, as the CI
-workflow does for the images it publishes.
+(e.g., with Docker Compose), report `0.0.0.dev0`; the workflows pass the
+version to the image build (build argument `SETUPTOOLS_SCM_PRETEND_VERSION`).
+Images on Docker Hub (`elixircloud/protes`) are tagged:
+
+- `X.Y.Z`: release `X.Y.Z`; `latest`: the highest stable release (not an
+  alpha, beta or release candidate) on `main`;
+- `dev`: the latest commit on `dev`; `sha-<commit>`: commit `<commit>` on
+  `dev` (full SHA), to deploy a fixed commit. Only commits that are still the
+  head of `dev` when their CI run reaches the image job get images.
+
+Features and fixes are merged into `dev`. Branch `main` only ever moves
+forward to commits on `dev` that are released. First, shortly before the
+release, set its version and date in the citation metadata, which Zenodo
+archives with each release, and merge the change into `dev`; each version,
+also each pre-release (e.g., `X.Y.Zrc1`), needs its own such change:
+
+```bash
+python scripts/citation.py set X.Y.Z  # date: today (UTC), or --date YYYY-MM-DD
+```
+
+Then, to release version `X.Y.Z` from commit `<sha>` on `dev` (with that
+change), after CI passed for it:
+
+```bash
+git switch --detach <sha>
+python scripts/citation.py check X.Y.Z  # as the release workflow does
+git push origin <sha>:main  # fails unless it is a fast-forward
+git tag -s vX.Y.Z <sha> -m "vX.Y.Z"
+git push origin vX.Y.Z
+```
+
+The tag must be annotated and signed (`git tag -s`), with a key that GitHub can
+verify (added to the tagger's GitHub account). The [release
+workflow](https://github.com/elixir-cloud-aai/proTES/blob/dev/.github/workflows/release.yaml),
+triggered by the tag, checks that GitHub verified the signature, that the
+tag's commit is on `main` and its `CITATION.cff` has the release version and
+a date that is not in the future (UTC), that the dependencies are releases
+(see below), and that the [CI
+workflow](https://github.com/elixir-cloud-aai/proTES/blob/dev/.github/workflows/checks.yaml)
+passed for it (a run for the push of the commit to `dev`; if CI hasn't
+finished, failed or was cancelled, e.g., the image job of a commit that a
+later one superseded, re-run CI, then the release workflow). It packages
+the Helm chart with the release version as `version` and `appVersion` (the
+default image tag). In the packaged README, links to the latest docs and to
+files on branch `dev` point to the release (`/en/vX.Y.Z/`, `blob/vX.Y.Z/`);
+the release fails if any link to a version that moves is left
+(`scripts/chart_readme.py`). The README in the repository is unchanged.
+After approval in the `release` environment, it builds the image, pushes it
+by digest (untagged) and checks that the app reports the release version.
+After a second approval in the `release` environment, it tags exactly that
+image `X.Y.Z` (and `latest`, if it is the highest stable release on `main`)
+and creates a GitHub release with the chart (`.tgz`) and the notes in
+`docs/releases/X.Y.Z.md` (for pre-releases, e.g., `X.Y.Zrc1.md`), or, if
+there are none, notes generated from the merged pull requests. Curated notes
+are published as written, so the release workflow fails if they contain
+`TODO`; on re-runs, it replaces the notes of an existing release with them
+(also overwriting manual edits). Add curated notes to the
+[changelog](changelog.md) in `mkdocs.yml` (`nav`; the docs build fails
+otherwise), and refer to pages of the docs by name rather than by relative
+links, which don't work in GitHub releases. No packages are published to
+PyPI. Tags of alpha, beta and release candidate versions (e.g., `vX.Y.Zrc1`,
+also `aN` and `bN`) get chart version `X.Y.Z-rc1` (or `-aN`, `-bN`) and never
+update the `latest` image. These and, until 1.0.0, all other releases are
+GitHub pre-releases (never marked as the latest release). Re-running all
+jobs of the release workflow builds and tags a new image digest (the image
+build is not reproducible); re-running only the failed jobs reuses the digest
+already pushed. Digests of failed runs stay on Docker Hub, untagged. Images
+of commits on `dev` are published by the CI workflow (environment
+`dev-images`).
+
+The release workflow derives the version, the chart version, the kind of
+release (stable, GitHub pre-release) and whether the image is tagged `latest`
+from the tag with `scripts/release_version.py`, which is tested over a table
+of tags (`tests/test_release_version.py`) and checked like the app (ruff,
+mypy, coverage); change these rules there, not in the workflow.
 
 To test unreleased changes of FOCA, `pyproject.toml` may pin a FOCA commit
 (`foca @ git+https://github.com/elixir-cloud-aai/foca@<sha>`), with FOCA's
@@ -133,24 +205,35 @@ later commits of that day). The `Dockerfile` records the commit as
 `## FOCA commit: <sha>`, which the tests check (`tests/test_build.py`); the
 image build doesn't reinstall FOCA, but fails unless the base image has FOCA
 of that commit (`scripts/image_requirements.py`). Dependabot ignores the base
-image meanwhile. Such pins are temporary: `scripts/check_release_pins.py`
-fails while a dependency (also an optional one) is a direct reference or
-names a pre-release or a local version (e.g., `+g<commit>`), the base image
-has no release tag, or a chart dependency has another version than a
-release. It runs for each pushed
-release tag (`.github/workflows/release-pins.yaml`; check its result before
-publishing the GitHub release), and in the tests of checkouts of release tags
-(`tests/test_check_release_pins.py`), so replace the pins by the released
-versions before tagging. This applies to pre-releases of the app, too: they
-are built on FOCA releases.
+image meanwhile. Such pins are temporary: the release workflow fails while a
+dependency (also an optional one) is a direct reference or names a
+pre-release or a local version (e.g., `+g<commit>`), the base image has no
+release tag, or a chart dependency has another version than a release
+(`scripts/check_release_pins.py`, tested in
+`tests/test_check_release_pins.py`, whose tests also fail for checkouts of
+release tags with such pins), so replace them by the released versions
+before tagging. This applies to pre-releases of the app, too: they are built
+on FOCA releases.
 
-Zenodo archives each GitHub release with the citation metadata
-(`CITATION.cff`) of the tagged commit, so they must have the release version.
-Shortly before the release, set its version and date and merge the change
-into `dev`; each version, also each pre-release (e.g., `X.Y.Zrc1`), needs its
-own such change. Before tagging the release commit, check it:
+In curated notes, link all changes of the release as the compare view from
+the previous release's tag (e.g.,
+`https://github.com/elixir-cloud-aai/proTES/compare/vA.B.C...vX.Y.Z`)
+rather than naming a range of pull requests, which goes stale when more pull
+requests are merged before the release.
 
-```bash
-python scripts/citation.py set X.Y.Z  # date: today (UTC), or --date YYYY-MM-DD
-python scripts/citation.py check X.Y.Z  # on the release commit
-```
+Maintainers: the workflows rely on these repository settings: environment
+`dev-images` limited to branch `dev`; environment `release` with a required
+reviewer; a tag ruleset for `v*` that restricts who may create them and
+prevents moving or deleting them; `main` protected against non-fast-forward
+pushes; and the Docker Hub secrets (`DOCKERHUB_LOGIN`, `DOCKERHUB_TOKEN`)
+only in the two environments, not as repository secrets. The Docker Hub
+organization is the repository variable `DOCKERHUB_ORG` (by default
+`elixircloud`; forks set it to the organization they publish to, and change
+the chart's default image, `protes.image` in `deployment/values.yaml`, to
+match). On Read
+the Docs, an automation rule activates the versions of tags (`v*`), so that
+the docs linked from packaged charts exist.
+
+The release workflow installs a fixed Helm version (`version:` of
+`azure/setup-helm` in `release.yaml`). Dependabot updates the action, but not
+that version: bump it by hand.
