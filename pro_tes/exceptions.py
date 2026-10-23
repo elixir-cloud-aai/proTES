@@ -142,6 +142,16 @@ exceptions = {
         "detail": "No valid TES instances available.",
         "status": 500,
     },
+    BackendAuthError: {
+        "title": "Internal server error",
+        "detail": "No credentials for the TES instance of the task available.",
+        "status": 500,
+    },
+    BackendNotConfigured: {
+        "title": "Internal server error",
+        "detail": "The TES instance of the task is not configured.",
+        "status": 500,
+    },
     MiddlewareException: {
         "title": "Internal server error",
         "detail": "Middleware could not be applied.",

@@ -18,6 +18,8 @@ FILE_FIELDS = (
     "task_original.inputs",
     "task_original.outputs",
 )
+# Field of stored tasks with the outputs logged by backends (in each log)
+LOG_OUTPUTS_FIELD = "task.logs.outputs"
 
 
 def _strip_urls(items: Any) -> bool:
@@ -49,8 +51,8 @@ def remove_stored_credentials(collection: Collection[dict[str, Any]]) -> None:
     """Remove credentials of callers from tasks stored by earlier versions.
 
     That is, their HTTP Basic credentials (`basic_auth`), and credentials
-    in the URLs of inputs and outputs (also of the tasks as received). Run on
-    startup; idempotent.
+    in the URLs of inputs and outputs (also of the tasks as received, and
+    of the outputs in their logs). Run on startup; idempotent.
 
     Args:
         collection: Database collection of the tasks.
@@ -65,15 +67,24 @@ def remove_stored_credentials(collection: Collection[dict[str, Any]]) -> None:
         )
     # URLs with user information (`scheme://user:password@host...`)
     pattern = {"$regex": "^[^/?#]*//[^/?#]*@"}
-    query = {"$or": [{f"{field}.url": pattern} for field in FILE_FIELDS]}
+    fields = [*FILE_FIELDS, LOG_OUTPUTS_FIELD]
+    query = {"$or": [{f"{field}.url": pattern} for field in fields]}
     stripped = 0
-    for document in collection.find(query, projection=["_id", *FILE_FIELDS]):
+    for document in collection.find(
+        query, projection=["_id", *FILE_FIELDS, "task.logs"]
+    ):
         update: dict[str, Any] = {}
         for field in FILE_FIELDS:
             root, name = field.split(".")
             items = (document.get(root) or {}).get(name)
             if _strip_urls(items):
                 update[field] = items
+        # outputs that backends logged, e.g., Funnel, which earlier versions
+        # forwarded URLs with credentials to
+        logs = (document.get("task") or {}).get("logs")
+        for log in logs if isinstance(logs, list) else []:
+            if isinstance(log, dict) and _strip_urls(log.get("outputs")):
+                update["task.logs"] = logs
         if update:
             collection.update_one({"_id": document["_id"]}, {"$set": update})
             stripped += 1

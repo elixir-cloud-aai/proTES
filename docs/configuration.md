@@ -69,7 +69,7 @@ custom:
   URLs of their inputs or outputs (`https://user:password@host/...`): they
   are rejected with `400 Bad Request` (`reject`, the default), or the
   credentials are removed (`strip`); credentials are never stored or
-  forwarded;
+  forwarded, and those that middlewares add are always removed;
 - `list_tasks.default_page_size`: the number of tasks per page of
   `GET /tasks` if the request sets no `page_size` (default 256, as in the
   TES specification);

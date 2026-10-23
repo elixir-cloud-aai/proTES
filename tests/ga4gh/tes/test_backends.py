@@ -14,7 +14,7 @@ from pro_tes.ga4gh.tes import backends
 from pro_tes.utils.misc import get_custom_config
 
 ISSUER = "https://idp.example.org/oidc/"
-TOKEN_ENDPOINT = "https://idp.example.org/oidc/token"
+TOKEN_ENDPOINT = "https://idp.example.org/oidc/token"  # noqa: S105 (a URL)
 DISCOVERY_URL = "https://idp.example.org/oidc/.well-known/openid-configuration"
 BACKEND_URL = "https://tes.example.org"
 # Fictitious client of proTES
@@ -197,6 +197,21 @@ def test_token_cached(idp: FakeIdp, clock: Clock) -> None:
     assert idp.discoveries == 1
 
 
+def test_token_refresh_failed(idp: FakeIdp, clock: Clock) -> None:
+    """If a new token can't be fetched, the cached one is used until it expires."""
+    assert get_token() == "token-1"
+    idp.token_status = 503
+    clock.now += 240
+    assert get_token() == "token-1"
+    clock.now += 59
+    assert get_token() == "token-1"
+    clock.now += 1
+    with pytest.raises(BackendAuthError, match="status 503"):
+        get_token()
+    idp.token_status = 200
+    assert get_token() == "token-5"
+
+
 def test_token_short_lifetime(idp: FakeIdp, clock: Clock) -> None:
     """Short-lived tokens are fetched anew after half their lifetime."""
     idp.token["expires_in"] = 20
@@ -208,9 +223,7 @@ def test_token_short_lifetime(idp: FakeIdp, clock: Clock) -> None:
 
 
 @pytest.mark.parametrize("expires_in", [None, "300", True])
-def test_token_lifetime_unknown(
-    idp: FakeIdp, clock: Clock, expires_in: Any
-) -> None:
+def test_token_lifetime_unknown(idp: FakeIdp, clock: Clock, expires_in: Any) -> None:
     """Tokens without a valid lifetime are taken to expire after 60 seconds."""
     idp.token["expires_in"] = expires_in
     assert get_token() == "token-1"
@@ -265,9 +278,7 @@ def test_token_client_missing(
         ({"access_token": "x", "token_type": 1}, 200, "No bearer access token"),
     ],
 )
-def test_token_invalid(
-    idp: FakeIdp, token: Any, status: int, match: str
-) -> None:
+def test_token_invalid(idp: FakeIdp, token: Any, status: int, match: str) -> None:
     """Errors and invalid responses of the token endpoint give no token."""
     idp.token = token
     idp.token_status = status
@@ -335,7 +346,8 @@ def configured(app: FlaskApp) -> Iterator[None]:
                 url=f"{BACKEND_URL}/basic",
                 auth="basic",
                 basic=BasicCredentials(
-                    username_env="TES_BASIC_USERNAME", password_env="TES_BASIC_PASSWORD"
+                    username_env="TES_BASIC_USERNAME",
+                    password_env="TES_BASIC_PASSWORD",  # noqa: S106 (a name)
                 ),
             ),
             TesBackend(url=f"{BACKEND_URL}/none", auth="none"),
@@ -384,6 +396,14 @@ def test_client_basic(
         request_kwargs(f"{BACKEND_URL}/basic")
 
 
+def test_client_basic_unset(configured: None) -> None:
+    """Backends with `auth: basic`, but no `basic` (not validated), get none."""
+    backend = TesBackend.model_construct(url=BACKEND_URL, auth="basic", basic=None)
+    client = backends.TesClient(url=BACKEND_URL, backend=backend)
+    with pytest.raises(BackendAuthError, match="No Basic credentials"):
+        client._request_params()
+
+
 def test_client_none(configured: None, idp: FakeIdp) -> None:
     """Backends with `auth: none` get no credentials."""
     kwargs = request_kwargs(f"{BACKEND_URL}/none")
@@ -401,7 +421,7 @@ def test_client_url(configured: None) -> None:
 
 def test_client_not_configured(configured: None) -> None:
     """Backends that are not configured get no client (and no credentials)."""
-    with pytest.raises(BackendNotConfigured, match="other.example.org"):
+    with pytest.raises(BackendNotConfigured, match=r"other\.example\.org"):
         backends.create_client(host="https://other.example.org")
 
 

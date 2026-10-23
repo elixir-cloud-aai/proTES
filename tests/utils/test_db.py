@@ -80,12 +80,22 @@ def test_remove_stored_credentials(
             },
             {"worker_id": "worker-2", "basic_auth": {}, "task": {}},
             {"worker_id": "worker-3", "task": {"outputs": files("s3://bucket/out")}},
+            {
+                "worker_id": "worker-4",
+                "task": {
+                    "logs": [
+                        "invalid",
+                        {"outputs": files("https://user:pw@bucket/out")},
+                        {"outputs": files("s3://bucket/out")},
+                    ]
+                },
+            },
         ]
     )
     with caplog.at_level("INFO"):
         remove_stored_credentials(collection=collection)
     assert "Removed HTTP Basic credentials from 2 stored tasks" in caplog.text
-    assert "Removed credentials from the URLs of 1 stored tasks" in caplog.text
+    assert "Removed credentials from the URLs of 2 stored tasks" in caplog.text
     documents = {
         document.pop("worker_id"): document
         for document in collection.find(projection={"_id": False})
@@ -103,6 +113,15 @@ def test_remove_stored_credentials(
         },
         "worker-2": {"task": {}},
         "worker-3": {"task": {"outputs": files("s3://bucket/out")}},
+        "worker-4": {
+            "task": {
+                "logs": [
+                    "invalid",
+                    {"outputs": files("https://bucket/out")},
+                    {"outputs": files("s3://bucket/out")},
+                ]
+            }
+        },
     }
     caplog.clear()
     with caplog.at_level("INFO"):

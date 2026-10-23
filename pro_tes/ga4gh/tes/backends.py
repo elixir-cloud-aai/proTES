@@ -71,17 +71,21 @@ class _Token:
     Attributes:
         value: The access token.
         refresh_at: When to fetch a new token (`time.monotonic()`).
+        expires_at: When the token expires (`time.monotonic()`).
     """
 
     value: str
     refresh_at: float
+    expires_at: float
 
 
 class TokenProvider:
     """Access tokens of proTES (client credentials grant), cached.
 
     Thread-safe; each process (e.g., each Gunicorn or Celery worker) has its
-    own cache.
+    own cache. Tokens are fetched by one thread at a time, so that threads
+    that need a new token at the same time wait for the same fetch instead of
+    each fetching one.
     """
 
     def __init__(self) -> None:
@@ -101,7 +105,7 @@ class TokenProvider:
 
         A cached token is used until `refresh_before` seconds before it
         expires (at most half its lifetime before), then a new one is
-        fetched.
+        fetched; if that fails, the cached token is used until it expires.
 
         Args:
             config: TES backend configuration.
@@ -120,14 +124,23 @@ class TokenProvider:
             endpoint = self._get_token_endpoint(config=config)
             key = (endpoint, client_id, idp.scope)
             token = self._tokens.get(key)
-            if token is None or time.monotonic() >= token.refresh_at:
+            if token is not None and time.monotonic() < token.refresh_at:
+                return token.value
+            try:
                 token = self._fetch_token(
                     endpoint=endpoint,
                     client_id=client_id,
                     client_secret=client_secret,
                     idp=idp,
                 )
-                self._tokens[key] = token
+            except BackendAuthError as exc:
+                if token is None or time.monotonic() >= token.expires_at:
+                    raise
+                logger.warning(
+                    "Using the cached access token until it expires: %s", exc
+                )
+                return token.value
+            self._tokens[key] = token
             return token.value
 
     def _get_token_endpoint(self, config: Tes) -> str:
@@ -251,7 +264,11 @@ class TokenProvider:
             lifetime = DEFAULT_TOKEN_LIFETIME
         lifetime = max(float(lifetime), 0.0)
         margin = min(float(idp.refresh_before), lifetime / 2)
-        return _Token(value=value, refresh_at=start + lifetime - margin)
+        return _Token(
+            value=value,
+            refresh_at=start + lifetime - margin,
+            expires_at=start + lifetime,
+        )
 
 
 token_provider = TokenProvider()
@@ -315,7 +332,10 @@ class TesClient(tes.HTTPClient):
         if self.backend.auth == "client_credentials":
             token = token_provider.get_token(config=get_custom_config().tes)
             kwargs["headers"]["Authorization"] = f"Bearer {token}"
-        elif self.backend.auth == "basic" and self.backend.basic is not None:
+        elif self.backend.auth == "basic":
+            if self.backend.basic is None:
+                # prevented by the config validation
+                raise BackendAuthError(f"No Basic credentials of {self.backend.url}")
             kwargs["auth"] = (
                 get_env(self.backend.basic.username_env),
                 get_env(self.backend.basic.password_env),

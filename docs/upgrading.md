@@ -89,7 +89,9 @@ credentials instead.
 
 On startup, proTES removes the HTTP Basic credentials of callers that
 earlier versions stored with each task (`basic_auth`), and credentials in
-the URLs of inputs and outputs of stored tasks. Stored tasks are still
+the URLs of inputs and outputs of stored tasks (also of the outputs that
+TES instances logged). The Celery worker refuses to start, too, if
+credentials of TES instances are missing. Stored tasks are still
 tracked and canceled with the credentials now configured for their TES
 instance. The Celery task that tracks tasks no longer takes credentials
 (`user`, `password`), so the new worker rejects tracking jobs that earlier

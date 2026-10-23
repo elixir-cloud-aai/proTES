@@ -170,9 +170,18 @@ custom:
       auth_method: client_secret_basic
 ```
 
+The Docker Compose setup passes `PROTES_CLIENT_ID` and
+`PROTES_CLIENT_SECRET` of the host to the app and the Celery worker; the
+Helm chart doesn't set them yet
+([#216](https://github.com/elixir-cloud-aai/proTES/issues/216)). The Celery
+worker checks the credentials on startup, too.
+
 The client of proTES is registered at the identity provider for the client
 credentials grant; it is a client of its own, not the client of the front
-ends whose tokens proTES accepts (`security.auth.audience`). Tasks are only
+ends whose tokens proTES accepts (`security.auth.audience`). All TES
+instances with `client_credentials` get the same token, so each of them
+could use it at the others until it expires: configure only TES instances
+that you trust, and keep the lifetime of the tokens short. Tasks are only
 forwarded to configured TES instances: TES instances that middlewares add
 (`tes_urls`) are skipped, as proTES has no credentials for them. Keep TES
 instances in the list until their tasks have finished: tasks of TES
@@ -188,7 +197,8 @@ Credentials in the URLs of inputs and outputs of tasks
 rejected with `400 Bad Request`, or, if
 `custom.controllers.post_task.url_credentials` is `strip`, the credentials
 are removed before the task is stored and forwarded (see
-[Tasks](configuration.md#tasks)).
+[Tasks](configuration.md#tasks)). Credentials that middlewares add are
+always removed.
 
 proTES doesn't tell TES instances on whose behalf it forwards tasks yet:
 they only see proTES. Tags with the identity of the user are planned, once

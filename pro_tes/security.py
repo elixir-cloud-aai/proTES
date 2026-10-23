@@ -5,6 +5,7 @@ import os
 
 from foca import get_config
 
+from pro_tes.config_models import Tes
 from pro_tes.ga4gh.tes.backends import CLIENT_ID_ENV, CLIENT_SECRET_ENV
 from pro_tes.utils.misc import get_custom_config
 
@@ -89,12 +90,16 @@ def _missing_env(*names: str) -> list[str]:
     return [name for name in names if not os.environ.get(name)]
 
 
-def check_backends() -> None:
+def check_backends(conf: Tes | None = None) -> None:
     """Check the credentials of the TES backends, and log how they are used.
 
     A warning is logged if no backend is configured, for each backend
     without token authentication (`auth: basic` or `none`), and if URLs
-    with scheme `http` are allowed. Must be called in an app context.
+    with scheme `http` are allowed.
+
+    Args:
+        conf: TES backend configuration; by default, that of the current app
+            (in an app context).
 
     Raises:
         RuntimeError: Environment variables with credentials are not set:
@@ -102,7 +107,8 @@ def check_backends() -> None:
             client_credentials`, or the HTTP Basic credentials of a backend
             with `auth: basic`.
     """
-    conf = get_custom_config().tes
+    if conf is None:
+        conf = get_custom_config().tes
     if not conf.service_list:
         logger.warning(
             "No TES backends are configured (`custom.tes.service_list`), so"
@@ -119,8 +125,7 @@ def check_backends() -> None:
     for backend in conf.service_list:
         if backend.auth == "client_credentials":
             token_backends.append(backend.url)
-        elif backend.basic is not None:
-            # `auth: basic` (validated)
+        elif backend.auth == "basic" and backend.basic is not None:
             logger.warning(
                 "TES backend %s: HTTP Basic credentials (`auth: basic`), a"
                 " transitional mode for backends that don't accept tokens",

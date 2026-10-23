@@ -793,6 +793,47 @@ def test_cancel_task_no_remote_id(
     assert stored(mongo_client, task_id)["task"]["state"] == "RUNNING"
 
 
+def test_cancel_task_backend_not_configured(
+    app: FlaskApp,
+    client: FlaskClient,
+    task_id: str,
+    backend: type[FakeBackend],
+    mongo_client: MongoClient[dict[str, Any]],
+) -> None:
+    """Tasks of backends that are no longer configured can't be canceled."""
+    set_state(mongo_client, task_id, "RUNNING")
+    with app.app.app_context():
+        get_custom_config().tes.service_list = []
+    response = client.post(f"{BASE_PATH}/tasks/{task_id}:cancel")
+    assert response.status_code == 500
+    assert response.get_json()["detail"] == (
+        "The TES instance of the task is not configured."
+    )
+    assert backend.canceled == []
+    assert stored(mongo_client, task_id)["task"]["state"] == "RUNNING"
+
+
+def test_cancel_task_backend_auth_error(
+    client: FlaskClient,
+    task_id: str,
+    backend: type[FakeBackend],
+    mongo_client: MongoClient[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Tasks can't be canceled without credentials for their backend."""
+
+    def cancel_task(self: FakeBackend, task_id: str) -> None:
+        """Fail, as if no token was obtained."""
+        raise BackendAuthError("no token")
+
+    monkeypatch.setattr(backend, "cancel_task", cancel_task)
+    set_state(mongo_client, task_id, "RUNNING")
+    response = client.post(f"{BASE_PATH}/tasks/{task_id}:cancel")
+    assert response.status_code == 500
+    assert "No credentials" in response.get_json()["detail"]
+    assert stored(mongo_client, task_id)["task"]["state"] == "RUNNING"
+
+
 def test_create_task_no_basic_auth(
     client: FlaskClient, backend: type[FakeBackend], tracked: list[dict[str, Any]]
 ) -> None:
