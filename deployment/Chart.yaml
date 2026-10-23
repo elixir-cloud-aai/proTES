@@ -8,9 +8,9 @@ type: application
 # (`vX.Y.Z`, see "Versioning and releases" in `docs/development.md`).
 version: 0.0.0
 # `appVersion` is the default image tag, so the chart in the repository
-# deploys the image of the latest commit on `dev` (`latest`) unless
-# `protes.tag` is set
-appVersion: "latest"
+# deploys the `dev` image (of the latest commit on `dev`) unless `protes.tag`
+# is set
+appVersion: "dev"
 dependencies:
   # The library chart of FOCA apps, with the templates of all resources (see
   # "Helm library chart" in FOCA's docs); `helm dependency build` packages

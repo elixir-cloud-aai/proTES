@@ -119,8 +119,9 @@ your name, [ORCID iD](https://orcid.org/) or affiliation), open a pull
 request that changes only your entry; don't add e-mail addresses. CI
 validates the file (`cffconvert --validate`). Before each release, `python
 scripts/citation.py set X.Y.Z` sets its `version` and `date-released`, and
-`python scripts/citation.py check X.Y.Z` checks that they match the release
-(see [Versioning and releases](development.md#versioning-and-releases)).
+the release workflow fails if they don't match the release (`python
+scripts/citation.py check X.Y.Z`; see [Versioning and
+releases](development.md#versioning-and-releases)).
 
 ## Python guidelines
 

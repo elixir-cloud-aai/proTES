@@ -94,23 +94,31 @@ upgrade. As `config` is stored in a ConfigMap, it must not contain secrets
 
 The app image is `protes.image` (default `elixircloud/protes`) with tag
 `protes.tag`, which defaults to the chart's `appVersion`; the worker runs the
-same image. In the repository, `appVersion` is `latest`: the chart deploys
-the image of the latest commit on `dev`, which changes with every commit, so
-deployments from the repository should set a fixed tag (e.g., a dated tag,
-`20261023`) in the values file:
+same image. Charts attached to [GitHub
+releases](https://github.com/elixir-cloud-aai/proTES/releases) have the
+release version as `version` and `appVersion`, so they deploy the image of
+their release (`X.Y.Z`). In the repository, both are placeholders, and
+`appVersion` is `dev`: the chart deploys the latest image of branch `dev`,
+which changes with every commit. Deployments from the repository should set
+the tag of a release (e.g., `0.3.0`) or of a commit on `dev`
+(`sha-<commit>`, the full commit SHA) in the values file:
 
 ```yaml
 protes:
-  tag: "20261023"
+  tag: sha-0123456789abcdef0123456789abcdef01234567
 ```
 
 `protes.image` may also include a tag or digest (e.g.,
-`elixircloud/protes:20261023`); then `protes.tag` must be empty. The image is
-pulled on every start of a pod (`protes.imagePullPolicy: Always`), so that
-moving tags such as `latest` deploy the latest image; set `IfNotPresent` for
-fixed tags or digests, or `Never` for images loaded into the nodes (e.g.,
-with `kind load`). The images of MongoDB, RabbitMQ and Flower are pinned to
-patch versions and pulled only if missing.
+`elixircloud/protes:0.3.0`, as in earlier chart versions); then `protes.tag`
+must be empty. See [Versioning and
+releases](https://protes.readthedocs.io/en/latest/development/#versioning-and-releases)
+for the image tags.
+
+The image is pulled on every start of a pod (`protes.imagePullPolicy:
+Always`), so that moving tags such as `dev` deploy the latest image; set
+`IfNotPresent` for fixed tags or digests, or `Never` for images loaded into
+the nodes (e.g., with `kind load`). The images of MongoDB, RabbitMQ and
+Flower are pinned to patch versions and pulled only if missing.
 
 The chart needs images built with FOCA 0.17 or later (installed as a
 package, with the worker entry point `pro_tes.celery_worker`; see
@@ -121,9 +129,20 @@ package, with the worker entry point `pro_tes.celery_worker`; see
 Create the Secrets with the MongoDB credentials (see
 [Authentication](#authentication)) and the broker URL (see [Celery worker
 and broker](#celery-worker-and-broker)), and set their names in the values
-file (`mongodb.auth.existingSecret`, `broker.existingSecret`). Then build
-the library chart (into `charts/`, the version locked in `Chart.lock`) and
-install the chart from the `deployment` folder of the repository:
+file (`mongodb.auth.existingSecret`, `broker.existingSecret`). Then install
+the chart of a [release](https://github.com/elixir-cloud-aai/proTES/releases)
+(`protes-X.Y.Z.tgz`, attached to the release `vX.Y.Z`):
+
+```bash
+helm install protes \
+  https://github.com/elixir-cloud-aai/proTES/releases/download/vX.Y.Z/protes-X.Y.Z.tgz \
+  -n <namespace> -f values-prod.yaml
+```
+
+To install the chart from the `deployment` folder of the repository instead
+(e.g., to test changes of the chart), build the library chart (into
+`charts/`, the version locked in `Chart.lock`), and set `protes.tag` (see
+[Image](#image)), as the chart deploys the moving `dev` image otherwise:
 
 ```bash
 scripts/foca_common.sh  # TEMPORARY, see below
@@ -131,9 +150,9 @@ helm dependency build deployment
 helm install protes deployment -n <namespace> -f values-prod.yaml
 ```
 
-Until `foca-common` 0.2.0 is released, the chart takes the library chart
-from a commit of FOCA (`# FOCA commit:` in `Chart.yaml`), which
-`scripts/foca_common.sh` checks out into `.foca-common/` (see [Helm
+Until `foca-common` 0.2.0 is released, the chart in the repository takes
+the library chart from a commit of FOCA (`# FOCA commit:` in `Chart.yaml`),
+which `scripts/foca_common.sh` checks out into `.foca-common/` (see [Helm
 chart](https://protes.readthedocs.io/en/latest/development/#helm-chart)).
 
 `<namespace>` is the namespace to deploy to; `protes` is the name of the
@@ -512,10 +531,13 @@ the app's and the worker's pods to connect to the database.
 ## Upgrades
 
 Change the values file (e.g., `config` for the config, `protes.tag` for the
-image) and upgrade the release:
+image of a chart from the repository) and upgrade the release, with the
+chart of a release (or `deployment`, as when installing):
 
 ```bash
-helm upgrade protes deployment -n <namespace> -f values-prod.yaml
+helm upgrade protes \
+  https://github.com/elixir-cloud-aai/proTES/releases/download/vX.Y.Z/protes-X.Y.Z.tgz \
+  -n <namespace> -f values-prod.yaml
 ```
 
 Upgrade with the values file (`-f`), not with `--reuse-values`, which would

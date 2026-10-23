@@ -64,12 +64,12 @@ config: {}
 
 protes:
   # Image repository; may include a tag or digest instead of setting `tag`
-  # (e.g., `elixircloud/protes:20261023`). The image of the app also runs
-  # the Celery worker (`worker`)
+  # (e.g., `elixircloud/protes:0.3.0`). The image of the app also runs the
+  # Celery worker (`worker`)
   image: elixircloud/protes
   # Image tag; defaults to the chart's `appVersion`, i.e., the release
-  # version for released charts and `latest` (the latest commit on `dev`)
-  # for the chart in the repository (see deployment/README.md, Image)
+  # version for released charts and `dev` (the latest commit on `dev`) for
+  # the chart in the repository (see deployment/README.md, Image)
   tag: ""
   # Pull policy of the image (`Always`, `IfNotPresent` or `Never`)
   imagePullPolicy: Always
