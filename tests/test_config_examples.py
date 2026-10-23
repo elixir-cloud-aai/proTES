@@ -22,8 +22,9 @@ MARKDOWN = [
     ROOT / "deployment/README.md",
     *sorted((ROOT / "docs").glob("*.md")),
 ]
-# YAML code blocks of Markdown files
-YAML_BLOCK = re.compile(r"^```yaml\n(.*?)^```", re.DOTALL | re.MULTILINE)
+# YAML code blocks of Markdown files (`yaml` or `yml`, with or without
+# further info, e.g., a title)
+YAML_BLOCK = re.compile(r"^```ya?ml\b[^\n]*\n(.*?)^```", re.DOTALL | re.MULTILINE)
 # Sources that must contribute examples (collection by heuristics must not
 # silently miss them)
 EXPECTED_SOURCES = {
