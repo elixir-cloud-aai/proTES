@@ -70,6 +70,14 @@ most 2047 (`custom.controllers.list_tasks`, see
 regular expression. proTES no longer starts if
 `custom.controllers.list_tasks.default_page_size` exceeds `max_page_size`.
 
+## Distance-based task distribution
+
+The distance-based middleware looks up the places of IP addresses with
+DB-IP's API over HTTPS (was HTTP), and their coordinates with Nominatim (see
+[Built-in middlewares](middlewares.md#built-in-middlewares)), as before, but
+no longer with the unmaintained package `ip2geotools`, which doesn't install
+on Python 3.13. Requests time out after 10 seconds (was 62).
+
 ## Middleware management API
 
 The middleware management API is no longer registered, as its controllers

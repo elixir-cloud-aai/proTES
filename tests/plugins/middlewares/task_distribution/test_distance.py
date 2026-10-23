@@ -1,17 +1,19 @@
 """Tests of the distance-based task distribution middleware."""
 
 import socket
-from typing import Any
+from typing import Any, ClassVar
 
 import flask
-from ip2geotools.errors import InvalidRequestError
-from ip2geotools.models import IpLocation
+from geopy.exc import GeocoderServiceError
 import pytest
+import requests
 
 from pro_tes.exceptions import MiddlewareException
 from pro_tes.plugins.middlewares.task_distribution import distance
 from pro_tes.plugins.middlewares.task_distribution.distance import (
+    Location,
     TaskDistributionDistance,
+    locate_ip,
 )
 
 # Hosts, their IP addresses (documentation ranges, RFC 5737) and locations
@@ -48,17 +50,16 @@ def resolve(host: str) -> str:
         raise socket.gaierror(f"Unknown host: {host}") from None
 
 
-def locate(ip_address: str, **kwargs: Any) -> IpLocation:
-    """Locate the IP addresses of the tests, as `DbIpCity.get()` does.
+def locate(ip_address: str) -> Location:
+    """Locate the IP addresses of the tests, as `locate_ip()` does.
 
     Raises:
-        InvalidRequestError: The IP address is unknown.
+        MiddlewareException: The IP address is unknown.
     """
     if ip_address not in LOCATIONS:
-        raise InvalidRequestError
-    location = IpLocation(ip_address)
-    location.latitude, location.longitude = LOCATIONS[ip_address]
-    return location
+        raise MiddlewareException(f"Could not determine location for IP: {ip_address}")
+    latitude, longitude = LOCATIONS[ip_address]
+    return Location(latitude=latitude, longitude=longitude)
 
 
 @pytest.fixture
@@ -66,13 +67,13 @@ def located(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     """Locations of the hosts of the tests; records located IP addresses."""
     calls: list[str] = []
 
-    def get(ip_address: str, **kwargs: Any) -> IpLocation:
+    def get(ip_address: str) -> Location:
         """Locate and record an IP address."""
         calls.append(ip_address)
         return locate(ip_address)
 
     monkeypatch.setattr(distance, "gethostbyname", resolve)
-    monkeypatch.setattr(distance.DbIpCity, "get", get)
+    monkeypatch.setattr(distance, "locate_ip", get)
     return calls
 
 
@@ -155,3 +156,192 @@ def test_no_json() -> None:
         TaskDistributionDistance()._set_tes_urls(
             tes_urls=TES_URLS, request=flask.request
         )
+
+
+# Places of IP addresses, as DB-IP's API returns them, and their coordinates,
+# as Nominatim returns them for the queries of `locate_ip()`
+PLACE = {
+    "ipAddress": "192.0.2.1",
+    "countryCode": "CH",
+    "stateProv": "Basel-City",
+    "city": "Basel",
+}
+QUERY = "Basel, Basel-City CH"
+FALLBACK_QUERY = "Basel, CH"
+
+
+class FakeResponse:
+    """Fake response of DB-IP's API (`requests.get()`)."""
+
+    def __init__(self, data: Any, status_code: int = 200) -> None:
+        """Create a response with a JSON body (`ValueError` if not JSON)."""
+        self.data = data
+        self.status_code = status_code
+
+    def raise_for_status(self) -> None:
+        """Raise an error for error status codes, as `requests` does.
+
+        Raises:
+            requests.HTTPError: The status code is 400 or higher.
+        """
+        if self.status_code >= 400:
+            raise requests.HTTPError(str(self.status_code))
+
+    def json(self) -> Any:
+        """Get the JSON body.
+
+        Raises:
+            ValueError: The body is not JSON.
+        """
+        if isinstance(self.data, Exception):
+            raise self.data
+        return self.data
+
+
+class FakePoint:
+    """Fake result of Nominatim (`geopy.location.Location`)."""
+
+    def __init__(self, latitude: float, longitude: float) -> None:
+        """Create a result with coordinates."""
+        self.latitude = latitude
+        self.longitude = longitude
+
+
+class FakeNominatim:
+    """Fake Nominatim geocoder: geocodes the queries of `RESULTS`.
+
+    Records the arguments it is created with, and the queries.
+    """
+
+    RESULTS: ClassVar[dict[str, FakePoint]] = {QUERY: FakePoint(47.56, 7.59)}
+    created: ClassVar[list[dict[str, Any]]] = []
+    queries: ClassVar[list[str]] = []
+    error: ClassVar[Exception | None] = None
+
+    def __init__(self, **kwargs: Any) -> None:
+        """Create a geocoder; records the arguments."""
+        self.created.append(kwargs)
+
+    def geocode(self, query: str) -> FakePoint | None:
+        """Geocode a query.
+
+        Raises:
+            Exception: `error`, if set.
+        """
+        self.queries.append(query)
+        if self.error is not None:
+            raise self.error
+        return self.RESULTS.get(query)
+
+
+@pytest.fixture
+def services(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, dict[str, Any]]]:
+    """Fake geolocation services; records the requests to DB-IP's API."""
+    requested: list[tuple[str, dict[str, Any]]] = []
+
+    def get(url: str, **kwargs: Any) -> FakeResponse:
+        """Get the place of `192.0.2.1`, or an error of DB-IP's API."""
+        requested.append((url, kwargs))
+        if url.endswith("/192.0.2.1"):
+            return FakeResponse(PLACE)
+        return FakeResponse({"error": "invalid address"})
+
+    monkeypatch.setattr(distance.requests, "get", get)
+    monkeypatch.setattr(distance, "Nominatim", FakeNominatim)
+    monkeypatch.setattr(FakeNominatim, "created", [])
+    monkeypatch.setattr(FakeNominatim, "queries", [])
+    monkeypatch.setattr(FakeNominatim, "error", None)
+    return requested
+
+
+def test_locate_ip(services: list[tuple[str, dict[str, Any]]]) -> None:
+    """IP addresses are located by DB-IP's API (HTTPS) and Nominatim.
+
+    Both services are called with a timeout, and Nominatim with a user agent
+    naming the app, as its usage policy requires.
+    """
+    assert locate_ip("192.0.2.1") == Location(latitude=47.56, longitude=7.59)
+    assert services == [
+        ("https://api.db-ip.com/v2/free/192.0.2.1", {"timeout": distance.TIMEOUT})
+    ]
+    assert FakeNominatim.created == [
+        {"user_agent": distance.USER_AGENT, "timeout": distance.TIMEOUT}
+    ]
+    assert FakeNominatim.queries == [QUERY]
+
+
+def test_locate_ip_fallback_query(
+    monkeypatch: pytest.MonkeyPatch, services: list[tuple[str, dict[str, Any]]]
+) -> None:
+    """Places that Nominatim can't find are looked up without the region."""
+    monkeypatch.setattr(
+        FakeNominatim, "RESULTS", {FALLBACK_QUERY: FakePoint(47.56, 7.59)}
+    )
+    assert locate_ip("192.0.2.1") == Location(latitude=47.56, longitude=7.59)
+    assert FakeNominatim.queries == [QUERY, FALLBACK_QUERY]
+
+
+def test_locate_ip_unknown_place(
+    monkeypatch: pytest.MonkeyPatch, services: list[tuple[str, dict[str, Any]]]
+) -> None:
+    """IP addresses whose place Nominatim can't find can't be located."""
+    monkeypatch.setattr(FakeNominatim, "RESULTS", {})
+    with pytest.raises(MiddlewareException, match="Could not determine location"):
+        locate_ip("192.0.2.1")
+    assert FakeNominatim.queries == [QUERY, FALLBACK_QUERY]
+
+
+def test_locate_ip_unknown_address(
+    services: list[tuple[str, dict[str, Any]]],
+) -> None:
+    """IP addresses that DB-IP doesn't know can't be located."""
+    with pytest.raises(MiddlewareException, match="Could not determine location"):
+        locate_ip("203.0.113.1")
+    assert not FakeNominatim.created
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        requests.ConnectionError("unreachable"),
+        FakeResponse({"error": "too many requests"}, status_code=429),
+        FakeResponse(ValueError("not JSON")),
+        FakeResponse(["not", "an", "object"]),
+    ],
+    ids=["unreachable", "error status", "not JSON", "not an object"],
+)
+def test_locate_ip_service_error(
+    monkeypatch: pytest.MonkeyPatch,
+    services: list[tuple[str, dict[str, Any]]],
+    response: FakeResponse | Exception,
+) -> None:
+    """Errors of DB-IP's API fail the location of an IP address."""
+
+    def get(url: str, **kwargs: Any) -> FakeResponse:
+        """Fail, or return an invalid response."""
+        if isinstance(response, Exception):
+            raise response
+        return response
+
+    monkeypatch.setattr(distance.requests, "get", get)
+    with pytest.raises(MiddlewareException, match="Could not determine location"):
+        locate_ip("192.0.2.1")
+    assert not FakeNominatim.created
+
+
+def test_locate_ip_geocoder_error(
+    monkeypatch: pytest.MonkeyPatch, services: list[tuple[str, dict[str, Any]]]
+) -> None:
+    """Errors of Nominatim fail the location of an IP address."""
+    monkeypatch.setattr(FakeNominatim, "error", GeocoderServiceError("unavailable"))
+    with pytest.raises(MiddlewareException, match="Could not determine location"):
+        locate_ip("192.0.2.1")
+
+
+def test_locate_ip_escapes_address(
+    services: list[tuple[str, dict[str, Any]]],
+) -> None:
+    """Addresses are escaped in the URL of DB-IP's API."""
+    with pytest.raises(MiddlewareException):
+        locate_ip("../192.0.2.1")
+    assert services[0][0] == "https://api.db-ip.com/v2/free/..%2F192.0.2.1"
