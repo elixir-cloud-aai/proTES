@@ -1,0 +1,17 @@
+# Values for rendering the chart in CI (`helm lint`, see
+# `.github/workflows/checks.yaml`): the settings each deployment must make
+hostName: tes.example.org
+mongodb:
+  auth:
+    existingSecret: mongodb
+broker:
+  existingSecret: celery
+config:
+  security:
+    auth:
+      issuers: ["https://login.example.org/oidc/"]
+      audience: ["test-client"]
+    access_control:
+      claim_groups: groups
+      group_mapping:
+        test-admins: admin

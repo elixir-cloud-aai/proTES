@@ -1,0 +1,1 @@
+{{- include "protes.withExtraEnv" (dict "root" . "manifest" (include "foca-common.workerDeployment" (dict "root" . "settings" (include "protes.settings" . | fromYaml)))) }}

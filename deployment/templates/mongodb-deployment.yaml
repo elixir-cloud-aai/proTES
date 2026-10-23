@@ -1,0 +1,1 @@
+{{- include "foca-common.mongodbDeployment" (dict "root" . "settings" (include "protes.settings" . | fromYaml)) }}

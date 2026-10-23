@@ -1,0 +1,13 @@
+# Values for rendering the chart in CI with its optional parts: Flower, and
+# credentials for TES instances from a Secret (`protes.extraEnv`); used
+# together with `test-values.yaml` (see `.github/workflows/checks.yaml`)
+protes:
+  extraEnv:
+  - name: TES_PASSWORD
+    valueFrom:
+      secretKeyRef:
+        name: tes-credentials
+        key: password
+flower:
+  enabled: true
+  existingSecret: flower

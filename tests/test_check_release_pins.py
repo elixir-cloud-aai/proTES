@@ -37,7 +37,7 @@ dependencies:
   # A comment
   - name: foca-common
     version: {version}
-    repository: oci://ghcr.io/elixir-cloud-aai/charts
+    repository: {repository}
 """
 DIGEST = "0" * 64
 
@@ -47,6 +47,7 @@ def _write(
     dependencies: str = '"foca>=0.17.0,<0.18",',
     tag: str = "0.17.0-py3.13",
     chart_version: str = "0.2.0",
+    chart_repository: str = "oci://ghcr.io/elixir-cloud-aai/charts",
 ) -> Path:
     """Write the files that the script checks.
 
@@ -55,6 +56,7 @@ def _write(
         dependencies: Lines of `project.dependencies` in `pyproject.toml`.
         tag: Tag of the base image in the `Dockerfile`.
         chart_version: Version of the chart's dependency.
+        chart_repository: Repository of the chart's dependency.
 
     Returns:
         The directory.
@@ -62,7 +64,9 @@ def _write(
     (root / "deployment").mkdir()
     (root / "pyproject.toml").write_text(PYPROJECT.format(dependencies=dependencies))
     (root / "Dockerfile").write_text(DOCKERFILE.format(tag=tag, digest=DIGEST))
-    (root / "deployment" / "Chart.yaml").write_text(CHART.format(version=chart_version))
+    (root / "deployment" / "Chart.yaml").write_text(
+        CHART.format(version=chart_version, repository=chart_repository)
+    )
     return root
 
 
@@ -144,6 +148,22 @@ def test_release_pins(tmp_path: Path) -> None:
             "deployment/Chart.yaml: dependency version '0.2.0 || 0.2.1-rc1' is "
             "not a release version",
         ),
+        (
+            {"chart_repository": "file://../.foca-common/charts/foca-common"},
+            "deployment/Chart.yaml: dependency repository "
+            "'file://../.foca-common/charts/foca-common' is not an OCI or HTTPS "
+            "repository",
+        ),
+        (
+            {"chart_repository": '"http://charts.example.org"  # a comment'},
+            "deployment/Chart.yaml: dependency repository "
+            "'http://charts.example.org' is not an OCI or HTTPS repository",
+        ),
+        (
+            {"chart_repository": "../foca/charts/foca-common"},
+            "deployment/Chart.yaml: dependency repository "
+            "'../foca/charts/foca-common' is not an OCI or HTTPS repository",
+        ),
     ],
     ids=[
         "git",
@@ -159,6 +179,9 @@ def test_release_pins(tmp_path: Path) -> None:
         "chart-rc",
         "chart-range",
         "chart-alternatives",
+        "chart-file",
+        "chart-http",
+        "chart-path",
     ],
 )
 def test_dev_pins(tmp_path: Path, kwargs: dict[str, str], error: str) -> None:
@@ -255,7 +278,8 @@ def test_chart_dependencies_indentless(tmp_path: Path) -> None:
     """Dependencies listed without indentation are checked, too."""
     root = _write(tmp_path)
     (root / "deployment" / "Chart.yaml").write_text(
-        "name: app\ndependencies:\n- name: a\n  version: 1.0.0-rc1\nversion: 0.0.0\n"
+        "name: app\ndependencies:\n- name: a\n  version: 1.0.0-rc1\n"
+        "  repository: oci://x\nversion: 0.0.0\n"
     )
     assert check_release_pins.find_dev_pins(root) == [
         "deployment/Chart.yaml: dependency version '1.0.0-rc1' is not a release version"
@@ -263,7 +287,10 @@ def test_chart_dependencies_indentless(tmp_path: Path) -> None:
 
 
 def test_chart_dependencies(tmp_path: Path) -> None:
-    """All dependencies of the chart are checked, and only their versions."""
+    """All dependencies of the chart are checked, and only their pins.
+
+    That is their versions and repositories.
+    """
     root = _write(tmp_path)
     (root / "deployment" / "Chart.yaml").write_text(
         """apiVersion: v2
@@ -276,16 +303,24 @@ dependencies:  # A comment
   # A comment
   - version: "1.0.0-rc1"
     name: other
+  - name: local
+    version: 1.0.0
+    repository: "file://charts/local"
 
 maintainers:
   - name: someone
     version: not-a-dependency
 annotations:
   version: dev
+  repository: file://not-a-dependency
 """
     )
     assert check_release_pins.find_dev_pins(root) == [
-        "deployment/Chart.yaml: dependency version '1.0.0-rc1' is not a release version"
+        "deployment/Chart.yaml: dependency version '1.0.0-rc1' is not a release "
+        "version",
+        "deployment/Chart.yaml: a dependency has no repository (an OCI or HTTPS one)",
+        "deployment/Chart.yaml: dependency repository 'file://charts/local' is not "
+        "an OCI or HTTPS repository",
     ]
 
 

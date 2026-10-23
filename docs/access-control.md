@@ -128,9 +128,11 @@ through [FOCA's permissions
 API](https://foca.readthedocs.io/en/latest/access-control/) at
 `/admin/access-control/permissions`; everyone else gets `401` (no token) or
 `403`. The rules are stored in the database (collection `policy_rules` of
-`taskStore`, or of the database in `MONGO_DBNAME` if set); the configured policies are restored on each startup. The Helm
-chart's ingress routes only the TES API, so the permissions API is reachable
-only from within the cluster (e.g., with `kubectl port-forward`).
+`taskStore`, or of the database in `MONGO_DBNAME` if set); the configured
+policies are restored on each startup. The Helm chart's Ingress (or
+HTTPRoute, or Route) routes all paths to the app, including the permissions
+API; to keep it off the internet, block `/admin/` in front of the cluster
+(see [Exposing the app](deployment.md#exposing-the-app)).
 
 The permissions API can write any rule, also owner roles on tasks (`g2`
 rules), so admins could make themselves owners of the tasks of others. FOCA

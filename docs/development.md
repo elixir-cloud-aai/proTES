@@ -81,6 +81,43 @@ suppress a false positive, add a comment with the reason to the line:
 `# nosemgrep: <rule-id>`, `# ast-grep-ignore: <rule-id>` or
 `# gitleaks:allow`.
 
+## Helm chart
+
+The [Helm chart](deployment.md) in `deployment/` is a thin chart over FOCA's
+library chart `foca-common` (see [Helm library
+chart](https://foca.readthedocs.io/en/latest/helm-chart/)): its templates
+are one-line includes of the library's templates, with the app's settings
+and checks in `templates/_helpers.tpl` (`protes.settings`,
+`protes.validate`), and templates of its own for Flower. `values.yaml` has
+all values of the library chart, and `values.schema.json` is the library's
+`app-values.schema.json` with the app's key (`protes`, plus `extraEnv`) and
+`flower` added; update both with the library chart. The tests in
+`tests/test_chart.py` render the chart with `helm template` and need
+[Helm](https://helm.sh/docs/intro/install/) (the version of the `helm` job
+of `.github/workflows/checks.yaml`) and the library chart in
+`deployment/charts/`; they are skipped if Helm is not installed:
+
+```bash
+scripts/foca_common.sh  # TEMPORARY, see below
+helm dependency build deployment  # the version locked in `Chart.lock`
+helm lint deployment --strict -f deployment/ci/test-values.yaml
+pytest tests/test_chart.py
+```
+
+TEMPORARY: until `foca-common` 0.2.0 (with the Celery worker and broker) is
+released, the chart depends on the library chart of a commit on FOCA's `dev`
+branch, recorded as `# FOCA commit: <sha>` in `deployment/Chart.yaml`:
+`scripts/foca_common.sh` checks out that commit (only the library chart)
+into `.foca-common/` (ignored by Git), which the chart's `file://`
+repository points to. To move to another commit, change the line, remove
+`.foca-common/`, run the script and `helm dependency update deployment`
+(which updates `Chart.lock`), and update the values and the schema. Once
+0.2.0 is released, the chart depends on it from
+`oci://ghcr.io/elixir-cloud-aai/charts` instead, and the script is removed
+([#246](https://github.com/elixir-cloud-aai/proTES/issues/246));
+`scripts/check_release_pins.py` fails until then (see [Versioning and
+releases](#versioning-and-releases)).
+
 ## Documentation
 
 This documentation is built with [MkDocs](https://www.mkdocs.org/) and
@@ -208,8 +245,9 @@ of that commit (`scripts/image_requirements.py`). Dependabot ignores the base
 image meanwhile. Such pins are temporary: the release workflow fails while a
 dependency (also an optional one) is a direct reference or names a
 pre-release or a local version (e.g., `+g<commit>`), the base image has no
-release tag, or a chart dependency has another version than a release
-(`scripts/check_release_pins.py`, tested in
+release tag, or a chart dependency is not a release version or not from an
+OCI or HTTPS repository (e.g., the `file://` checkout of a FOCA commit, see
+[Helm chart](#helm-chart); `scripts/check_release_pins.py`, tested in
 `tests/test_check_release_pins.py`, whose tests also fail for checkouts of
 release tags with such pins), so replace them by the released versions
 before tagging. This applies to pre-releases of the app, too: they are built
