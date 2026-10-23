@@ -21,8 +21,8 @@
 - [Access control](access-control.md): authentication, roles, task
   ownership, the permissions API and credentials of TES instances.
 - [Deployment](deployment.md): the Helm chart for Kubernetes.
-- [Operations](operations.md): the Celery workers, Flower, logs, and the
-  owners of tasks.
+- [Operations](operations.md): the Celery workers, Flower, logs, the
+  owners of tasks, and verifying images and charts.
 - [Upgrading](upgrading.md): changes to existing deployments and data.
 - [Development](development.md): development setup, checks, documentation,
   versioning and releases.
