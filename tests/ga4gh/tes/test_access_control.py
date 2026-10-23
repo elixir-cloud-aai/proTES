@@ -124,3 +124,15 @@ def test_head(client: FlaskClient, task_id: str) -> None:
     """Users may send `HEAD` requests for tasks."""
     assert client.head(f"{BASE_PATH}/tasks").status_code == 200
     assert client.head(f"{BASE_PATH}/tasks/{task_id}").status_code == 200
+
+
+def test_permissions_api_keeps_configured_rules(client: FlaskClient) -> None:
+    """Admins can't delete the configured rules, and keep access."""
+    headers = make_headers(ADMIN)
+    rules = client.get(PERMISSIONS, headers=headers).get_json()["results"]
+    assert rules
+    for rule in rules:
+        response = client.delete(f"{PERMISSIONS}/{rule['id']}", headers=headers)
+        assert response.status_code == 409
+    assert client.get(PERMISSIONS, headers=headers).status_code == 200
+    assert client.get(f"{BASE_PATH}/tasks").status_code == 200
