@@ -275,7 +275,13 @@ your own for MongoDB and the broker instead of credentials in the values
 (the broker's user was `guest:guest`), Flower off by default and with
 credentials from a Secret (was always on, with `admin:admin`),
 NetworkPolicies, pinned images, and an Ingress for all paths (was
-`/ga4gh/tes/v1` only), or a Gateway API HTTPRoute. Releases of the legacy
+`/ga4gh/tes/v1` only), or a Gateway API HTTPRoute. The chart has no defaults
+for a particular ingress controller: to enable the app's NetworkPolicy
+(`protes.networkPolicy.enabled`), set its peers
+(`protes.networkPolicy.ingressFrom`, none by default), and with
+ingress-nginx, raise its body size limit by an annotation if you raise
+`config.server.max_content_length` above 1 MiB (see [Exposing the
+app](deployment.md#exposing-the-app)). Releases of the legacy
 chart can't be upgraded: uninstall them and install the new chart, keeping
 the data as described in [From the legacy
 chart](deployment.md#from-the-legacy-chart).

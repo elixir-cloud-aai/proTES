@@ -934,6 +934,24 @@ def test_notes(args: tuple[str, ...], url: str, warnings: list[str]) -> None:
     assert "Flower" not in notes
 
 
+def test_notes_route_disabled() -> None:
+    """The notes name a disabled Route, not missing Route support, as reason."""
+    args = (
+        "--set",
+        "hostName=x",
+        *NO_INGRESS,
+        "--api-versions",
+        "route.openshift.io/v1",
+    )
+    notes = render_notes(*args, "--set", "protes.route.enabled=false")
+    assert "Neither an Ingress" in notes
+    assert "(protes.route.enabled\nis false)" in notes
+    assert "does not serve" not in notes
+    notes = render_notes("--set", "hostName=x", *NO_INGRESS)
+    assert "(the cluster does not serve route.openshift.io/v1)" in notes
+    assert "Neither an Ingress" not in render_notes(*args)
+
+
 def test_notes_flower() -> None:
     """With Flower, the notes show how to reach it."""
     notes = render_notes("--set", "hostName=x", "-n", "tes", *FLOWER_ON)
