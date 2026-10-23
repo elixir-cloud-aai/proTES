@@ -101,8 +101,9 @@ g2, user:<sub>, owner, /ga4gh/tes/v1/tasks/ABC123:cancel
 
 The task document records its owner, too (`user_id`), e.g., for operators
 looking for the tasks of a user (see [Operations](operations.md#task-owners)).
-Each task adds two rules, and FOCA loads all rules on each request, so the
-time of each request grows with the number of tasks (see FOCA's notes on
+Each task adds two rules, and FOCA loads all rules on each request (and
+creating or listing tasks loads them a few more times), so the time of each
+request grows with the number of tasks (see FOCA's notes on
 [scaling](https://foca.readthedocs.io/en/latest/access-control/#scaling)).
 
 Ownership is taken from the caller's own token only: proTES doesn't support

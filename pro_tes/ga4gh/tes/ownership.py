@@ -16,8 +16,9 @@ so that roles on the task don't apply to it.
 from foca.security.access_control import (
     add_owner,
     get_current_subject,
-    list_roles,
+    list_resource_roles,
     list_subject_roles,
+    remove_resource_role,
 )
 from foca.security.access_control.constants import OWNER_ROLE
 
@@ -70,10 +71,11 @@ def task_has_roles(collection: str, task_id: str) -> bool:
         task_id: Identifier of the task.
 
     Returns:
-        Whether any subject has a role on the task or its cancellation.
+        Whether any subject (users, groups, clients and roles) has a role on
+        the task or its cancellation.
     """
     return any(
-        list_roles(resource=resource)
+        list_resource_roles(resource=resource)
         for resource in task_resources(collection=collection, task_id=task_id)
     )
 
@@ -88,6 +90,18 @@ def add_task_owner(collection: str, task_id: str, owner: str) -> None:
     """
     for resource in task_resources(collection=collection, task_id=task_id):
         add_owner(resource=resource, subject=owner)
+
+
+def remove_task_owner(collection: str, task_id: str, owner: str) -> None:
+    """Revoke the owner role of a user on a task (cf. :py:func:`add_task_owner`).
+
+    Args:
+        collection: Request path of the tasks (e.g., `/ga4gh/tes/v1/tasks`).
+        task_id: Identifier of the task.
+        owner: User identifier, without prefix.
+    """
+    for resource in task_resources(collection=collection, task_id=task_id):
+        remove_resource_role(subject=owner, role=OWNER_ROLE, resource=resource)
 
 
 def owned_tasks_filter(collection: str) -> dict[str, dict[str, list[str]]]:

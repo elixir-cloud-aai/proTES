@@ -11,7 +11,7 @@ from connexion import FlaskApp
 from flask.testing import FlaskClient
 from pydantic import ValidationError
 from pymongo import MongoClient
-from pymongo.errors import DuplicateKeyError
+from pymongo.errors import DuplicateKeyError, PyMongoError
 import pytest
 import tes
 
@@ -730,7 +730,11 @@ def test_invalid_view(app: FlaskApp) -> None:
         task_runs.TaskRuns()._set_projection(view="ALL")
 
 
-def test_task_id_taken(app: FlaskApp, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_task_id_taken(
+    app: FlaskApp,
+    monkeypatch: pytest.MonkeyPatch,
+    mongo_client: MongoClient[dict[str, Any]],
+) -> None:
     """Task identifiers are generated until one is unused, or attempts run out."""
     with app.app.test_request_context():
         runs = task_runs.TaskRuns()
@@ -753,8 +757,14 @@ def test_task_id_taken(app: FlaskApp, monkeypatch: pytest.MonkeyPatch) -> None:
         )
         assert inserted[-1] == task_id
         assert len(inserted) == attempts
+        # only the stored task keeps its owner
+        rules = mongo_client[DB]["policy_rules"].find({"ptype": "g2"})
+        assert sorted(rule["v2"] for rule in rules) == [
+            f"{BASE_PATH}/tasks/{task_id}",
+            f"{BASE_PATH}/tasks/{task_id}:cancel",
+        ]
         monkeypatch.setattr(runs.db_client, "insert_one", insert_none)
-        with pytest.raises(DuplicateKeyError, match="Could not insert"):
+        with pytest.raises(DuplicateKeyError, match="unused task identifier"):
             runs._write_doc_to_db(
                 document=DbDocument(), owner=USER, collection=f"{BASE_PATH}/tasks"
             )
@@ -771,3 +781,28 @@ def test_forward_stored_no_logs(app: FlaskApp) -> None:
             tes_url=BACKENDS[0],
             remote_task_id="remote-1",
         )
+
+
+def test_task_not_stored(
+    app: FlaskApp,
+    monkeypatch: pytest.MonkeyPatch,
+    mongo_client: MongoClient[dict[str, Any]],
+) -> None:
+    """The owner is revoked if the task can't be stored."""
+
+    def insert_one(document: dict[str, Any]) -> None:
+        """Fail to insert the document.
+
+        Raises:
+            pymongo.errors.PyMongoError: Always.
+        """
+        raise PyMongoError("unavailable")
+
+    with app.app.test_request_context():
+        runs = task_runs.TaskRuns()
+        monkeypatch.setattr(runs.db_client, "insert_one", insert_one)
+        with pytest.raises(PyMongoError, match="unavailable"):
+            runs._write_doc_to_db(
+                document=DbDocument(), owner=USER, collection=f"{BASE_PATH}/tasks"
+            )
+    assert mongo_client[DB]["policy_rules"].count_documents({"ptype": "g2"}) == 0

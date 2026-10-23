@@ -144,6 +144,8 @@ def test_owner_without_role(
 
     But they can't create or list tasks.
     """
+    # the owner roles are given to a user without role (as for an owner who
+    # left the groups with the role `user`)
     rules = mongo_client[DB]["policy_rules"]
     rules.update_many({"ptype": "g2"}, {"$set": {"v0": f"user:{OUTSIDER}"}})
     headers = make_headers(OUTSIDER)
@@ -207,6 +209,33 @@ def test_task_id_reused(
     mongo_client[DB]["tasks"].delete_one({"task.id": "SAMEID"})
     assert create_task(client, OTHER_USER) == "OTHER2"
     assert list_ids(client, OTHER_USER) == ["OTHER2", "OTHER1"]
+
+
+@pytest.mark.usefixtures("backend")
+@pytest.mark.parametrize("suffix", ["", ":cancel"])
+@pytest.mark.parametrize("subject", [f"user:{USER}", "group:team", "user"])
+def test_task_id_roles_left(
+    client: FlaskClient,
+    monkeypatch: pytest.MonkeyPatch,
+    mongo_client: MongoClient[dict[str, Any]],
+    suffix: str,
+    subject: str,
+) -> None:
+    """Identifiers with any role left, of any subject, are not used again.
+
+    Also roles only on the cancellation, and roles of roles (e.g., `user`).
+    """
+    mongo_client[DB]["policy_rules"].insert_one(
+        {
+            "ptype": "g2",
+            "v0": subject,
+            "v1": "owner",
+            "v2": f"{BASE_PATH}/tasks/SAMEID{suffix}",
+        }
+    )
+    ids = iter(["SAMEID", "OTHER1"])
+    monkeypatch.setattr(task_runs, "generate_id", lambda **kwargs: next(ids))
+    assert create_task(client, OTHER_USER) == "OTHER1"
 
 
 @pytest.mark.usefixtures("backend")

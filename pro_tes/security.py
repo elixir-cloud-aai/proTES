@@ -69,12 +69,10 @@ def check_role_groups() -> None:
     nobody can create tasks then. Must be called in an app context.
 
     Raises:
-        RuntimeError: Access control is not enabled and enforced (cf.
-            :py:func:`check_task_ownership`), or no group is mapped to the
-            role `admin` (or `claim_groups` is not set), and
+        RuntimeError: No group is mapped to the role `admin` (or
+            `claim_groups` is not set), and
             `custom.access_control.require_admin` is true.
     """
-    check_task_ownership()
     conf = get_config().security.access_control
     mapping = conf.group_mapping or {}
     if mapping and conf.claim_groups is None:

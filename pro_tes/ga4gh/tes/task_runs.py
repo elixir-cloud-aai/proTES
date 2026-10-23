@@ -39,6 +39,7 @@ from pro_tes.ga4gh.tes.ownership import (
     add_task_owner,
     get_owner,
     owned_tasks_filter,
+    remove_task_owner,
     task_has_roles,
 )
 from pro_tes.ga4gh.tes.states import States
@@ -443,7 +444,8 @@ class TaskRuns:
         on (e.g., left by deleted tasks), are not used again, so that nobody
         gets access to the task of someone else. The owner is granted the
         role before the task is stored, so that tasks are never stored
-        without owner, and the identifier is taken right away.
+        without owner, and the identifier is taken right away; the role is
+        revoked again if the task can't be stored.
 
         Args:
             document: Document to be written to database.
@@ -481,9 +483,13 @@ class TaskRuns:
                     document.model_dump(mode="json", exclude_none=True)
                 )
             except DuplicateKeyError:
+                remove_task_owner(collection=collection, task_id=task_id, owner=owner)
                 continue
+            except Exception:
+                remove_task_owner(collection=collection, task_id=task_id, owner=owner)
+                raise
             return task_id, document.worker_id
-        raise DuplicateKeyError("Could not insert document into database.")
+        raise DuplicateKeyError("Could not find an unused task identifier")
 
     def _sanitize_request(self, payload: dict[str, Any]) -> dict[str, Any]:
         """Sanitize request for use with py-tes.
