@@ -2,8 +2,8 @@
 
 Zenodo archives each GitHub release with the `CITATION.cff` of the tagged
 commit, so `version` and `date-released` are set before the release is
-tagged, and `check` verifies them on the release commit. Errors are printed
-as GitHub annotations to standard error.
+tagged, and the release workflow checks them. Errors are printed as GitHub
+annotations to standard error.
 
 Commands:
     `set <version> [--date YYYY-MM-DD]`: set `version` and `date-released`
@@ -31,9 +31,9 @@ import tempfile
 
 CITATION = Path(__file__).resolve().parents[1] / "CITATION.cff"
 
-# Release versions as in the release tags (`vX.Y.Z`), without the `v`:
-# `X.Y.Z`, or `X.Y.ZaN`, `X.Y.ZbN` and `X.Y.ZrcN` for alpha, beta and release
-# candidates
+# Release versions as in the release tags (checked by the release workflow
+# before this script runs), without the `v`: `X.Y.Z`, or `X.Y.ZaN`,
+# `X.Y.ZbN` and `X.Y.ZrcN` for alpha, beta and release candidates
 VERSION = re.compile(
     r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)"
     r"(?:(?:a|b|rc)(?:0|[1-9][0-9]*))?",
@@ -195,7 +195,8 @@ def _write(path: Path, text: str) -> None:
 
     The temporary file next to it gets a new, unpredictable name, so that
     no existing file or link is written to and concurrent writes don't share
-    it, and the permissions of the file.
+    it. It gets the permissions of the file, set through its descriptor
+    rather than by name.
 
     Args:
         path: File, which must exist.
@@ -208,8 +209,8 @@ def _write(path: Path, text: str) -> None:
     temporary = Path(name)
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8") as file:
+            os.fchmod(file.fileno(), mode)
             file.write(text)
-        temporary.chmod(mode)
         temporary.replace(path)
     finally:
         temporary.unlink(missing_ok=True)
@@ -241,7 +242,6 @@ def main(argv: Sequence[str] | None = None, path: Path = CITATION) -> int:
     check_parser = commands.add_parser("check", help="check version and date")
     check_parser.add_argument("version", help="release version, e.g., 1.2.3")
     args = parser.parse_args(argv)
-    # `datetime.UTC` is new in Python 3.11
     today = datetime.datetime.now(datetime.UTC).date()
     try:
         text = path.read_text(encoding="utf-8")
