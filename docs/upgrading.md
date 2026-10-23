@@ -87,6 +87,16 @@ gone, and the environment variables `GUNICORN_PROCESSES` and
 [Server](configuration.md#server)). The Helm chart 3.0.0 needs images of this
 version, and earlier charts need earlier images.
 
+Images are tagged `dev` and `sha-<commit>` for commits on `dev`, and `X.Y.Z`
+for releases; `latest` is the highest stable release, no longer the latest
+commit on `dev`, and date tags are no longer pushed (see [Versioning and
+releases](development.md#versioning-and-releases)). The Helm chart takes
+the image tag from `protes.tag`, which defaults to the chart's `appVersion`:
+`dev` in the repository, the release version in released charts (see
+[Image](deployment.md#image)). Values that set `protes.image` or
+`celeryWorker.image` with a tag (e.g., `elixircloud/protes:latest`) still
+work; without them, the Celery worker runs the app's image.
+
 ## Docker Compose
 
 Docker Compose runs MongoDB 7.0 (was 3.6, which current PyMongo releases

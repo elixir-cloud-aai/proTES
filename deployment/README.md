@@ -57,6 +57,30 @@ helm install . --generate-name --set protes.appName=proxyT
 where `proxyT` will be the name of the proTES deployment and associated
 objects.
 
+## Image
+
+The app image is `protes.image` (default `elixircloud/protes`) with tag
+`protes.tag`, which defaults to the chart's `appVersion`; the Celery worker
+runs the same image (unless `celeryWorker.image` is set). Charts attached to
+[GitHub releases](https://github.com/elixir-cloud-aai/proTES/releases) have
+the release version as `version` and `appVersion`, so they deploy the image
+of their release (`X.Y.Z`). In the repository, both are placeholders, and
+`appVersion` is `dev`: the chart deploys the latest image of branch `dev`,
+which changes with every commit. Deployments from the repository should set
+the tag of a release (e.g., `0.3.0`) or of a commit on `dev`
+(`sha-<commit>`, the full commit SHA) in the values file:
+
+```yaml
+protes:
+  tag: sha-0123456789abcdef0123456789abcdef01234567
+```
+
+`protes.image` may also include a tag or digest (e.g.,
+`elixircloud/protes:0.3.0`, as in earlier chart versions); then `protes.tag`
+must be empty. See [Versioning and
+releases](https://protes.readthedocs.io/en/latest/development/#versioning-and-releases)
+for the image tags.
+
 ## Deployment
 
 Deploy proTES with Helm:
