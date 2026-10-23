@@ -17,6 +17,17 @@ from werkzeug.exceptions import (
 )
 
 
+class BackendAuthError(RuntimeError):
+    """Raised when proTES has no credentials for a TES backend.
+
+    E.g., because its identity provider issued no access token.
+    """
+
+
+class BackendNotConfigured(ValueError):
+    """Raised when a TES backend is not configured (`custom.tes.service_list`)."""
+
+
 class IdsUnavailableProblem(PyMongoError):
     """Raised when task identifier is unavailable."""
 
@@ -129,6 +140,16 @@ exceptions = {
     NoTesInstancesAvailable: {
         "title": "Internal server error",
         "detail": "No valid TES instances available.",
+        "status": 500,
+    },
+    BackendAuthError: {
+        "title": "Internal server error",
+        "detail": "No credentials for the TES instance of the task available.",
+        "status": 500,
+    },
+    BackendNotConfigured: {
+        "title": "Internal server error",
+        "detail": "The TES instance of the task is not configured.",
         "status": 500,
     },
     MiddlewareException: {

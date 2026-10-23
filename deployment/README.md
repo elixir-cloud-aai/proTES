@@ -178,13 +178,22 @@ containers (Kubernetes `EnvVar`s), e.g., credentials of proTES for the TES
 instances from a Secret of your own; rendering fails for the variables that
 the chart sets itself. Credentials of proTES for TES instances (client
 credentials of an identity provider, or HTTP Basic credentials, see
-[#213](https://github.com/elixir-cloud-aai/proTES/issues/213)) are read
-from environment variables, e.g.:
+[Credentials of TES
+instances](https://github.com/elixir-cloud-aai/proTES/blob/dev/docs/access-control.md#credentials-of-tes-instances))
+are read from environment variables: `PROTES_CLIENT_ID` and
+`PROTES_CLIENT_SECRET` for TES instances with `auth: client_credentials`,
+and those named in `basic.username_env` and `basic.password_env` for TES
+instances with `auth: basic`, e.g.:
 
 ```yaml
 protes:
   extraEnv:
-  - name: <variable of the app>
+  - name: PROTES_CLIENT_ID
+    valueFrom:
+      secretKeyRef:
+        name: protes-tes-credentials
+        key: client-id
+  - name: PROTES_CLIENT_SECRET
     valueFrom:
       secretKeyRef:
         name: protes-tes-credentials

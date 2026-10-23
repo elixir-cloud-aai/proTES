@@ -1,6 +1,6 @@
 # Config overlay of the app tests, with the settings each deployment must
-# make: a trusted issuer (mocked, see `tests/conftest.py`), the audience, and
-# the groups of the roles
+# make: a trusted issuer (mocked, see `tests/conftest.py`), the audience, the
+# groups of the roles, and a TES backend (faked by the tests)
 security:
   auth:
     issuers:
@@ -14,3 +14,8 @@ security:
     group_mapping:
       compute-users: user
       "urn:example:group:compute-admins#login.example.org": admin
+custom:
+  tes:
+    service_list:
+      - url: https://tes.example.org/
+        auth: none

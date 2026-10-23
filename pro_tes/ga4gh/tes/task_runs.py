@@ -3,7 +3,7 @@
 from copy import deepcopy
 import logging
 import re
-from typing import Any
+from typing import Any, Literal
 
 from bson.errors import InvalidId
 from bson.objectid import ObjectId
@@ -16,17 +16,17 @@ from pymongo.errors import DuplicateKeyError
 import requests
 import tes
 from tes.models import Task
-from werkzeug.datastructures import Authorization
 
 from pro_tes.config_models import CustomConfig
 from pro_tes.exceptions import (
+    BackendAuthError,
     BadRequest,
     MiddlewareException,
     NoTesInstancesAvailable,
     TaskNotFound,
 )
+from pro_tes.ga4gh.tes.backends import create_client
 from pro_tes.ga4gh.tes.models import (
-    BasicAuth,
     DbDocument,
     Metadata,
     TesEndpoint,
@@ -46,7 +46,12 @@ from pro_tes.ga4gh.tes.states import States
 from pro_tes.middleware.middleware_handler import MiddlewareHandler
 from pro_tes.tasks.track_task_progress import task__track_task_progress
 from pro_tes.utils.db import DbDocumentConnector
-from pro_tes.utils.misc import get_custom_config, strip_auth, utc_now
+from pro_tes.utils.misc import (
+    get_custom_config,
+    has_credentials,
+    strip_auth,
+    utc_now,
+)
 from pro_tes.utils.models import TaskModelConverter
 
 logger = logging.getLogger(__name__)
@@ -115,12 +120,17 @@ class TaskRuns:
         # create task document
         start_time = utc_now()
         db_document: DbDocument = DbDocument()
-        db_document.basic_auth = self.parse_basic_auth(request.authorization)
         if request.json is None:
             raise BadRequest("Request body is missing")
         owner = get_owner()
         # request path of the tasks, before middlewares
         collection = request.path
+        # credentials in URLs are neither stored nor forwarded; removed from
+        # the request itself, so that middlewares don't get them either
+        self._handle_url_credentials(
+            payload=request.json,
+            mode=self.custom_config.controllers.post_task.url_credentials,
+        )
         payload_original: dict[str, Any] = deepcopy(request.json)
         db_document.task_original = TesTask(**payload_original)
 
@@ -134,6 +144,8 @@ class TaskRuns:
         if request_modified.json is None:
             raise MiddlewareException("Middlewares removed the request body")
         payload: dict[str, Any] = request_modified.json
+        # also credentials that middlewares added
+        self._handle_url_credentials(payload=payload, mode="strip")
         tes_urls = deepcopy(payload["tes_urls"])
         del payload["tes_urls"]
         # set by the server (TES), not by clients
@@ -187,17 +199,17 @@ class TaskRuns:
                 f"{db_document.tes_endpoint.base_path.lstrip('/')}"
             )
             try:
-                cli = tes.HTTPClient(
-                    url,
-                    timeout=5,
-                    user=db_document.basic_auth.username,
-                    password=db_document.basic_auth.password,
+                cli = create_client(
+                    host=db_document.tes_endpoint.host,
+                    base_path=db_document.tes_endpoint.base_path,
                 )
             except ValueError as exc:
+                # also backends that are not configured (e.g., added by
+                # middlewares): proTES has no credentials for them
                 logger.warning(
                     "Task '%s' could not be sent to TES endpoint hosted at: %s."
-                    " Invalid TES endpoint URL. Original error message:"
-                    " '%s: %s'",
+                    " Invalid or unknown TES endpoint URL. Original error"
+                    " message: '%s: %s'",
                     db_document.task.id,
                     url,
                     type(exc).__name__,
@@ -205,22 +217,10 @@ class TaskRuns:
                 )
                 continue
 
-            is_funnel = False
-            try:
-                response = cli.get_service_info()
-                if response.name == "Funnel":
-                    is_funnel = True
-            except requests.exceptions.HTTPError:
-                pass
-            # each backend gets the task as validated, without changes made
-            # for other backends
-            task_relayed = deepcopy(payload_marshalled)
-            if not is_funnel:
-                self._strip_credentials(task=task_relayed)
-
+            task_relayed = self._relayed_task(task=payload_marshalled)
             try:
                 remote_task_id = cli.create_task(task_relayed)
-            except requests.HTTPError as exc:
+            except (requests.RequestException, BackendAuthError) as exc:
                 logger.warning(
                     "Task '%s' could not be sent to TES endpoint hosted at: %s."
                     " Original error message: '%s: %s'",
@@ -243,7 +243,7 @@ class TaskRuns:
                 task_model_converter = TaskModelConverter(task=task)
                 task_converted: TesTask = task_model_converter.convert_task()
                 db_document.task.state = task_converted.state
-            except requests.HTTPError as exc:
+            except (requests.RequestException, BackendAuthError) as exc:
                 logger.error(
                     "Task '%s' info could not be retrieved from TES endpoint"
                     " hosted at: %s. Original error message: '%s: %s'",
@@ -265,8 +265,6 @@ class TaskRuns:
                     "remote_host": db_document.tes_endpoint.host,
                     "remote_base_path": db_document.tes_endpoint.base_path,
                     "remote_task_id": remote_task_id,
-                    "user": db_document.basic_auth.username,
-                    "password": db_document.basic_auth.password,
                 },
             )
             return {"id": db_document.task.id}
@@ -416,13 +414,10 @@ class TaskRuns:
                 db_document.worker_id,
                 url,
             )
-            cli = tes.HTTPClient(
-                url,
-                timeout=5,
-                user=db_document.basic_auth.username,
-                password=db_document.basic_auth.password,
+            cli = create_client(
+                host=db_document.tes_endpoint.host,
+                base_path=db_document.tes_endpoint.base_path,
             )
-
             cli.cancel_task(task_id=task_id)
             db_connector.update_task_state(
                 state="CANCELED",
@@ -712,18 +707,62 @@ class TaskRuns:
         return min(page_size, config.max_page_size)
 
     @staticmethod
-    def _strip_credentials(task: tes.Task) -> None:
-        """Remove user names and passwords from the URLs of inputs and outputs.
+    def _handle_url_credentials(
+        payload: dict[str, Any], mode: Literal["reject", "strip"]
+    ) -> None:
+        """Reject or remove credentials in the URLs of inputs and outputs.
 
-        Inputs and outputs are kept otherwise, also inputs without URL
-        (with `content`).
+        Credentials are user names and passwords (user information, e.g.,
+        `https://user:password@host/path`). Inputs and outputs are kept
+        otherwise, also inputs without URL (with `content`); malformed ones
+        are left to the validation of the task.
 
         Args:
-            task: Task to be relayed; changed in place.
+            payload: Task (JSON); changed in place.
+            mode: Whether tasks with credentials are rejected (`reject`), or
+                the credentials are removed (`strip`).
+
+        Raises:
+            pro_tes.exceptions.BadRequest: A URL has credentials, and `mode`
+                is `reject`; or a URL is malformed.
         """
-        for item in [*(task.inputs or []), *(task.outputs or [])]:
-            if item is not None and item.url is not None:
-                item.url = strip_auth(item.url)
+        for field in ("inputs", "outputs"):
+            items = payload.get(field)
+            if not isinstance(items, list):
+                continue
+            for item in items:
+                url = item.get("url") if isinstance(item, dict) else None
+                if not isinstance(url, str):
+                    continue
+                try:
+                    found = has_credentials(url)
+                except ValueError as exc:
+                    raise BadRequest(f"Malformed URL in `{field}`") from exc
+                if not found:
+                    continue
+                if mode == "reject":
+                    raise BadRequest(
+                        f"URLs in `{field}` must not have credentials (user"
+                        " names or passwords)"
+                    )
+                item["url"] = strip_auth(url)
+
+    @staticmethod
+    def _relayed_task(task: tes.Task) -> tes.Task:
+        """Get a task as it is relayed to a TES backend.
+
+        Each backend gets a copy of the task as validated, without changes
+        made for other backends. Changes of tasks for their backends belong
+        here, e.g., tags with the identity of the user (planned, but not
+        decided yet).
+
+        Args:
+            task: Task, as validated.
+
+        Returns:
+            The task to be relayed.
+        """
+        return deepcopy(task)
 
     @staticmethod
     def _remote_task_id(
@@ -754,21 +793,3 @@ class TaskRuns:
         stored_metadata = stored_logs[0].get("metadata") or {}
         remote_task_id = stored_metadata.get("remote_task_id")
         return remote_task_id if isinstance(remote_task_id, str) else None
-
-    @staticmethod
-    def parse_basic_auth(auth: Authorization | None) -> BasicAuth:
-        """Parse basic auth header.
-
-        Args:
-            auth: Request authorization information.
-
-        Returns:
-            Basic authorization model instance with username and password;
-                missing values are set to `None`.
-        """
-        if auth is None:
-            return BasicAuth()
-        return BasicAuth(
-            username=auth.get("username"),
-            password=auth.get("password"),
-        )

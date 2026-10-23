@@ -6,6 +6,7 @@ from connexion import FlaskApp
 import flask
 import pytest
 
+from pro_tes.config_models import TesBackend
 from pro_tes.exceptions import MiddlewareException
 from pro_tes.plugins.middlewares.task_distribution.base import (
     TaskDistributionBaseClass,
@@ -18,6 +19,18 @@ from pro_tes.utils.misc import get_custom_config
 TES_URLS = [f"https://tes{index}.example.org" for index in range(10)]
 
 
+def backends(urls: list[str]) -> list[TesBackend]:
+    """Get the configurations of TES backends.
+
+    Args:
+        urls: URLs of the backends.
+
+    Returns:
+        Configurations of backends at the URLs, without authentication.
+    """
+    return [TesBackend(url=url, auth="none") for url in urls]
+
+
 @pytest.mark.parametrize(
     "middleware", [TaskDistributionBaseClass, TaskDistributionRandom]
 )
@@ -26,7 +39,7 @@ def test_tes_urls_added(
 ) -> None:
     """The configured backends are added to the request, once each."""
     with app.app.test_request_context(json={"name": "task"}):
-        get_custom_config().tes.service_list = [*TES_URLS, TES_URLS[0]]
+        get_custom_config().tes.service_list = backends([*TES_URLS, TES_URLS[0]])
         request = middleware().apply_middleware(flask.request)
         assert request.json is not None
         assert request.json["name"] == "task"
@@ -38,7 +51,7 @@ def test_shuffled(app: FlaskApp) -> None:
     random.seed(1)
     orders = set()
     with app.app.test_request_context(json={}):
-        get_custom_config().tes.service_list = TES_URLS
+        get_custom_config().tes.service_list = backends(TES_URLS)
         for _ in range(5):
             middleware = TaskDistributionRandom()
             middleware.apply_middleware(flask.request)

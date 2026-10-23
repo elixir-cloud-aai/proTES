@@ -1,7 +1,5 @@
 """Random task distribution middleware."""
 
-from copy import deepcopy
-
 import flask
 
 from pro_tes.exceptions import MiddlewareException
@@ -35,7 +33,7 @@ class TaskDistributionBaseClass(AbstractMiddleware):
         if request.json is None:
             raise MiddlewareException("Request has no JSON payload.")
         self._set_tes_urls(
-            tes_urls=deepcopy(get_custom_config().tes.service_list),
+            tes_urls=[backend.url for backend in get_custom_config().tes.service_list],
             request=request,
         )
         request.json["tes_urls"] = self.tes_urls

@@ -12,12 +12,16 @@ import pytest
 import yaml
 
 from pro_tes.app import init_app, run_app
+from pro_tes.config_models import TesBackend
+from pro_tes.ga4gh.tes.backends import CLIENT_ID_ENV, CLIENT_SECRET_ENV
 from pro_tes.utils.misc import get_custom_config
 from tests.conftest import set_overlays
 
 BASE_PATH = "/ga4gh/tes/v1"
 # Config overlay of the Compose smoke test
 SMOKE_CONFIG = Path(__file__).parent / "smoke" / "config.yaml"
+# Compose override of the smoke test
+SMOKE_COMPOSE = Path(__file__).parent / "smoke" / "compose.yaml"
 
 
 def test_config(app: FlaskApp) -> None:
@@ -142,13 +146,25 @@ def test_smoke_test_config(
 ) -> None:
     """The config overlay of the Compose smoke test is valid.
 
-    It relays tasks to the fake TES backend only.
+    It relays tasks to the fake TES backend only, with access tokens of
+    proTES (client ID and secret as in the Compose override).
     """
     monkeypatch.setenv("FOCA_CONFIG_OVERLAY", str(SMOKE_CONFIG))
+    smoke = yaml.safe_load(SMOKE_COMPOSE.read_text())
+    for name in (CLIENT_ID_ENV, CLIENT_SECRET_ENV):
+        monkeypatch.setenv(name, smoke["services"]["protes"]["environment"][name])
     app = init_app()
     with app.app.app_context():
         custom = get_custom_config()
-    assert custom.tes.service_list == ["http://fake-tes:8080"]
+    assert custom.tes.service_list == [
+        TesBackend(url="http://fake-tes:8080", auth="client_credentials")
+    ]
+    assert custom.tes.client_credentials.issuer == "http://fake-tes:8080/oidc/"
+    # the Celery worker has the same client
+    assert (
+        smoke["services"]["protes-worker"]["environment"]
+        == smoke["services"]["protes"]["environment"]
+    )
     assert custom.middlewares.root == [
         ["pro_tes.plugins.middlewares.task_distribution.random.TaskDistributionRandom"]
     ]

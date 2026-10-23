@@ -41,11 +41,10 @@ the trusted issuers (`security.auth.issuers`), the audience
 group of the role `admin`): proTES doesn't start without them (unless
 `custom.access_control.require_admin` is false). Clients send
 `Authorization: Bearer <token>` with each request. HTTP Basic credentials of
-requests are no longer passed through to TES instances, as the
-`Authorization` header carries the token: TES instances that require them
-can't be used until proTES has credentials of its own for them
-([#213](https://github.com/elixir-cloud-aai/proTES/issues/213)). The Helm
-chart sets the config overlay from the value `config`.
+requests are no longer passed through to TES instances: proTES uses
+credentials of its own for them (see [TES instances and their
+credentials](#tes-instances-and-their-credentials)). The Helm chart sets the
+config overlay from the value `config`.
 
 Only access tokens as per RFC 9068 (`typ` header `at+jwt`) are accepted;
 other tokens of the trusted issuers, such as ID tokens, are rejected with
@@ -78,6 +77,51 @@ Tasks stored by earlier versions have no owner, so nobody can see them
 through the API; operators can give them to their users, or purge them (see
 [Task owners](operations.md#task-owners)). Each new task adds two rules to
 the access control database.
+
+## TES instances and their credentials
+
+The entries of `custom.tes.service_list` are objects with the URL of the TES
+instance (`url`) and how proTES authenticates at it (`auth`), instead of
+URLs; `auth` defaults to `client_credentials`, an access token of proTES
+itself (see [Credentials of TES
+instances](access-control.md#credentials-of-tes-instances)). Replace each
+URL with an entry, e.g., `- url: https://tes.example.org`, and choose its
+`auth`:
+
+- `client_credentials` for TES instances that accept tokens of proTES' own
+  client: register a client for the client credentials grant at the
+  identity provider, set its issuer (or token endpoint) in
+  `custom.tes.client_credentials`, and its ID and secret in the environment
+  variables `PROTES_CLIENT_ID` and `PROTES_CLIENT_SECRET` of the app and the
+  Celery worker;
+- `basic` for TES instances that require HTTP Basic credentials, with the
+  names of the environment variables that hold them (`basic.username_env`
+  and `basic.password_env`), set for the app and the Celery worker;
+- `none` for TES instances that need no credentials.
+
+The base config no longer lists public TES instances; deployments list
+their own. URLs of TES instances must use `https`, unless
+`custom.tes.url_schemes` allows `http`, and must not have credentials;
+duplicate entries are rejected. Tasks are only forwarded to configured TES
+instances, also if middlewares add others (`tes_urls`). Custom middlewares
+that read `custom.tes.service_list` get these entries instead of URLs.
+
+Tasks with credentials in the URLs of their inputs or outputs
+(`https://user:password@host/...`) are rejected with `400 Bad Request`, for
+all TES instances (Funnel instances got them before); set
+`custom.controllers.post_task.url_credentials` to `strip` to remove the
+credentials instead.
+
+On startup, proTES removes the HTTP Basic credentials of callers that
+earlier versions stored with each task (`basic_auth`), and credentials in
+the URLs of inputs and outputs of stored tasks (also of the outputs that
+TES instances logged). The Celery worker refuses to start, too, if
+credentials of TES instances are missing. Stored tasks are still tracked
+and canceled with the credentials now configured for their TES instance.
+The Celery task that tracks tasks no longer takes credentials
+(`user`, `password`), so the new worker rejects tracking jobs that earlier
+versions queued but no worker started yet: upgrade while no tasks are being
+submitted, so that the queue is empty.
 
 ## Errors
 

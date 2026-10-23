@@ -5,7 +5,8 @@ from typing import Any
 from pymongo import MongoClient
 import pytest
 
-from pro_tes.utils.db import DbDocumentConnector
+from pro_tes.app import init_app
+from pro_tes.utils.db import DbDocumentConnector, remove_stored_credentials
 from tests.conftest import DB
 
 
@@ -36,3 +37,106 @@ def test_update_task_state_unknown(connector: DbDocumentConnector) -> None:
     document = connector.collection.find_one({"worker_id": "worker-1"})
     assert document is not None
     assert document["task"]["state"] == "invalid"
+
+
+def files(*urls: str | None) -> list[dict[str, Any]]:
+    """Get stored inputs or outputs.
+
+    Args:
+        *urls: URLs of the inputs or outputs; `None` for an input with
+            content.
+
+    Returns:
+        Inputs or outputs, as stored.
+    """
+    return [
+        {"url": url, "path": f"/{index}"} if url else {"content": "x", "path": "/c"}
+        for index, url in enumerate(urls)
+    ]
+
+
+def test_remove_stored_credentials(
+    mongo_client: MongoClient[dict[str, Any]],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Basic credentials and credentials in URLs are removed from stored tasks.
+
+    Other URLs, and tasks without credentials, are kept as they are;
+    repeated runs change nothing.
+    """
+    collection = mongo_client[DB]["tasks"]
+    task = {
+        "inputs": files("s3://key:secret@bucket/in", None, "https://[invalid/x"),
+        # leading whitespace, which URL parsing ignores
+        "outputs": files("ftp://ftp.example.org/a@b", " \thttps://u:p@bucket/ws"),
+    }
+    original = {"inputs": files("https://user@example.org/in"), "outputs": "invalid"}
+    collection.insert_many(
+        [
+            {
+                "worker_id": "worker-1",
+                "basic_auth": {"username": "user", "password": "secret"},
+                "task": task,
+                "task_original": original,
+            },
+            {"worker_id": "worker-2", "basic_auth": {}, "task": {}},
+            {"worker_id": "worker-3", "task": {"outputs": files("s3://bucket/out")}},
+            {
+                "worker_id": "worker-4",
+                "task": {
+                    "logs": [
+                        "invalid",
+                        {"outputs": files("https://user:pw@bucket/out")},
+                        {"outputs": files("s3://bucket/out")},
+                    ]
+                },
+            },
+        ]
+    )
+    with caplog.at_level("INFO"):
+        remove_stored_credentials(collection=collection)
+    assert "Removed HTTP Basic credentials from 2 stored tasks" in caplog.text
+    assert "Removed credentials from the URLs of 2 stored tasks" in caplog.text
+    documents = {
+        document.pop("worker_id"): document
+        for document in collection.find(projection={"_id": False})
+    }
+    assert documents == {
+        "worker-1": {
+            "task": {
+                "inputs": files("s3://bucket/in", None, "https://[invalid/x"),
+                "outputs": files("ftp://ftp.example.org/a@b", "https://bucket/ws"),
+            },
+            "task_original": {
+                "inputs": files("https://example.org/in"),
+                "outputs": "invalid",
+            },
+        },
+        "worker-2": {"task": {}},
+        "worker-3": {"task": {"outputs": files("s3://bucket/out")}},
+        "worker-4": {
+            "task": {
+                "logs": [
+                    "invalid",
+                    {"outputs": files("https://bucket/out")},
+                    {"outputs": files("s3://bucket/out")},
+                ]
+            }
+        },
+    }
+    caplog.clear()
+    with caplog.at_level("INFO"):
+        remove_stored_credentials(collection=collection)
+    assert "Removed" not in caplog.text
+
+
+def test_remove_stored_credentials_on_startup(
+    app_env: None, mongo_client: MongoClient[dict[str, Any]]
+) -> None:
+    """Credentials of stored tasks are removed when the app starts."""
+    collection = mongo_client[DB]["tasks"]
+    collection.insert_one({"worker_id": "worker-1", "basic_auth": {"password": "x"}})
+    init_app()
+    document = collection.find_one({"worker_id": "worker-1"})
+    assert document is not None
+    assert "basic_auth" not in document

@@ -5,7 +5,7 @@ from foca.config.access import set_app_config
 from foca.models.config import Config
 import pytest
 
-from pro_tes.utils.misc import get_custom_config, strip_auth
+from pro_tes.utils.misc import get_custom_config, has_credentials, strip_auth
 
 
 @pytest.mark.parametrize(
@@ -24,6 +24,29 @@ from pro_tes.utils.misc import get_custom_config, strip_auth
 def test_strip_auth(url: str, expected: str) -> None:
     """User names and passwords are removed from URLs."""
     assert strip_auth(url) == expected
+
+
+@pytest.mark.parametrize(
+    "url, expected",
+    [
+        ("https://tes.example.org/path@x", False),
+        ("s3://bucket/key", False),
+        ("/data/file", False),
+        ("https://user@example.org/", True),
+        ("https://:secret@example.org/", True),
+        ("https://@example.org/", True),
+        ("ftp://user:secret@ftp.example.org/in", True),
+    ],
+)
+def test_has_credentials(url: str, expected: bool) -> None:
+    """URLs with user names or passwords are recognized."""
+    assert has_credentials(url) is expected
+
+
+def test_has_credentials_malformed() -> None:
+    """Malformed URLs are reported."""
+    with pytest.raises(ValueError):
+        has_credentials("https://[invalid/x")
 
 
 def test_get_custom_config_missing() -> None:

@@ -4,11 +4,17 @@ Serves the parts of the TES API that proTES uses (service info, task
 creation, retrieval and cancellation) from memory: created tasks are
 complete right away. Also serves an OpenID Connect identity provider for
 proTES (issuer `ISSUER`; discovery, keys and user info), which issues access
-tokens of the users of `GROUPS` at `GET /oidc/token?sub=<user>` (no login).
+tokens of the users of `GROUPS` at `GET /oidc/token?sub=<user>` (no login),
+and access tokens of proTES itself at `POST /oidc/token` (client credentials
+grant, with the client `CLIENT_ID` and `CLIENT_SECRET`). Except for the
+service info, the TES API requires access tokens of proTES, as TES backends
+of proTES may.
 Run it with `python fake_tes.py [port]` (default 8080); it depends on the
 standard library, PyJWT and cryptography (dependencies of FOCA).
 """
 
+import base64
+import binascii
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
@@ -16,7 +22,7 @@ import sys
 import threading
 import time
 from typing import Any
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, unquote_plus, urlsplit
 
 from cryptography.hazmat.primitives.asymmetric import rsa
 import jwt
@@ -26,6 +32,9 @@ BASE_PATH = "/ga4gh/tes/v1"
 # this directory)
 ISSUER = "http://fake-tes:8080/oidc/"
 AUDIENCE = "smoke-client"
+# Client of proTES (fictitious; as in `compose.yaml` of this directory)
+CLIENT_ID = "smoke-protes"
+CLIENT_SECRET = "smoke-protes-secret"  # noqa: S105 (fictitious)
 # Groups of the users (user info), as mapped to roles in `config.yaml`
 GROUPS = {
     "alice": ["smoke-users"],
@@ -77,6 +86,7 @@ class Handler(BaseHTTPRequestHandler):
                 {
                     "issuer": ISSUER,
                     "jwks_uri": f"{ISSUER}jwk",
+                    "token_endpoint": f"{ISSUER}token",
                     "userinfo_endpoint": f"{ISSUER}userinfo",
                 },
             )
@@ -114,6 +124,70 @@ class Handler(BaseHTTPRequestHandler):
             return False
         return True
 
+    def _issue_client_token(self, body: bytes) -> None:
+        """Issue an access token of proTES (client credentials grant).
+
+        The client authenticates with HTTP Basic (`client_secret_basic`).
+
+        Args:
+            body: Request body (form-encoded).
+        """
+        form = parse_qs(body.decode())
+        header = self.headers.get("Authorization") or ""
+        scheme, _, credentials = header.partition(" ")
+        try:
+            decoded = base64.b64decode(credentials, validate=True).decode()
+        except (binascii.Error, UnicodeDecodeError):
+            decoded = ""
+        client = tuple(unquote_plus(value) for value in decoded.split(":", 1))
+        if form.get("grant_type") != ["client_credentials"]:
+            self._send(HTTPStatus.BAD_REQUEST, {"error": "unsupported_grant_type"})
+            return
+        if scheme != "Basic" or client != (CLIENT_ID, CLIENT_SECRET):
+            self._send(HTTPStatus.UNAUTHORIZED, {"error": "invalid_client"})
+            return
+        now = int(time.time())
+        token = jwt.encode(
+            {
+                "iss": ISSUER,
+                "sub": CLIENT_ID,
+                "client_id": CLIENT_ID,
+                "iat": now,
+                "exp": now + 300,
+            },
+            KEY,
+            algorithm="RS256",
+            headers={"kid": "smoke", "typ": "at+jwt"},
+        )
+        self._send(
+            HTTPStatus.OK,
+            {"access_token": token, "token_type": "Bearer", "expires_in": 300},
+        )
+
+    def _authorized(self) -> bool:
+        """Check that the request has an access token of proTES.
+
+        Sends `401` if not.
+
+        Returns:
+            Whether the request has a valid access token of proTES.
+        """
+        token = (self.headers.get("Authorization") or "").removeprefix("Bearer ")
+        try:
+            claims = jwt.decode(
+                token,
+                KEY.public_key(),
+                algorithms=["RS256"],
+                issuer=ISSUER,
+                options={"verify_aud": False},
+            )
+        except jwt.InvalidTokenError:
+            claims = {}
+        if claims.get("client_id") != CLIENT_ID:
+            self._send(HTTPStatus.UNAUTHORIZED, {"msg": "token of proTES required"})
+            return False
+        return True
+
     def do_GET(self) -> None:
         """Serve the service info, tasks, the list of tasks, and the IdP."""
         path = self.path.split("?", 1)[0]
@@ -121,6 +195,8 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == f"{BASE_PATH}/service-info":
             self._send(HTTPStatus.OK, SERVICE_INFO)
+            return
+        if not self._authorized():
             return
         if path == f"{BASE_PATH}/tasks":
             with LOCK:
@@ -138,10 +214,15 @@ class Handler(BaseHTTPRequestHandler):
         self._send(HTTPStatus.OK, task)
 
     def do_POST(self) -> None:
-        """Create tasks (complete right away), and cancel them (no-op)."""
+        """Create tasks (complete right away), cancel them (no-op), issue tokens."""
         path = self.path.split("?", 1)[0]
         length = int(self.headers.get("Content-Length") or 0)
         body = self.rfile.read(length)
+        if path == "/oidc/token":
+            self._issue_client_token(body)
+            return
+        if not self._authorized():
+            return
         if path == f"{BASE_PATH}/tasks":
             try:
                 task = json.loads(body)

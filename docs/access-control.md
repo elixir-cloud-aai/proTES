@@ -178,12 +178,85 @@ identity provider, the [smoke test](development.md) brings a fake one.
 
 ## Credentials of TES instances
 
-proTES forwards tasks to TES instances without credentials of its own: the
-`Authorization` header of requests carries the access token, so HTTP Basic
-credentials can no longer be passed through to TES instances (TES instances
-that require them can't be used for now; credentials of proTES for TES
-instances are planned,
-[#213](https://github.com/elixir-cloud-aai/proTES/issues/213)). Credentials
-in the URLs of inputs and outputs (`https://user:password@host/...`) are
-removed before the task is forwarded, unless the TES instance is a
-[Funnel](https://ohsu-comp-bio.github.io/funnel/) instance.
+proTES authenticates at TES instances with credentials of its own, never
+with those of its callers: the access tokens of requests are not forwarded,
+and no credentials of callers are stored or queued for the Celery worker.
+How proTES authenticates is set for each TES instance of
+`custom.tes.service_list`, by `auth`:
+
+- `client_credentials` (the default): with an access token of proTES itself,
+  which it gets from its identity provider with the OAuth 2.0 client
+  credentials grant ([RFC 6749, section
+  4.4](https://www.rfc-editor.org/rfc/rfc6749#section-4.4)). TES instances
+  accept tokens of proTES' client (e.g., by the `client_id` claim of the
+  token). proTES caches the token, and fetches a new one shortly before it
+  expires (`refresh_before` seconds, at most half its lifetime), also in the
+  Celery worker, which polls tasks for hours;
+- `basic`: with HTTP Basic credentials from environment variables, whose
+  names are set in `basic` (`username_env`, `password_env`). This is a
+  transitional mode for TES instances that don't accept tokens yet, and will
+  be removed once all of them do;
+- `none`: without credentials, e.g., for TES instances on an internal
+  network that need none.
+
+The client ID and secret of proTES are read from the environment variables
+`PROTES_CLIENT_ID` and `PROTES_CLIENT_SECRET`, and Basic credentials from
+the variables named in the config, e.g., set from Kubernetes Secrets; they
+are never part of the config or the database. The app refuses to start if
+one of them is not set for a TES instance that needs it, and warns of each
+TES instance with `basic` or `none`. Set the TES instances and the identity
+provider of proTES in a [config overlay](configuration.md), e.g.:
+
+```yaml
+custom:
+  tes:
+    service_list:
+      - url: https://tes.example.org
+      - url: https://tes.example.com
+        auth: basic
+        basic:
+          username_env: TES_EXAMPLE_COM_USERNAME
+          password_env: TES_EXAMPLE_COM_PASSWORD
+    client_credentials:
+      # The token endpoint is that of the issuer's OpenID Connect discovery
+      # document (`token_endpoint` sets it instead)
+      issuer: https://login.example.org/oidc/
+      # Scope of the tokens, if the identity provider needs one
+      scope: null
+      # `client_secret_basic` (HTTP Basic) or `client_secret_post`
+      auth_method: client_secret_basic
+```
+
+The Docker Compose setup passes `PROTES_CLIENT_ID` and
+`PROTES_CLIENT_SECRET` of the host to the app and the Celery worker; with
+the Helm chart, set them (and the variables of Basic credentials) from a
+Secret with `protes.extraEnv` (see the chart's README). The Celery worker
+checks the credentials on startup, too.
+
+The client of proTES is registered at the identity provider for the client
+credentials grant; it is a client of its own, not the client of the front
+ends whose tokens proTES accepts (`security.auth.audience`). All TES
+instances with `client_credentials` get the same token, so each of them
+could use it at the others until it expires: configure only TES instances
+that you trust, and keep the lifetime of the tokens short. Tasks are only
+forwarded to configured TES instances: TES instances that middlewares add
+(`tes_urls`) are skipped, as proTES has no credentials for them. Keep TES
+instances in the list until their tasks have finished: tasks of TES
+instances that are no longer configured can't be tracked or canceled.
+
+URLs of TES instances and of the identity provider must use `https`
+(`custom.tes.url_schemes`); allow `http` for local tests only, as tokens and
+credentials are sent unencrypted then. URLs of TES instances must not have
+credentials (`https://user:password@host`).
+
+Credentials in the URLs of inputs and outputs of tasks
+(`https://user:password@host/...`) are not accepted either: such tasks are
+rejected with `400 Bad Request`, or, if
+`custom.controllers.post_task.url_credentials` is `strip`, the credentials
+are removed before the task is stored and forwarded (see
+[Tasks](configuration.md#tasks)). Credentials that middlewares add are
+always removed.
+
+proTES doesn't tell TES instances on whose behalf it forwards tasks yet:
+they only see proTES. Tags with the identity of the user are planned, once
+their names are agreed with other services.

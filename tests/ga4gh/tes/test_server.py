@@ -4,7 +4,7 @@ import base64
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, Literal
 from unittest.mock import ANY
 
 from connexion import FlaskApp
@@ -13,10 +13,11 @@ from pydantic import ValidationError
 from pymongo import MongoClient
 from pymongo.errors import DuplicateKeyError, PyMongoError
 import pytest
+import requests
 import tes
 
 from pro_tes.config_models import ListTasks
-from pro_tes.exceptions import BadRequest
+from pro_tes.exceptions import BackendAuthError, BadRequest
 from pro_tes.ga4gh.tes import ownership, task_runs
 from pro_tes.ga4gh.tes.models import DbDocument, TesTask
 from pro_tes.middleware.middleware_handler import MiddlewareHandler
@@ -62,10 +63,9 @@ def test_create_task(
             "remote_host": url,
             "remote_base_path": "",
             "remote_task_id": "remote-1",
-            "user": None,
-            "password": None,
         }
     ]
+    assert "basic_auth" not in document
 
 
 @pytest.mark.parametrize("task", [{}, {"executors": [{"command": ["true"]}]}])
@@ -132,9 +132,8 @@ def test_create_task_state_unavailable(
     assert len(tracked) == 1
 
 
-def test_create_task_funnel(client: FlaskClient, backend: type[FakeBackend]) -> None:
-    """Funnel backends get the inputs and outputs as they are."""
-    backend.funnel.update(BACKENDS)
+def test_create_task_files(client: FlaskClient, backend: type[FakeBackend]) -> None:
+    """Backends get the inputs and outputs as they are."""
     response = client.post(f"{BASE_PATH}/tasks", json=TASK_FILES)
     assert response.status_code == 200
     ((_, task),) = relayed(backend)
@@ -147,16 +146,54 @@ def test_create_task_funnel(client: FlaskClient, backend: type[FakeBackend]) -> 
     ]
 
 
-@pytest.mark.parametrize("info", ["no_service_info", None])
-def test_create_task_other_backend(
-    client: FlaskClient, backend: type[FakeBackend], info: str | None
+def test_create_task_backend_config(
+    client: FlaskClient, backend: type[FakeBackend], in_order: None
 ) -> None:
-    """Tasks with files are relayed to other backends, or without service info."""
-    if info is not None:
-        getattr(backend, info).update(BACKENDS)
-    response = client.post(f"{BASE_PATH}/tasks", json=TASK_FILES)
-    assert response.status_code == 200
+    """Clients get the configuration of their backend (for its credentials)."""
+    assert client.post(f"{BASE_PATH}/tasks", json=TASK).status_code == 200
+    assert [config.url for config in backend.clients] == [BACKENDS[0]]
+
+
+def test_create_task_unknown_backend(
+    client: FlaskClient,
+    backend: type[FakeBackend],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Backends that are not configured (e.g., of middlewares) are skipped.
+
+    proTES has no credentials for them.
+    """
+
+    def unknown_first(
+        self: TaskDistributionRandom, tes_urls: list[str], request: Any
+    ) -> None:
+        """Try an unknown backend first."""
+        self.tes_urls = ["https://unknown.example.org", *tes_urls]
+
+    monkeypatch.setattr(TaskDistributionRandom, "_set_tes_urls", unknown_first)
+    assert client.post(f"{BASE_PATH}/tasks", json=TASK).status_code == 200
+    assert "https://unknown.example.org" not in backend.tasks
     assert len(relayed(backend)) == 1
+
+
+def test_create_task_backend_auth_error(
+    client: FlaskClient,
+    backend: type[FakeBackend],
+    in_order: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Tasks go to the next backend if there are no credentials for a backend."""
+
+    def create_task(self: FakeBackend, task: tes.Task) -> str:
+        """Fail for the first backend, as if no token was obtained."""
+        if self.url == BACKENDS[0]:
+            raise BackendAuthError("no token")
+        return "remote-1"
+
+    monkeypatch.setattr(backend, "create_task", create_task)
+    response = client.post(f"{BASE_PATH}/tasks", json=TASK)
+    assert response.status_code == 200
+    assert [config.url for config in backend.clients] == BACKENDS
 
 
 def test_task_original_unchanged(
@@ -187,8 +224,7 @@ def test_task_original_unchanged(
         """Get a complete task."""
         return tes.Task(id=task_id, state="COMPLETE", logs=[tes.TaskLog(logs=[])])
 
-    monkeypatch.setattr(FakeBackend, "get_task", complete)
-    monkeypatch.setattr(track_task_progress.tes, "HTTPClient", FakeBackend)
+    monkeypatch.setattr(backend, "get_task", complete)
     monkeypatch.setattr(track_task_progress, "sleep", lambda seconds: None)
     with app.app.app_context():
         track_task_progress.task__track_task_progress.run(**tracked[0])
@@ -525,13 +561,38 @@ TASK_CREDENTIALS: dict[str, Any] = {
 }
 
 
-def test_create_task_inputs_kept(
-    client: FlaskClient, backend: type[FakeBackend], in_order: None
+@pytest.mark.parametrize(
+    "task",
+    [
+        TASK_CREDENTIALS,
+        {**TASK, "outputs": [{"url": "s3://key@bucket/out", "path": "/out"}]},
+    ],
+)
+def test_create_task_url_credentials_rejected(
+    client: FlaskClient,
+    backend: type[FakeBackend],
+    mongo_client: MongoClient[dict[str, Any]],
+    task: dict[str, Any],
 ) -> None:
-    """Other backends get inputs and outputs as objects, without credentials.
+    """Tasks with credentials in URLs are rejected (`400`), not stored (S10)."""
+    response = client.post(f"{BASE_PATH}/tasks", json=task)
+    assert response.status_code == 400
+    assert not relayed(backend)
+    assert mongo_client[DB]["tasks"].count_documents({}) == 0
+
+
+def test_create_task_url_credentials_stripped(
+    app: FlaskApp,
+    client: FlaskClient,
+    backend: type[FakeBackend],
+    mongo_client: MongoClient[dict[str, Any]],
+) -> None:
+    """Credentials in URLs are removed (`strip`): never stored or relayed.
 
     Inputs with content are kept.
     """
+    with app.app.app_context():
+        get_custom_config().controllers.post_task.url_credentials = "strip"
     response = client.post(f"{BASE_PATH}/tasks", json=TASK_CREDENTIALS)
     assert response.status_code == 200
     ((_, task),) = relayed(backend)
@@ -542,23 +603,86 @@ def test_create_task_inputs_kept(
     assert [(item.url, item.path) for item in task.outputs] == [
         ("s3://bucket/out", "/out")
     ]
+    document = stored(mongo_client, response.get_json()["id"])
+    for field in ("task", "task_original"):
+        assert document[field]["inputs"][0]["url"] == "ftp://ftp.example.org/in"
+    assert "secret" not in str(document)
+
+
+def test_create_task_url_credentials_middleware(
+    client: FlaskClient,
+    backend: type[FakeBackend],
+    mongo_client: MongoClient[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Credentials that middlewares add to URLs are removed, too."""
+    apply = TaskDistributionRandom.apply_middleware
+
+    def add_credentials(self: TaskDistributionRandom, request: Any) -> Any:
+        """Add credentials to the URL of the input."""
+        request = apply(self, request)
+        request.json["inputs"][0]["url"] = "s3://key:secret@bucket/in"
+        return request
+
+    monkeypatch.setattr(TaskDistributionRandom, "apply_middleware", add_credentials)
+    response = client.post(f"{BASE_PATH}/tasks", json=TASK_FILES)
+    assert response.status_code == 200
+    ((_, task),) = relayed(backend)
+    assert task.inputs[0].url == "s3://bucket/in"
+    assert "secret" not in str(stored(mongo_client, response.get_json()["id"]))
+
+
+@pytest.mark.parametrize("mode", ["reject", "strip"])
+def test_handle_url_credentials_malformed(mode: Literal["reject", "strip"]) -> None:
+    """Tasks with malformed URLs are rejected (`400`).
+
+    The API's request validation rejects them first.
+    """
+    payload = {"inputs": [{"url": "https://[invalid/in", "path": "/in"}]}
+    with pytest.raises(BadRequest, match="Malformed URL in `inputs`"):
+        task_runs.TaskRuns._handle_url_credentials(payload=payload, mode=mode)
+
+
+def test_handle_url_credentials_skipped() -> None:
+    """Inputs and outputs that are not objects with URLs are left as they are.
+
+    They are rejected by the validation of the task.
+    """
+    payload: dict[str, Any] = {
+        "inputs": [None, {"url": 1}, {"content": "hello"}],
+        "outputs": {"url": "https://user@example.org"},
+    }
+    expected = deepcopy(payload)
+    task_runs.TaskRuns._handle_url_credentials(payload=payload, mode="reject")
+    assert payload == expected
 
 
 def test_create_task_payload_per_backend(
-    client: FlaskClient, backend: type[FakeBackend], in_order: None
+    client: FlaskClient,
+    backend: type[FakeBackend],
+    in_order: None,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Each backend gets the task as received, without changes for others.
+    """Each backend gets the task as validated, without changes for others.
 
-    The first backend (credentials removed) rejects the task, the next one
-    (Funnel) gets the credentials.
+    The first backend changes the task it gets, and rejects it; the next one
+    gets it unchanged.
     """
-    backend.failing.add(BACKENDS[0])
-    backend.funnel.add(BACKENDS[1])
-    response = client.post(f"{BASE_PATH}/tasks", json=TASK_CREDENTIALS)
+    create = backend.create_task
+
+    def create_task(self: FakeBackend, task: tes.Task) -> str:
+        """Change the task, and reject it, at the first backend."""
+        if self.url == BACKENDS[0]:
+            task.inputs[0].url = "s3://changed/in"
+            raise requests.HTTPError("500")
+        return create(self, task)
+
+    monkeypatch.setattr(backend, "create_task", create_task)
+    response = client.post(f"{BASE_PATH}/tasks", json=TASK_FILES)
     assert response.status_code == 200
     ((url, task),) = relayed(backend)
     assert url == BACKENDS[1]
-    assert task.inputs[0].url == "ftp://user:secret@ftp.example.org/in"
+    assert task.inputs[0].url == "s3://bucket/in"
 
 
 def test_timestamps(
@@ -657,10 +781,51 @@ def test_cancel_task_no_remote_id(
     assert stored(mongo_client, task_id)["task"]["state"] == "RUNNING"
 
 
+def test_cancel_task_backend_not_configured(
+    app: FlaskApp,
+    client: FlaskClient,
+    task_id: str,
+    backend: type[FakeBackend],
+    mongo_client: MongoClient[dict[str, Any]],
+) -> None:
+    """Tasks of backends that are no longer configured can't be canceled."""
+    set_state(mongo_client, task_id, "RUNNING")
+    with app.app.app_context():
+        get_custom_config().tes.service_list = []
+    response = client.post(f"{BASE_PATH}/tasks/{task_id}:cancel")
+    assert response.status_code == 500
+    assert response.get_json()["detail"] == (
+        "The TES instance of the task is not configured."
+    )
+    assert backend.canceled == []
+    assert stored(mongo_client, task_id)["task"]["state"] == "RUNNING"
+
+
+def test_cancel_task_backend_auth_error(
+    client: FlaskClient,
+    task_id: str,
+    backend: type[FakeBackend],
+    mongo_client: MongoClient[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Tasks can't be canceled without credentials for their backend."""
+
+    def cancel_task(self: FakeBackend, task_id: str) -> None:
+        """Fail, as if no token was obtained."""
+        raise BackendAuthError("no token")
+
+    monkeypatch.setattr(backend, "cancel_task", cancel_task)
+    set_state(mongo_client, task_id, "RUNNING")
+    response = client.post(f"{BASE_PATH}/tasks/{task_id}:cancel")
+    assert response.status_code == 500
+    assert "No credentials" in response.get_json()["detail"]
+    assert stored(mongo_client, task_id)["task"]["state"] == "RUNNING"
+
+
 def test_create_task_no_basic_auth(
     client: FlaskClient, backend: type[FakeBackend], tracked: list[dict[str, Any]]
 ) -> None:
-    """Requests carry access tokens, so no Basic credentials for backends (#213)."""
+    """Basic credentials of callers are rejected, never stored or queued (#213)."""
     credentials = base64.b64encode(b"user:secret").decode()
     response = client.post(
         f"{BASE_PATH}/tasks",
@@ -670,7 +835,12 @@ def test_create_task_no_basic_auth(
     assert response.status_code == 401
     assert client.post(f"{BASE_PATH}/tasks", json=TASK).status_code == 200
     ((tracked_task),) = tracked
-    assert (tracked_task["user"], tracked_task["password"]) == (None, None)
+    assert set(tracked_task) == {
+        "worker_id",
+        "remote_host",
+        "remote_base_path",
+        "remote_task_id",
+    }
 
 
 def test_create_task_resources(client: FlaskClient, backend: type[FakeBackend]) -> None:

@@ -9,7 +9,8 @@ import pytest
 import requests
 import tes
 
-from pro_tes.ga4gh.tes import task_runs
+from pro_tes.config_models import TesBackend
+from pro_tes.ga4gh.tes import backends, task_runs
 from pro_tes.utils.misc import get_custom_config
 from tests.conftest import DB
 
@@ -36,27 +37,27 @@ BACKENDS = ["https://tes1.example.org", "https://tes2.example.org"]
 class FakeBackend:
     """Fake TES backends: tasks are queued.
 
-    Records tasks and cancellations; backends can be made unreachable,
-    invalid, or Funnel.
+    Records tasks, cancellations and the backends that clients were created
+    for; backends can be made invalid, failing, or not serving their tasks.
 
     Attributes:
         url: URL of the backend.
+        backend: Configuration of the backend.
     """
 
     # Tasks by backend URL
     tasks: ClassVar[dict[str, list[tes.Task]]] = {}
     canceled: ClassVar[list[str]] = []
-    # Backends whose URL is invalid, that reject tasks, or whose service info
-    # is unavailable
+    # Configurations of the backends that clients were created for
+    clients: ClassVar[list[TesBackend]] = []
+    # Backends whose URL is invalid, that reject tasks, and that don't serve
+    # their tasks
     invalid: ClassVar[set[str]] = set()
     failing: ClassVar[set[str]] = set()
-    no_service_info: ClassVar[set[str]] = set()
-    # Backends that are Funnel, and that don't serve their tasks
-    funnel: ClassVar[set[str]] = set()
     no_tasks: ClassVar[set[str]] = set()
 
-    def __init__(self, url: str, **kwargs: Any) -> None:
-        """Create a client; arguments other than the URL are ignored.
+    def __init__(self, url: str, backend: TesBackend, **kwargs: Any) -> None:
+        """Create a client of a backend; other arguments are ignored.
 
         Raises:
             ValueError: The URL is invalid.
@@ -64,16 +65,8 @@ class FakeBackend:
         if url.rstrip("/") in self.invalid:
             raise ValueError(f"Invalid URL: {url}")
         self.url = url.rstrip("/")
-
-    def get_service_info(self) -> tes.ServiceInfo:
-        """Get the service info.
-
-        Raises:
-            requests.HTTPError: The service info is unavailable.
-        """
-        if self.url in self.no_service_info:
-            raise requests.HTTPError("503")
-        return tes.ServiceInfo(name="Funnel" if self.url in self.funnel else "Fake")
+        self.backend = backend
+        self.clients.append(backend)
 
     def create_task(self, task: tes.Task) -> str:
         """Create a task.
@@ -118,14 +111,20 @@ def tracked(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
 def backend(
     monkeypatch: pytest.MonkeyPatch, app: FlaskApp, tracked: list[dict[str, Any]]
 ) -> type[FakeBackend]:
-    """Fake TES backends `BACKENDS`; tasks are not tracked by Celery."""
-    for name in ("invalid", "failing", "no_service_info", "funnel", "no_tasks"):
+    """Fake TES backends `BACKENDS`; tasks are not tracked by Celery.
+
+    The backends need no authentication (`auth: none`).
+    """
+    for name in ("invalid", "failing", "no_tasks"):
         monkeypatch.setattr(FakeBackend, name, set())
     monkeypatch.setattr(FakeBackend, "tasks", {})
     monkeypatch.setattr(FakeBackend, "canceled", [])
-    monkeypatch.setattr(task_runs.tes, "HTTPClient", FakeBackend)
+    monkeypatch.setattr(FakeBackend, "clients", [])
+    monkeypatch.setattr(backends, "TesClient", FakeBackend)
     with app.app.app_context():
-        get_custom_config().tes.service_list = list(BACKENDS)
+        get_custom_config().tes.service_list = [
+            TesBackend(url=url, auth="none") for url in BACKENDS
+        ]
     return FakeBackend
 
 

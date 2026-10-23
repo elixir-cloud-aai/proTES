@@ -16,9 +16,17 @@ security:
       smoke-users: user
       smoke-admins: admin
 custom:
+  # proTES authenticates at the fake backend with its own access token of the
+  # fake identity provider (client ID and secret in `compose.yaml`), over
+  # plain HTTP inside the Compose network
   tes:
     service_list:
-      - "http://fake-tes:8080"
+      - url: http://fake-tes:8080
+        auth: client_credentials
+    url_schemes:
+      - http
+    client_credentials:
+      issuer: http://fake-tes:8080/oidc/
   # a list of middlewares, each a list of alternatives
   middlewares:
     - - "pro_tes.plugins.middlewares.task_distribution.random.TaskDistributionRandom"

@@ -25,3 +25,9 @@ custom:
   access_control:
     # Start without admin groups
     require_admin: False
+  # List the TES instances to forward tasks to, and how proTES authenticates
+  # at them (see `docs/access-control.md`), e.g.:
+  # tes:
+  #   service_list:
+  #     - url: https://tes.example.org
+  #       auth: none

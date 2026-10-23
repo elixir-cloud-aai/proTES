@@ -35,6 +35,13 @@ x-protes: &protes
 # down --volumes`, which also removes the database)
 x-broker-url: &broker-url "pyamqp://${RABBITMQ_DEFAULT_USER:-protes}:${RABBITMQ_DEFAULT_PASS:-protes}@rabbitmq:5672//"
 
+# The client of proTES at its identity provider, for TES backends with
+# `auth: client_credentials` (see `docs/access-control.md`), from the host's
+# `PROTES_CLIENT_ID` and `PROTES_CLIENT_SECRET`; backends with `auth: basic`
+# need their variables added to both services
+x-client-id: &client-id ${PROTES_CLIENT_ID:-}
+x-client-secret: &client-secret ${PROTES_CLIENT_SECRET:-}
+
 services:
 
     protes:
@@ -51,6 +58,8 @@ services:
             CELERY_BROKER_URL: *broker-url
             FOCA_CONFIG_OVERLAY: /etc/protes/config.dev.yaml
             GUNICORN_CMD_ARGS: ${GUNICORN_CMD_ARGS:-}
+            PROTES_CLIENT_ID: *client-id
+            PROTES_CLIENT_SECRET: *client-secret
 
     protes-worker:
         <<: *protes
@@ -58,6 +67,8 @@ services:
         environment:
             CELERY_BROKER_URL: *broker-url
             FOCA_CONFIG_OVERLAY: /etc/protes/config.dev.yaml
+            PROTES_CLIENT_ID: *client-id
+            PROTES_CLIENT_SECRET: *client-secret
         # Replaces the image's health check, which probes the app
         healthcheck:
             test: ["CMD-SHELL", "celery --app pro_tes.celery_worker inspect ping --destination celery@$$HOSTNAME --timeout 10"]

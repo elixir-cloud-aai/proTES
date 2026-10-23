@@ -79,9 +79,19 @@ check GET "/tasks/${id}" 403 '.status == 403'
 check POST "/tasks/${id}:cancel" 403 '.status == 403'
 auth="$(token admin)"
 check GET "/tasks/${id}" 403 '.status == 403'
-# The fake backend got the task (and those of earlier runs, if not restarted)
+# The fake backend got the task (and those of earlier runs, if not
+# restarted), with the access token of proTES (which it requires); listed
+# with a token of proTES' client
 docker compose exec -T fake-tes python -c \
-  "import json, urllib.request; \
-  tasks = json.load(urllib.request.urlopen('http://localhost:8080/ga4gh/tes/v1/tasks'))['tasks']; \
+  "import base64, json, sys, urllib.request; \
+  sys.path.insert(0, '/smoke'); \
+  from fake_tes import CLIENT_ID, CLIENT_SECRET; \
+  basic = base64.b64encode(f'{CLIENT_ID}:{CLIENT_SECRET}'.encode()).decode(); \
+  request = urllib.request.Request('http://localhost:8080/oidc/token', \
+    data=b'grant_type=client_credentials', headers={'Authorization': f'Basic {basic}'}); \
+  token = json.load(urllib.request.urlopen(request))['access_token']; \
+  request = urllib.request.Request('http://localhost:8080/ga4gh/tes/v1/tasks', \
+    headers={'Authorization': f'Bearer {token}'}); \
+  tasks = json.load(urllib.request.urlopen(request))['tasks']; \
   assert tasks and all(task['state'] == 'COMPLETE' for task in tasks), tasks"
 echo "Smoke test passed"
