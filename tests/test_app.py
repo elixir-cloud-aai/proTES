@@ -11,7 +11,7 @@ from pymongo import MongoClient
 import pytest
 import yaml
 
-from pro_tes.app import init_app
+from pro_tes.app import init_app, run_app
 from pro_tes.utils.misc import get_custom_config
 
 BASE_PATH = "/ga4gh/tes/v1"
@@ -146,3 +146,11 @@ def test_smoke_test_config(
     assert custom.middlewares.root == [
         ["pro_tes.plugins.middlewares.task_distribution.random.TaskDistributionRandom"]
     ]
+
+
+def test_run_app(app: FlaskApp, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The app is run on its configured port."""
+    calls: list[dict[str, Any]] = []
+    monkeypatch.setattr(app, "run", lambda **kwargs: calls.append(kwargs))
+    run_app(app)
+    assert calls == [{"port": app.port}]

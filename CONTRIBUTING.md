@@ -42,7 +42,8 @@ following simple rules to make sure your pull request will indeed be merged:
 2. Fork the repo and create a [_feature
    branch_](https://datasift.github.io/gitflow/IntroducingGitFlow.html) from
    branch `dev`
-3. If you've added code that should be tested, add tests.
+3. Add tests that fail without your change; coverage must stay at 100%
+   (see [Development](docs/development.md)).
 4. Ensure that all tests pass.
 5. Document your code and update all relevant documentation.
 6. Stick to the code and documentation style (see below).

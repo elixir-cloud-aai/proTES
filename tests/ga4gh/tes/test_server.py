@@ -1,7 +1,9 @@
 """Tests of the TES API endpoints, with fake TES backends."""
 
+import base64
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 from typing import Any, ClassVar
 from unittest.mock import ANY
 
@@ -9,13 +11,16 @@ from connexion import FlaskApp
 from flask.testing import FlaskClient
 from pydantic import ValidationError
 from pymongo import MongoClient
+from pymongo.errors import DuplicateKeyError
 import pytest
 import requests
 import tes
 
 from pro_tes.config_models import ListTasks
+from pro_tes.exceptions import BadRequest
 from pro_tes.ga4gh.tes import task_runs
-from pro_tes.ga4gh.tes.models import TesTask
+from pro_tes.ga4gh.tes.models import DbDocument, TesTask
+from pro_tes.middleware.middleware_handler import MiddlewareHandler
 from pro_tes.plugins.middlewares.task_distribution.random import (
     TaskDistributionRandom,
 )
@@ -219,6 +224,7 @@ def test_create_task_next_backend(
     client: FlaskClient,
     backend: type[FakeBackend],
     mongo_client: MongoClient[dict[str, Any]],
+    in_order: None,
     unusable: str,
 ) -> None:
     """Tasks go to the next backend if a backend is invalid or rejects them."""
@@ -717,6 +723,9 @@ def test_timestamps(
         json={**TASK, "creation_time": "2000-01-01T00:00:00Z"},
     )
     assert response.status_code == 400
+    # so are the logs
+    response = client.post(f"{BASE_PATH}/tasks", json={**TASK, "logs": [{}]})
+    assert response.status_code == 400
     before = datetime.now(timezone.utc)
     response = client.post(f"{BASE_PATH}/tasks", json=TASK)
     after = datetime.now(timezone.utc)
@@ -794,3 +803,127 @@ def test_cancel_task_no_remote_id(
     assert client.post(f"{BASE_PATH}/tasks/{task_id}:cancel").status_code == 500
     assert backend.canceled == []
     assert stored(mongo_client, task_id)["task"]["state"] == "RUNNING"
+
+
+def test_create_task_basic_auth(
+    client: FlaskClient, backend: type[FakeBackend], tracked: list[dict[str, Any]]
+) -> None:
+    """Basic auth credentials are passed on to the Celery task."""
+    credentials = base64.b64encode(b"user:secret").decode()
+    response = client.post(
+        f"{BASE_PATH}/tasks",
+        json=TASK,
+        headers={"Authorization": f"Basic {credentials}"},
+    )
+    assert response.status_code == 200
+    ((tracked_task),) = tracked
+    assert (tracked_task["user"], tracked_task["password"]) == ("user", "secret")
+
+
+def test_create_task_resources(client: FlaskClient, backend: type[FakeBackend]) -> None:
+    """Resources are relayed."""
+    task = {**TASK, "resources": {"cpu_cores": 2, "ram_gb": 4.0}}
+    assert client.post(f"{BASE_PATH}/tasks", json=task).status_code == 200
+    ((_, relayed_task),) = relayed(backend)
+    assert relayed_task.resources.cpu_cores == 2
+
+
+def test_create_task_not_relayable(
+    client: FlaskClient,
+    backend: type[FakeBackend],
+    mongo_client: MongoClient[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Tasks that py-tes can't represent fail (`400`); they are stored as such."""
+
+    def task(**kwargs: Any) -> tes.Task:
+        """Reject the task, as py-tes does with unknown fields."""
+        raise TypeError("unexpected keyword argument")
+
+    monkeypatch.setattr(task_runs.tes, "Task", task)
+    response = client.post(f"{BASE_PATH}/tasks", json=TASK)
+    assert response.status_code == 400
+    assert not relayed(backend)
+    (document,) = mongo_client[DB]["tasks"].find()
+    assert document["task"]["state"] == "SYSTEM_ERROR"
+
+
+def test_create_task_no_body(app: FlaskApp, backend: type[FakeBackend]) -> None:
+    """Requests without a JSON body are rejected (connexion rejects them first)."""
+    with (
+        app.app.test_request_context(data="null", content_type="application/json"),
+        pytest.raises(BadRequest, match="body is missing"),
+    ):
+        task_runs.TaskRuns().create_task()
+
+
+def test_create_task_body_removed(
+    client: FlaskClient, backend: type[FakeBackend], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Middlewares that remove the request body fail the request (`500`)."""
+    monkeypatch.setattr(
+        MiddlewareHandler,
+        "apply_middlewares",
+        lambda self, request: SimpleNamespace(json=None),
+    )
+    response = client.post(f"{BASE_PATH}/tasks", json=TASK)
+    assert response.status_code == 500
+    assert not relayed(backend)
+
+
+def test_list_tasks_user(
+    app: FlaskApp, task_id: str, mongo_client: MongoClient[dict[str, Any]]
+) -> None:
+    """Tasks are filtered by user if a user is given."""
+    mongo_client[DB]["tasks"].update_one(
+        {"task.id": task_id}, {"$set": {"user_id": "user-1"}}
+    )
+    with app.app.test_request_context():
+        task_list = task_runs.TaskRuns().list_tasks
+        assert task_list(user_id="user-1")["tasks"] == [{"id": task_id, "state": ANY}]
+        assert task_list(user_id="user-2")["tasks"] == []
+
+
+def test_invalid_view(app: FlaskApp) -> None:
+    """Invalid views are rejected (connexion rejects them first)."""
+    with app.app.app_context(), pytest.raises(BadRequest):
+        task_runs.TaskRuns()._set_projection(view="ALL")
+
+
+def test_task_id_taken(app: FlaskApp, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Task identifiers are generated until one is unused, or attempts run out."""
+    with app.app.app_context():
+        runs = task_runs.TaskRuns()
+        attempts = runs.custom_config.controllers.post_task.db.insert_attempts
+        inserted: list[str] = []
+
+        def insert_one(document: dict[str, Any]) -> None:
+            """Insert the document; all but the last attempt fail."""
+            inserted.append(document["task"]["id"])
+            if len(inserted) < attempts:
+                raise DuplicateKeyError("taken")
+
+        def insert_none(document: dict[str, Any]) -> None:
+            """Fail to insert the document."""
+            raise DuplicateKeyError("taken")
+
+        monkeypatch.setattr(runs.db_client, "insert_one", insert_one)
+        task_id, _ = runs._write_doc_to_db(document=DbDocument())
+        assert inserted[-1] == task_id
+        assert len(inserted) == attempts
+        monkeypatch.setattr(runs.db_client, "insert_one", insert_none)
+        with pytest.raises(DuplicateKeyError, match="Could not insert"):
+            runs._write_doc_to_db(document=DbDocument())
+
+
+def test_forward_stored_no_logs(app: FlaskApp) -> None:
+    """Forwards of tasks without logs can't be stored."""
+    connector = SimpleNamespace(
+        upsert_fields_in_root_object=lambda **kwargs: DbDocument()
+    )
+    with app.app.app_context(), pytest.raises(ValueError, match="has no logs"):
+        task_runs.TaskRuns()._update_doc_in_db(
+            db_connector=connector,  # type: ignore[arg-type]
+            tes_url=BACKENDS[0],
+            remote_task_id="remote-1",
+        )

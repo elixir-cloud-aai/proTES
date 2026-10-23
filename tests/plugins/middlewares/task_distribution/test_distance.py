@@ -132,12 +132,26 @@ def test_missing_location() -> None:
     """Backends or inputs without location can't be ranked."""
     middleware = TaskDistributionDistance()
     middleware._set_tes_instances(tes_urls=TES_URLS)
-    with pytest.raises(MiddlewareException, match="IP location not available"):
+    uri = "s3://data-zurich.example.org/in1"
+    middleware.task_summary.inputs[uri] = distance.TaskInput()
+    with pytest.raises(MiddlewareException, match="not available for input"):
         middleware._set_distances()
-    middleware.task_summary.inputs["s3://data-zurich.example.org/in1"] = (
-        distance.TaskInput(location=locate("198.51.100.1"))
+    middleware.task_summary.inputs[uri] = distance.TaskInput(
+        location=locate("198.51.100.1")
     )
     with pytest.raises(MiddlewareException, match="not available for TES instance"):
         middleware._set_distances()
     with pytest.raises(MiddlewareException, match="Total distance not available"):
         middleware._rank_tes_instances()
+
+
+def test_no_json() -> None:
+    """Requests without a JSON body fail the middleware."""
+    app = flask.Flask(__name__)
+    with (
+        app.test_request_context(data="null", content_type="application/json"),
+        pytest.raises(MiddlewareException, match="no JSON payload"),
+    ):
+        TaskDistributionDistance()._set_tes_urls(
+            tes_urls=TES_URLS, request=flask.request
+        )
