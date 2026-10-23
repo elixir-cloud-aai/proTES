@@ -46,8 +46,8 @@ in the order in which they are tried; proTES removes the key before it
 forwards the task, and skips URLs that are not in `custom.tes.service_list`
 (it has no credentials for them). Credentials that middlewares add to the
 URLs of inputs and outputs are removed. Raise an exception if the middleware
-can't be applied, so that the next alternative of the step is tried. The task distribution
-middlewares derive from
+can't be applied, so that the next alternative of the step is tried. The
+task distribution middlewares derive from
 [`TaskDistributionBaseClass`](reference.md#pro_tes.plugins.middlewares.task_distribution.base.TaskDistributionBaseClass),
 which sets `tes_urls` from the URLs of `custom.tes.service_list`; override
 its `_set_tes_urls()` to order them differently.

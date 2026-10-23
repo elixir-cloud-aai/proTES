@@ -9,7 +9,9 @@ import pytest
 import yaml
 
 from pro_tes.app import init_app
+from pro_tes.config_models import Tes, TesBackend
 from pro_tes.ga4gh.tes.backends import CLIENT_ID_ENV, CLIENT_SECRET_ENV
+from pro_tes.security import check_backends
 from tests.conftest import ADMIN_GROUP, USER_GROUP, set_overlays
 
 ROOT = Path(__file__).parents[1]
@@ -312,3 +314,16 @@ def test_backends_invalid(
     with pytest.raises(ValueError, match="custom configuration") as exc_info:
         init_app()
     assert "need `client_credentials" in str(exc_info.value.__cause__)
+
+
+def test_basic_backend_unvalidated() -> None:
+    """Backends with `auth: basic` but no `basic` are rejected.
+
+    Validation prevents them, unless the config is changed afterwards.
+    """
+    backend = TesBackend.model_construct(
+        url="https://tes.example.org", auth="basic", basic=None
+    )
+    conf = Tes.model_construct(service_list=[backend], url_schemes=["https"])
+    with pytest.raises(RuntimeError, match="without `basic`"):
+        check_backends(conf)

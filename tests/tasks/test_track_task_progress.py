@@ -42,6 +42,7 @@ class FakeClient:
     """
 
     states: ClassVar[list[str | None]] = ["COMPLETE"]
+    outputs: ClassVar[list[tes.OutputFileLog]] = [OUTPUT]
     # Clients created, and requested task identifiers
     clients: ClassVar[list["FakeClient"]] = []
     requested: ClassVar[list[str]] = []
@@ -67,7 +68,7 @@ class FakeClient:
         return tes.Task(
             id=task_id,
             state=state,
-            logs=[tes.TaskLog(logs=[], outputs=[OUTPUT])],
+            logs=[tes.TaskLog(logs=[], outputs=self.outputs)],
         )
 
 
@@ -75,6 +76,7 @@ class FakeClient:
 def client_class(monkeypatch: pytest.MonkeyPatch) -> type[FakeClient]:
     """Fake TES client, whose task is complete."""
     monkeypatch.setattr(FakeClient, "states", ["COMPLETE"])
+    monkeypatch.setattr(FakeClient, "outputs", [OUTPUT])
     monkeypatch.setattr(FakeClient, "clients", [])
     monkeypatch.setattr(FakeClient, "requested", [])
     monkeypatch.setattr(backends, "TesClient", FakeClient)
@@ -160,6 +162,27 @@ def test_task_tracked(
     assert document["task"]["logs"][0]["outputs"] == [
         {"url": "s3://bucket/out", "path": "/out", "size_bytes": "10"}
     ]
+
+
+def test_output_credentials_removed(
+    tasks: Collection[dict[str, Any]],
+    client_class: type[FakeClient],
+    sleeps: list[float],
+) -> None:
+    """Credentials in the URLs of outputs that backends log aren't stored.
+
+    E.g., of tasks that earlier versions forwarded with credentials; URLs
+    that can't be parsed are stored as logged.
+    """
+    client_class.outputs = [
+        tes.OutputFileLog(url="s3://user:pw@bucket/out", path="/out", size_bytes=1),
+        tes.OutputFileLog(url="https://[bad/out", path="/bad", size_bytes=1),
+    ]
+    run()
+    document = tasks.find_one({"worker_id": ARGS["worker_id"]})
+    assert document is not None
+    urls = [output["url"] for output in document["task"]["logs"][0]["outputs"]]
+    assert urls == ["s3://bucket/out", "https://[bad/out"]
 
 
 def test_backend_client(

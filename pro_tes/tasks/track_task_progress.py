@@ -11,7 +11,7 @@ from pro_tes.ga4gh.tes.backends import create_client
 from pro_tes.ga4gh.tes.models import TesState, TesTask
 from pro_tes.ga4gh.tes.states import States
 from pro_tes.utils.db import DbDocumentConnector
-from pro_tes.utils.misc import get_custom_config
+from pro_tes.utils.misc import get_custom_config, has_credentials, strip_auth
 from pro_tes.utils.models import TaskModelConverter
 
 logger = logging.getLogger(__name__)
@@ -98,6 +98,15 @@ def task__track_task_progress(
         raise ValueError(f"[{worker_id}] Task has no logs")
     for index, logs in enumerate(task_converted.logs):
         document.task.logs[index].logs = logs.logs
+        # backends may log output URLs with credentials, e.g., of tasks that
+        # earlier versions forwarded with them
+        for output in logs.outputs or []:
+            try:
+                found = has_credentials(output.url)
+            except ValueError:
+                continue
+            if found:
+                output.url = strip_auth(output.url)
         document.task.logs[index].outputs = logs.outputs
 
     # updating the database

@@ -125,12 +125,17 @@ def check_backends(conf: Tes | None = None) -> None:
     for backend in conf.service_list:
         if backend.auth == "client_credentials":
             token_backends.append(backend.url)
-        elif backend.auth == "basic" and backend.basic is not None:
+        elif backend.auth == "basic":
             logger.warning(
                 "TES backend %s: HTTP Basic credentials (`auth: basic`), a"
                 " transitional mode for backends that don't accept tokens",
                 backend.url,
             )
+            if backend.basic is None:
+                # prevented by validation, unless the config was changed later
+                raise RuntimeError(
+                    f"TES backend {backend.url}: `auth: basic` without `basic`"
+                )
             missing.extend(
                 _missing_env(backend.basic.username_env, backend.basic.password_env)
             )
