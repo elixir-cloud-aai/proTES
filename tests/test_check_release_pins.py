@@ -278,8 +278,8 @@ def test_chart_dependencies_indentless(tmp_path: Path) -> None:
     """Dependencies listed without indentation are checked, too."""
     root = _write(tmp_path)
     (root / "deployment" / "Chart.yaml").write_text(
-        "name: app\ndependencies:\n- name: a\n  version: 1.0.0-rc1\n  repository: oci://x\n"
-        "version: 0.0.0\n"
+        "name: app\ndependencies:\n- name: a\n  version: 1.0.0-rc1\n"
+        "  repository: oci://x\nversion: 0.0.0\n"
     )
     assert check_release_pins.find_dev_pins(root) == [
         "deployment/Chart.yaml: dependency version '1.0.0-rc1' is not a release version"

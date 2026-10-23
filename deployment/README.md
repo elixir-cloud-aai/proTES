@@ -34,18 +34,18 @@ The identity provider is deployment configuration, without defaults (see
 Rendering fails, as the app would refuse to start, unless each deployment
 sets:
 
-- the trusted token issuers (`config.security.auth.issuers`), unless access
-  control is disabled (`config.security.access_control.enabled: false`);
+- the trusted token issuers (`config.security.auth.issuers`);
 - the audience (`config.security.auth.audience`), unless
   `config.security.auth.verify_audience` is `false`, which accepts tokens for
   any audience;
 - an admin group mapped to the role `admin`
   (`config.security.access_control.group_mapping`), unless
   `config.custom.access_control.require_admin` is `false` or access control
-  is not enforced (`config.security.access_control.enforce: false`);
+  is disabled or not enforced (`config.security.access_control.enabled` or
+  `enforce` is `false`);
 - the claim with the groups of users
   (`config.security.access_control.claim_groups`), if groups are mapped and
-  access control is enforced.
+  access control is enabled and enforced.
 
 These booleans are checked as the app parses them (e.g., `"no"` is
 `false`); rendering fails on other values.
@@ -532,8 +532,8 @@ which cannot be changed in place, so **releases of the legacy chart cannot be
 upgraded: uninstall them and install the current chart.** An upgrade would
 delete the volume with the MongoDB data (`mongodb-volume`), so `helm upgrade`
 fails for releases with Deployments of the legacy chart (only when Helm can
-query the cluster: not in `helm template` or client-side dry runs). Uninstalling also deletes the
-claim and, usually, the data with it.
+query the cluster: not in `helm template` or client-side dry runs).
+Uninstalling also deletes the claim and, usually, the data with it.
 
 Rendering fails for the values of the legacy chart, which the current chart
 would ignore:

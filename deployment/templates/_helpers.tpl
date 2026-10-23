@@ -67,12 +67,13 @@ chart), which the chart would otherwise ignore; renders nothing.
 {{- end -}}
 
 {{/*
-As the app on startup, refuse to render without trusted token issuers (if
-access control is enabled, `security.access_control.enabled`), and, if it is
-also enforced (`security.access_control.enforce`), with a group mapping but no
-group claim, or without a group mapped to the role `admin` (unless admins are
-explicitly not required); renders nothing. The audience is checked by the
-library (`requireAudience`).
+As the app on startup, refuse to render with a group mapping but no group
+claim, or without a group mapped to the role `admin` (unless admins are
+explicitly not required), if access control is enabled and enforced
+(`security.access_control.enabled` and `enforce`); renders nothing. Trusted
+token issuers are always required: the app starts without them only if
+access control is disabled, but then rejects every token. The audience is
+checked by the library (`requireAudience`).
 */}}
 {{- define "protes.checkSecurity" -}}
 {{- $config := .Values.config | default dict -}}
@@ -118,14 +119,12 @@ Issuers are compared with the `iss` claim as written, so surrounding
 whitespace is refused, too
 */ -}}
 {{- $issuersError := "config.security.auth.issuers must list the trusted token issuers (the iss claim of their tokens, e.g., https://login.example.org/oidc/, without surrounding whitespace): the app trusts none by default" -}}
-{{- if eq $enabled "true" -}}
 {{- if not (and (kindIs "slice" $issuers) $issuers) -}}
 {{- fail $issuersError -}}
 {{- end -}}
 {{- range $issuer := $issuers -}}
 {{- if not (and (kindIs "string" $issuer) (trim $issuer) (eq $issuer (trim $issuer))) -}}
 {{- fail $issuersError -}}
-{{- end -}}
 {{- end -}}
 {{- end -}}
 {{- if not (kindIs "string" $claimGroups) -}}

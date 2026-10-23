@@ -727,8 +727,13 @@ def test_admins_not_required(value: str) -> None:
     ("args", "kwargs"),
     [
         (
-            ("--set", "config.security.access_control.enabled=false"),
-            {"issuer": None, "group_claim": None, "admin_group": None},
+            (
+                "--set",
+                "config.security.access_control.enabled=false",
+                "--set",
+                "config.security.access_control.enforce=false",
+            ),
+            {"group_claim": None, "admin_group": None},
         ),
         (
             ("--set", "config.security.access_control.enforce=off"),
@@ -747,10 +752,9 @@ def test_admins_not_required(value: str) -> None:
     ids=["disabled", "not-enforced", "mapping-not-enforced"],
 )
 def test_access_control_off(args: tuple[str, ...], kwargs: dict[str, Any]) -> None:
-    """Without access control, the app needs no issuers, groups or admins.
+    """If access control is disabled or not enforced, no groups or admins.
 
-    If access control is not enforced, it needs issuers, but no groups or
-    admins.
+    Issuers are still required, as the app rejects every token without them.
     """
     assert ("Deployment", APP) in _render(*args, **kwargs)
 
@@ -760,6 +764,10 @@ def test_access_control_off(args: tuple[str, ...], kwargs: dict[str, Any]) -> No
     [
         (
             ("--set", "config.security.access_control.enforce=off"),
+            "config.security.auth.issuers must list",
+        ),
+        (
+            ("--set", "config.security.access_control.enabled=false"),
             "config.security.auth.issuers must list",
         ),
         (
@@ -773,7 +781,7 @@ def test_access_control_off(args: tuple[str, ...], kwargs: dict[str, Any]) -> No
     ],
 )
 def test_access_control_off_invalid(args: tuple[str, ...], error: str) -> None:
-    """Issuers are required if access control is enabled, and booleans checked."""
+    """Issuers are always required, and the booleans are checked."""
     assert error in _render_error(*args, issuer=None)
 
 
