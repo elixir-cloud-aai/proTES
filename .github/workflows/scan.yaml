@@ -2,14 +2,14 @@
 # vulnerabilities with Trivy, as the `scan` job of `checks.yaml` scans the
 # images of pull requests and pushes, so that vulnerabilities found after a
 # release are reported: the findings that have a fix are uploaded to code
-# scanning, a full report (also of the findings without a fix) is kept as a
-# workflow artifact (`trivy-report-release-image`), and the workflow fails
-# on critical and high vulnerabilities that have a fix (fixed by a new
-# release). Accepted findings are listed in `.trivyignore.yaml` (on
-# `dev`). The image is public, so no Docker Hub secrets are needed; its
-# organization is the repository variable `DOCKERHUB_ORG` (by default
-# `elixircloud`, as in `checks.yaml` and `release.yaml`; forks set it to the
-# organization they publish to).
+# scanning, a full report (findings without a fix included) is uploaded as
+# the workflow artifact `trivy-report-release-image` (JSON and table), and
+# the workflow fails on critical and high vulnerabilities that have a fix
+# (fixed by a new release). Accepted findings are listed in
+# `.trivyignore.yaml` (on `dev`). The image is public, so no Docker Hub
+# secrets are needed; its organization is the repository variable
+# `DOCKERHUB_ORG` (by default `elixircloud`, as in `checks.yaml` and
+# `release.yaml`; forks set it to the organization they publish to).
 
 name: Scan release image
 

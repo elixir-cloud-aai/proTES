@@ -138,11 +138,14 @@ cosign verify-blob protes-X.Y.Z.tgz \
     --certificate-identity https://github.com/elixir-cloud-aai/proTES/.github/workflows/release.yaml@refs/tags/vX.Y.Z
 ```
 
-Images are scanned for known vulnerabilities with
-[Trivy](https://trivy.dev/) in CI and again before a release is published
-(both fail on fixable critical and high vulnerabilities), and the `latest`
-image weekly; the maintainers see the results in the repository's
-code scanning alerts. The published images (releases and `dev`) are the
+Images are scanned for known vulnerabilities with [Trivy](https://trivy.dev/)
+in CI and again before a release is published (both fail on fixable critical
+and high vulnerabilities), and the `latest` image weekly. The repository's
+code scanning alerts show the findings that have a fix, which the maintainers
+can act on; findings without a fix (often OS packages of the base image)
+appear there once a fix is released. The weekly scan also keeps a full report,
+those findings included, as a workflow artifact of each run. The published
+images (releases and `dev`) are the
 scanned ones: the workflows push each image by digest, untagged, scan
 exactly that digest, and only if the scan passes (no fixable critical or
 high vulnerabilities, except accepted ones) sign and tag it.
