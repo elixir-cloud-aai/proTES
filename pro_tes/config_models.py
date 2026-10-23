@@ -1,7 +1,7 @@
 """Custom app config models."""
 
 from typing import Literal
-from urllib.parse import urlsplit
+from urllib.parse import SplitResult, urlsplit
 
 from pydantic import BaseModel, Field, PositiveInt, RootModel, model_validator
 
@@ -190,6 +190,31 @@ class Controllers(BaseModel):
     celery: Celery = Celery()
 
 
+def split_server_url(url: str, name: str) -> SplitResult:
+    """Split the URL of a server, checking its scheme, host and port.
+
+    Args:
+        url: URL, e.g., of a TES backend or an identity provider.
+        name: What the URL is of, for error messages.
+
+    Returns:
+        Parts of the URL.
+
+    Raises:
+        ValueError: The URL is malformed, has no scheme or host, or has an
+            invalid port.
+    """
+    try:
+        parts = urlsplit(url)
+        # `port` raises for ports that are not numbers in the valid range
+        _ = parts.port
+    except ValueError as exc:
+        raise ValueError(f"Invalid {name}: {url!r}") from exc
+    if not (parts.scheme and parts.hostname):
+        raise ValueError(f"{name} without scheme or host: {url!r}")
+    return parts
+
+
 class BasicCredentials(BaseModel):
     """Names of the environment variables with HTTP Basic credentials.
 
@@ -248,14 +273,8 @@ class TesBackend(BaseModel):
                 or `basic` is missing for `auth: basic`, or set for another
                 `auth`.
         """
-        try:
-            parts = urlsplit(self.url)
-            has_credentials = parts.username is not None or parts.password is not None
-        except ValueError as exc:
-            raise ValueError(f"Invalid TES backend URL: {self.url!r}") from exc
-        if not (parts.scheme and parts.hostname):
-            raise ValueError(f"TES backend URL without scheme or host: {self.url!r}")
-        if has_credentials:
+        parts = split_server_url(self.url, "TES backend URL")
+        if parts.username is not None or parts.password is not None:
             raise ValueError(
                 "TES backend URLs must not have credentials; use `auth: basic`"
                 " with credentials from the environment"
@@ -354,6 +373,12 @@ class Tes(BaseModel):
         if duplicates:
             raise ValueError(f"TES backends listed more than once: {duplicates}")
         idp = self.client_credentials
+        for name, value in (
+            ("issuer", idp.issuer),
+            ("token endpoint", idp.token_endpoint),
+        ):
+            if value is not None:
+                split_server_url(value, f"URL of the {name} of `client_credentials`")
         for url in [*urls, idp.issuer, idp.token_endpoint]:
             if url is not None and urlsplit(url).scheme not in self.url_schemes:
                 raise ValueError(

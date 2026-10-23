@@ -67,7 +67,8 @@ def test_remove_stored_credentials(
     collection = mongo_client[DB]["tasks"]
     task = {
         "inputs": files("s3://key:secret@bucket/in", None, "https://[invalid/x"),
-        "outputs": files("ftp://ftp.example.org/a@b"),
+        # leading whitespace, which URL parsing ignores
+        "outputs": files("ftp://ftp.example.org/a@b", " \thttps://u:p@bucket/ws"),
     }
     original = {"inputs": files("https://user@example.org/in"), "outputs": "invalid"}
     collection.insert_many(
@@ -104,7 +105,7 @@ def test_remove_stored_credentials(
         "worker-1": {
             "task": {
                 "inputs": files("s3://bucket/in", None, "https://[invalid/x"),
-                "outputs": files("ftp://ftp.example.org/a@b"),
+                "outputs": files("ftp://ftp.example.org/a@b", "https://bucket/ws"),
             },
             "task_original": {
                 "inputs": files("https://example.org/in"),

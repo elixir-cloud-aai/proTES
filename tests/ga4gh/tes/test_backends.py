@@ -312,6 +312,11 @@ def test_token_endpoint_unreachable(
             {"issuer": ISSUER, "token_endpoint": "http://idp.example.org/token"},
             "no token endpoint with an allowed URL scheme",
         ),
+        ({"issuer": ISSUER, "token_endpoint": "https:///token"}, "no token endpoint"),
+        (
+            {"issuer": ISSUER, "token_endpoint": "https://[idp.example.org/token"},
+            "no token endpoint",
+        ),
     ],
 )
 def test_discovery_invalid(idp: FakeIdp, discovery: Any, match: str) -> None:
@@ -452,6 +457,8 @@ def test_client_token_request(
         {"url": "tes.example.org"},
         {"url": "https://"},
         {"url": "https://[invalid"},
+        {"url": "https://tes.example.org:bad"},
+        {"url": "https://tes.example.org:65536"},
         {"url": "https://user:secret@tes.example.org"},
         {"url": "https://tes.example.org", "auth": "basic"},
         {
@@ -500,6 +507,14 @@ def test_backend_config_default() -> None:
                 ]
             },
             "more than once",
+        ),
+        (
+            {"client_credentials": {"issuer": "https:///realms/protes"}},
+            "issuer of `client_credentials` without scheme or host",
+        ),
+        (
+            {"client_credentials": {"token_endpoint": "https://idp.example.org:x/t"}},
+            "Invalid URL of the token endpoint",
         ),
         ({"url_schemes": []}, "at least 1"),
         ({"url_schemes": ["ftp"]}, "https"),

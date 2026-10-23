@@ -16,18 +16,24 @@ Credentials are looked up for each request, so that long-running Celery
 tasks get fresh tokens.
 """
 
+from contextlib import suppress
 from dataclasses import dataclass
 import logging
 import os
 import threading
 import time
 from typing import Any
-from urllib.parse import quote_plus, urlsplit
+from urllib.parse import quote_plus
 
 import requests
 import tes
 
-from pro_tes.config_models import ClientCredentials, Tes, TesBackend
+from pro_tes.config_models import (
+    ClientCredentials,
+    Tes,
+    TesBackend,
+    split_server_url,
+)
 from pro_tes.exceptions import BackendAuthError, BackendNotConfigured
 from pro_tes.utils.misc import get_custom_config
 
@@ -185,10 +191,11 @@ class TokenProvider:
                 f"OpenID Connect discovery document of {issuer!r} is invalid"
             )
         endpoint = document.get("token_endpoint")
-        if not (
-            isinstance(endpoint, str)
-            and urlsplit(endpoint).scheme in config.url_schemes
-        ):
+        scheme = None
+        if isinstance(endpoint, str):
+            with suppress(ValueError):
+                scheme = split_server_url(endpoint, "token endpoint").scheme
+        if not isinstance(endpoint, str) or scheme not in config.url_schemes:
             raise BackendAuthError(
                 f"OpenID Connect discovery document of {issuer!r} has no token"
                 f" endpoint with an allowed URL scheme ({config.url_schemes})"
