@@ -2,6 +2,7 @@
 
 import importlib.util
 import io
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -175,25 +176,89 @@ def test_order() -> None:
 
 
 @pytest.mark.parametrize(
-    ("tags", "output"),
+    ("tags", "published", "output"),
     [
-        ("v0.2.0\nv0.3.0\nv0.2.1rc1\n", "previous_tag=v0.2.0\n"),
-        ("v0.3.0\n", "previous_tag=\n"),
-        ("", "previous_tag=\n"),
+        ("v0.2.0\nv0.3.0\nv0.2.1rc1\n", "v0.2.0\nv0.2.1rc1\n", "previous_tag=v0.2.0\n"),
+        # No published releases (the first release)
+        ("v0.2.0\nv0.3.0\n", "", "previous_tag=\n"),
+        ("", "", "previous_tag=\n"),
+        # The release's own tag among the published ones (a rerun)
+        ("v0.2.0\nv0.3.0\n", "v0.3.0\nv0.2.0\n", "previous_tag=v0.2.0\n"),
+        ("v0.3.0\n", "v0.3.0\n", "previous_tag=\n"),
+        # Tags without a published release (e.g., whose release failed) and
+        # published releases outside the release's history are ignored
+        ("v0.2.0\nv0.2.1\nv0.3.0\n", "v0.2.0\nv0.2.2\n", "previous_tag=v0.2.0\n"),
+        ("v0.2.1\nv0.3.0\n", "v0.2.2\n", "previous_tag=\n"),
+        # Only whole lines match
+        ("v0.2.0\nv0.2.1\n", "v0.2.10\nv0.2.0 \n", "previous_tag=\n"),
+        # Undecodable bytes don't match
+        ("v0.2.0\nv0.2.1\n", b"v0.2.0\xff\nv0.2.1\n", "previous_tag=v0.2.1\n"),
+        # Lines end at line feeds only: other line breaks stay in the tag
+        ("v0.2.0\nv0.2.1\u2028x\n", "v0.2.0\nv0.2.1\n", "previous_tag=v0.2.0\n"),
+        ("v0.2.0\nv0.2.1\n", "v0.2.0\nv0.2.1\u2028x\n", "previous_tag=v0.2.0\n"),
+        ("v0.2.0\nv0.2.1\r\n", "v0.2.0\nv0.2.1\n", "previous_tag=v0.2.0\n"),
     ],
 )
 def test_main_previous(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
     tags: str,
+    published: str | bytes,
     output: str,
 ) -> None:
-    """`previous` reads the tags in the release's history from standard input."""
+    """`previous` counts the tags in the history that have a published release.
+
+    The tags in the release's history come from standard input, those of the
+    published releases from the file given with `--published`.
+    """
+    published_file = tmp_path / "published"
+    published_file.write_bytes(
+        published.encode() if isinstance(published, str) else published
+    )
     monkeypatch.setattr("sys.stdin", io.TextIOWrapper(io.BytesIO(tags.encode())))
-    assert release_version.main(["previous", "v0.3.0"]) == 0
+    assert (
+        release_version.main(["previous", "v0.3.0", "--published", str(published_file)])
+        == 0
+    )
     captured = capsys.readouterr()
     assert captured.out == output
     assert captured.err == ""
+
+
+def test_main_previous_unreadable(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    """A missing file of published tags fails with an error annotation."""
+    missing = tmp_path / "missing"
+    monkeypatch.setattr("sys.stdin", io.TextIOWrapper(io.BytesIO(b"v0.2.0\n")))
+    assert (
+        release_version.main(["previous", "v0.3.0", "--published", str(missing)]) == 1
+    )
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err.startswith("::error::Cannot read published tags: ")
+    assert str(missing) in captured.err
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["previous", "v0.3.0"],
+        ["outputs", "v0.3.0", "--published", "published"],
+        ["latest", "v0.3.0", "--published", "published"],
+    ],
+)
+def test_main_published_usage(
+    capsys: pytest.CaptureFixture[str], args: list[str]
+) -> None:
+    """`--published` is required for `previous` and rejected otherwise."""
+    with pytest.raises(SystemExit) as exc_info:
+        release_version.main(args)
+    assert exc_info.value.code == 2
+    assert "--published is required for, and only for" in capsys.readouterr().err
 
 
 def test_main_outputs(capsys: pytest.CaptureFixture[str]) -> None:
@@ -214,6 +279,8 @@ def test_main_outputs(capsys: pytest.CaptureFixture[str]) -> None:
         ("", "latest=false\n"),
         # Tags that aren't UTF-8 are ignored
         (b"v0.3.0\nv\xff9.0.0\nv9.0.0\xff\n", "latest=true\n"),
+        # Lines end at line feeds only: other line breaks stay in the tag
+        ("v0.3.0\nv9.0.0\u2028x\nv9.0.0\x85\nv9.0.0\r\n", "latest=true\n"),
     ],
 )
 def test_main_latest(
@@ -233,7 +300,11 @@ def test_main_latest(
 
 @pytest.mark.parametrize(
     "args",
-    [["outputs", "0.3.0"], ["latest", "v0.3.0+local"], ["previous", "v0.3"]],
+    [
+        ["outputs", "0.3.0"],
+        ["latest", "v0.3.0+local"],
+        ["previous", "v0.3", "--published", os.devnull],
+    ],
 )
 def test_main_invalid_tag(
     monkeypatch: pytest.MonkeyPatch,
@@ -272,10 +343,17 @@ def test_main_usage(capsys: pytest.CaptureFixture[str]) -> None:
         ),
         (["latest", "v1.2.3"], "v1.2.2\nv1.2.3\n", 0, "latest=true\n", ""),
         (
-            ["previous", "v1.2.3"],
+            ["previous", "v1.2.3", "--published", os.devnull],
             "v1.2.2\nv1.2.3\n",
             0,
-            "previous_tag=v1.2.2\n",
+            "previous_tag=\n",
+            "",
+        ),
+        (
+            ["previous", "v1.2.3", "--published", "published"],
+            "v1.2.1\nv1.2.2\nv1.2.3\n",
+            0,
+            "previous_tag=v1.2.1\n",
             "",
         ),
         (
@@ -297,6 +375,7 @@ def test_script(
     stderr: str,
 ) -> None:
     """The script runs as the release workflow calls it."""
+    (tmp_path / "published").write_text("v1.2.1\nv1.2.3\n")
     result = subprocess.run(  # noqa: S603 (fixed arguments, no shell)
         [sys.executable, "-I", str(SCRIPT), *args],
         input=stdin,
@@ -310,3 +389,30 @@ def test_script(
         stdout,
         stderr,
     )
+
+
+def test_script_reads_all_input(tmp_path: Path) -> None:
+    """`previous` reads all of standard input, also without published releases.
+
+    The release workflow pipes `git tag` into the script under
+    `set -o pipefail`: a reader that exits before reading all of it (as
+    `grep -Fx -f` with an empty file of patterns does) kills the writer with
+    `SIGPIPE` and fails the step on the first release.
+    """
+    published = tmp_path / "published"
+    published.write_text("")
+    args = [sys.executable, "-I", str(SCRIPT), "previous", "v1.0.0"]
+    args += ["--published", str(published)]
+    with subprocess.Popen(  # noqa: S603 (fixed arguments, no shell)
+        args,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    ) as process:
+        assert process.stdin is not None
+        # More than a pipe's buffer, so that writing fails with a broken pipe
+        # unless the script reads all of it
+        for number in range(100_000):
+            process.stdin.write(f"v0.0.{number}\n".encode())
+        stdout, stderr = process.communicate(timeout=60)
+    assert (process.returncode, stdout, stderr) == (0, b"previous_tag=\n", b"")
