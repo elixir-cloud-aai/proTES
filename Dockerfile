@@ -10,8 +10,10 @@
 FROM elixircloud/foca:20261023-py3.13@sha256:1e1275f77be3a256449dc8739410f32b0d0376534b824d8b746d5316d27cdb1f
 
 ##### METADATA #####
-## OCI annotations (CI adds the version); images built from the FOCA image
-## inherit its own, so all static ones are set here
+## OCI annotations; images built from the FOCA image inherit its own, so all
+## static ones are set here. CI's `docker/metadata-action` sets the version,
+## revision and creation date and overrides title, description, URLs and
+## licenses with the repository's metadata
 LABEL org.opencontainers.image.title="proTES"
 LABEL org.opencontainers.image.description="Proxy for GA4GH Task Execution Service (TES) instances by ELIXIR On-Cloud"
 LABEL org.opencontainers.image.url="https://github.com/elixir-cloud-aai/proTES"
