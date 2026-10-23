@@ -179,12 +179,11 @@ def test_run_app(app: FlaskApp, monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_task_indexes(app: FlaskApp, mongo_client: MongoClient[dict[str, Any]]) -> None:
-    """Task and worker identifiers are unique (#248)."""
+    """Task identifiers are unique, and worker identifiers indexed (#248)."""
     indexes = {
         tuple(index["key"]): index
         for index in mongo_client[DB]["tasks"].index_information().values()
     }
     assert indexes[(("task.id", 1),)].get("unique") is True
     assert not indexes[(("task.id", 1),)].get("sparse")
-    assert indexes[(("worker_id", 1),)].get("unique") is True
-    assert indexes[(("worker_id", 1),)].get("sparse") is True
+    assert not indexes[(("worker_id", 1),)].get("unique")

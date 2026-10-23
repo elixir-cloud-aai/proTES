@@ -437,14 +437,14 @@ class TaskRuns:
 
         Identifiers of stored tasks, and identifiers that roles are granted
         on (e.g., left by deleted tasks), are not used again, so that nobody
-        gets access to the task of someone else. The owner is granted the
-        role before the task is stored, so that tasks are never stored
-        without owner, and the identifier is taken right away; the role is
-        revoked again if the task can't be stored. Concurrent requests may
+        gets access to the task of someone else. Concurrent requests may
         still draw the same unused identifier: the unique index on task
         identifiers (cf. `db` in `config.yaml`) lets only one of them store
-        its task, and the others try again with another identifier,
-        revoking their roles, unless the stored task has the same owner.
+        its task, and the others try again with another identifier. The
+        owner is granted the role only once the task is stored, so that
+        requests losing the race never get a role on the task of someone
+        else; if the role can't be granted, the task is deleted, and roles
+        granted partly are revoked.
 
         Args:
             document: Document to be written to database.
@@ -477,31 +477,17 @@ class TaskRuns:
             document.task.id = task_id
             document.worker_id = uuid()
             try:
-                # within `try`, so that a partial grant is revoked, too
-                add_task_owner(collection=collection, task_id=task_id, owner=owner)
                 self.db_client.insert_one(
                     document.model_dump(mode="json", exclude_none=True)
                 )
             except DuplicateKeyError:
-                # Another request stored a task with the identifier first
-                # (unique index on `task.id`; the one on `worker_id` doesn't
-                # fail for new Celery identifiers). If that task is the
-                # owner's, too, the role is its role, and kept. Otherwise,
-                # or if the check fails, the role is revoked.
-                keep = False
-                try:
-                    keep = bool(
-                        self.db_client.count_documents(
-                            {"task.id": task_id, "user_id": owner}, limit=1
-                        )
-                    )
-                finally:
-                    if not keep:
-                        remove_task_owner(
-                            collection=collection, task_id=task_id, owner=owner
-                        )
+                # another request stored a task with the identifier first
                 continue
+            try:
+                add_task_owner(collection=collection, task_id=task_id, owner=owner)
             except Exception:
+                # deleted first: roles left on deleted tasks give no access
+                self.db_client.delete_one({"worker_id": document.worker_id})
                 remove_task_owner(collection=collection, task_id=task_id, owner=owner)
                 raise
             return task_id, document.worker_id

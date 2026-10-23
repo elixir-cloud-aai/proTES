@@ -115,15 +115,19 @@ def find_duplicate_task_ids(
     Returns:
         Number of tasks per shared identifier, in the order of the
         identifiers; `None` for tasks without identifier (more than one
-        prevents the index, too).
+        prevents the index, too), and the representation of identifiers
+        that aren't strings (e.g., lists).
     """
     pipeline: list[dict[str, Any]] = [
         {"$group": {"_id": "$task.id", "count": {"$sum": 1}}},
         {"$match": {"count": {"$gt": 1}}},
     ]
-    duplicates = {
-        group["_id"]: group["count"] for group in collection.aggregate(pipeline)
-    }
+    duplicates: dict[str | None, int] = {}
+    for group in collection.aggregate(pipeline):
+        key = group["_id"]
+        if key is not None and not isinstance(key, str):
+            key = repr(key)
+        duplicates[key] = duplicates.get(key, 0) + group["count"]
     return dict(sorted(duplicates.items(), key=lambda item: str(item[0])))
 
 
@@ -132,8 +136,8 @@ def drop_legacy_task_index(collection: Collection[dict[str, Any]]) -> None:
 
     The fields of the index didn't identify tasks (task identifiers are
     stored as `task.id`), so it never rejected a duplicate identifier; it is
-    replaced by unique indexes on `task.id` and `worker_id` (cf. `db` in
-    `config.yaml`). Run on startup; idempotent, also if several instances
+    replaced by a unique index on `task.id` and an index on `worker_id`
+    (cf. `db` in `config.yaml`). Run on startup; idempotent, also if several instances
     start at the same time.
 
     Args:

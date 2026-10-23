@@ -169,12 +169,15 @@ def test_find_duplicate_task_ids(mongo_client: MongoClient[dict[str, Any]]) -> N
             {"task": {"id": "C"}},
             {"task": {}},
             {"worker_id": "worker-1"},
+            {"task": {"id": {"x": 1}}},
+            {"task": {"id": {"x": 1}}},
         ]
     )
     assert find_duplicate_task_ids(collection=collection) == {
         "A": 3,
         "B": 2,
         None: 2,
+        "{'x': 1}": 2,
     }
 
 

@@ -951,92 +951,62 @@ def test_task_id_taken_concurrently(
 
     Another request stores a task with the same identifier after the
     identifier was checked: the unique index rejects the task, which gets
-    another identifier. The owner role on the first identifier is revoked,
-    unless the other task has the same owner, whose role it is then.
+    another identifier. Its owner never gets a role on the first
+    identifier, also not while the task is stored.
     """
     ids = iter(["TAKEN1", "UNUSED"])
     monkeypatch.setattr(task_runs, "generate_id", lambda **kwargs: next(ids))
-    add_task_owner = task_runs.add_task_owner
     tasks = mongo_client[DB]["tasks"]
+    rules = mongo_client[DB]["policy_rules"]
+    resources = {
+        task: [f"{BASE_PATH}/tasks/{task}", f"{BASE_PATH}/tasks/{task}:cancel"]
+        for task in ("TAKEN1", "UNUSED")
+    }
+    owners_at_insert: list[list[str]] = []
 
-    def add_task_owner_raced(collection: str, task_id: str, owner: str) -> None:
-        """Store another task with the identifier first, then grant the owner.
-
-        Args:
-            collection: Request path of the tasks.
-            task_id: Identifier of the task.
-            owner: Owner of the task.
-        """
-        if task_id == "TAKEN1":
-            add_task_owner(collection=collection, task_id=task_id, owner=other_owner)
-            tasks.insert_one(
-                {"task": {"id": task_id}, "user_id": other_owner, "worker_id": "w"}
-            )
-        add_task_owner(collection=collection, task_id=task_id, owner=owner)
-
-    monkeypatch.setattr(task_runs, "add_task_owner", add_task_owner_raced)
     with app.app.test_request_context():
-        task_id, _ = task_runs.TaskRuns()._write_doc_to_db(
+        runs = task_runs.TaskRuns()
+        insert_one = runs.db_client.insert_one
+
+        def insert_one_raced(document: dict[str, Any]) -> Any:
+            """Store another task with the identifier first, then the task.
+
+            Args:
+                document: Document to insert.
+
+            Returns:
+                Result of the insert.
+            """
+            task_id = document["task"]["id"]
+            if task_id == "TAKEN1":
+                insert_one(
+                    {"task": {"id": task_id}, "user_id": other_owner, "worker_id": "w"}
+                )
+                ownership.add_task_owner(
+                    collection=f"{BASE_PATH}/tasks", task_id=task_id, owner=other_owner
+                )
+            query = {"ptype": "g2", "v2": resources[task_id][0]}
+            owners_at_insert.append([rule["v0"] for rule in rules.find(query)])
+            return insert_one(document)
+
+        monkeypatch.setattr(runs.db_client, "insert_one", insert_one_raced)
+        task_id, _ = runs._write_doc_to_db(
             document=DbDocument(user_id=USER),
             owner=USER,
             collection=f"{BASE_PATH}/tasks",
         )
     assert task_id == "UNUSED"
+    assert owners_at_insert == [[f"user:{other_owner}"], []]
     assert sorted(
         (document["task"]["id"], document["user_id"]) for document in tasks.find()
     ) == [("TAKEN1", other_owner), ("UNUSED", USER)]
-    rules = mongo_client[DB]["policy_rules"].find({"ptype": "g2"})
-    assert sorted((rule["v0"], rule["v2"]) for rule in rules) == sorted(
-        (f"user:{owner}", f"{BASE_PATH}/tasks/{resource}")
+    assert sorted(
+        (rule["v0"], rule["v2"]) for rule in rules.find({"ptype": "g2"})
+    ) == sorted(
+        (f"user:{owner}", resource)
         for owner, task in [(other_owner, "TAKEN1"), (USER, "UNUSED")]
-        for resource in (task, f"{task}:cancel")
+        for resource in resources[task]
     )
-
-
-def test_task_id_taken_check_failed(
-    app: FlaskApp,
-    monkeypatch: pytest.MonkeyPatch,
-    mongo_client: MongoClient[dict[str, Any]],
-) -> None:
-    """The owner role is revoked if the owner of the stored task is unknown."""
-    with app.app.test_request_context():
-        runs = task_runs.TaskRuns()
-        count_documents = runs.db_client.count_documents
-
-        def insert_one(document: dict[str, Any]) -> None:
-            """Fail to insert the document.
-
-            Raises:
-                pymongo.errors.DuplicateKeyError: Always.
-            """
-            raise DuplicateKeyError("taken")
-
-        def count_owned(filter: dict[str, Any], **kwargs: Any) -> int:
-            """Count tasks, but fail to count those of an owner.
-
-            Args:
-                filter: Query of the tasks.
-                **kwargs: Other arguments of `count_documents()`.
-
-            Returns:
-                Number of tasks.
-
-            Raises:
-                pymongo.errors.PyMongoError: The query names an owner.
-            """
-            if "user_id" in filter:
-                raise PyMongoError("unavailable")
-            return count_documents(filter, **kwargs)
-
-        monkeypatch.setattr(runs.db_client, "insert_one", insert_one)
-        monkeypatch.setattr(runs.db_client, "count_documents", count_owned)
-        with pytest.raises(PyMongoError, match="unavailable"):
-            runs._write_doc_to_db(
-                document=DbDocument(user_id=USER),
-                owner=USER,
-                collection=f"{BASE_PATH}/tasks",
-            )
-    assert mongo_client[DB]["policy_rules"].count_documents({"ptype": "g2"}) == 0
 
 
 def test_forward_stored_no_logs(app: FlaskApp) -> None:

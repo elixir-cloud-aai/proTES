@@ -100,13 +100,9 @@ db:
                 task.id: 1
               options:
                 "unique": True
-            # Celery workers find tasks by worker identifier (sparse, as
-            # documents edited by hand may lack it)
+            # Celery workers find tasks by worker identifier
             - keys:
                 worker_id: 1
-              options:
-                "unique": True
-                "sparse": True
         middlewares:
           indexes:
             - keys:

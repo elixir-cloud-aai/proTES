@@ -81,9 +81,8 @@ the access control database.
 ## Task identifiers
 
 Task identifiers (`task.id`) are unique in the database: on startup,
-proTES creates a unique index on them (and one on `worker_id`, which the
-index of earlier versions kept unique), and drops the index of earlier
-versions (`task_id_1_worker_id_1`), which never rejected a task identifier
+proTES creates a unique index on them (and an index on `worker_id`), and
+drops the index of earlier versions (`task_id_1_worker_id_1`), which never rejected a task identifier
 that was used already. While stored tasks share identifiers, the index
 can't be created, and proTES (the API and the Celery workers) refuses to
 start: the error names the shared identifiers (up to 10), and how many
