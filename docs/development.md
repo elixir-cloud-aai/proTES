@@ -91,8 +91,10 @@ and checks in `templates/_helpers.tpl` (`protes.settings`,
 `protes.validate`), and templates of its own for Flower. `values.yaml` has
 all values of the library chart, and `values.schema.json` is the library's
 `app-values.schema.json` with the app's key (`protes`, plus `extraEnv`) and
-`flower` added; update both with the library chart. The tests in
-`tests/test_chart.py` render the chart with `helm template` and need
+`flower` added; update both with the library chart (the schema's
+`$comment` names its version, `foca-common X.Y.Z`, as the release pin check
+requires, see [Versioning and releases](#versioning-and-releases)). The
+tests in `tests/test_chart.py` render the chart with `helm template` and need
 [Helm](https://helm.sh/docs/intro/install/) (the version of the `helm` job
 of `.github/workflows/checks.yaml`) and the library chart in
 `deployment/charts/`; they are skipped if Helm is not installed:
@@ -183,18 +185,31 @@ change), after CI passed for it:
 
 ```bash
 git switch --detach <sha>
-python scripts/citation.py check X.Y.Z  # as the release workflow does
+# The release workflow's checks that need no tag, as it runs them
+python scripts/release_version.py outputs vX.Y.Z
+python scripts/citation.py check X.Y.Z
+python scripts/check_release_pins.py
+! grep -n TODO docs/releases/X.Y.Z.md  # curated notes, if any
+[ ! -f docs/releases/X.Y.Z.md ] || python scripts/release_notes.py check docs/releases/X.Y.Z.md
+readme="$(mktemp -d)/README.md" && cp deployment/README.md "${readme}"
+python scripts/chart_readme.py "${readme}" vX.Y.Z  # links of the chart
 git push origin <sha>:main  # fails unless it is a fast-forward
 git tag -s vX.Y.Z <sha> -m "vX.Y.Z"
 git push origin vX.Y.Z
 ```
 
-Tags can't be moved or deleted (see the repository settings below), so a
-check of the release workflow that fails after the tag is pushed fails
-again on re-runs, and the release then needs a new patch version. The image
-scan of the release workflow can fail after the tag, e.g., on a
-vulnerability published since CI last scanned the image of the commit;
-check the code scanning alerts before tagging.
+Tags can't be moved or deleted (see the repository settings below), and the
+release workflow checks the tagged commit, so a check that fails after the
+tag is pushed fails again on re-runs: the release then needs a new patch
+version, with its own citation metadata and notes. Run these checks before
+tagging, therefore. The CI job "Check release readiness" runs the pin and
+the notes checks, too, for the version in `CITATION.cff` while it has no
+tag (or its tag is on the checked commit): on pull requests as warnings, on
+pushes to `dev` as errors, which fail the CI run that the release workflow
+requires for the release commit. The image scan of the release workflow can
+still fail after the tag, e.g., on a vulnerability published since CI last
+scanned the image of the commit; check the code scanning alerts before
+tagging.
 
 The tag must be annotated and signed (`git tag -s`), with a key that GitHub can
 verify (added to the tagger's GitHub account). The [release
@@ -249,15 +264,20 @@ later commits of that day). The `Dockerfile` records the commit as
 image build doesn't reinstall FOCA, but fails unless the base image has FOCA
 of that commit (`scripts/image_requirements.py`). Dependabot ignores the base
 image meanwhile. Such pins are temporary: the release workflow fails while a
-dependency (also an optional one) is a direct reference or names a
-pre-release or a local version (e.g., `+g<commit>`), the base image has no
-release tag, or a chart dependency is not a release version or not from an
-OCI or HTTPS repository (e.g., the `file://` checkout of a FOCA commit, see
-[Helm chart](#helm-chart); `scripts/check_release_pins.py`, tested in
-`tests/test_check_release_pins.py`, whose tests also fail for checkouts of
-release tags with such pins), so replace them by the released versions
-before tagging. This applies to pre-releases of the app, too: they are built
-on FOCA releases.
+requirement (also an optional one, a dependency group or a build
+requirement) is a direct reference or names a pre-release or a local version
+(e.g., `+g<commit>`), a FOCA image (in any stage) has no release tag, or a
+chart dependency has no version, another version than a release or no chart
+repository (`oci://`, `https://`; e.g., the `file://` checkout of a FOCA
+commit, see [Helm chart](#helm-chart)) (`scripts/check_release_pins.py`,
+tested in `tests/test_check_release_pins.py`, whose tests also fail for
+checkouts of release tags with such pins), so replace them by the released
+versions before tagging. It also fails unless `deployment/Chart.yaml` and
+`Chart.lock` pin the version of the library chart that the `$comment` of
+`deployment/values.schema.json` names (`foca-common X.Y.Z`): the version
+that the release requires, whose values schema the chart copies. When moving
+to a new FOCA minor version, update the comment with the library chart. This
+applies to pre-releases of the app, too: they are built on FOCA releases.
 
 Release notes follow the format agreed for all repositories of ELIXIR
 On-Cloud:
@@ -294,7 +314,8 @@ that move (the latest docs, `/en/latest/`, or files on branch `dev`,
 `blob/dev/`; link the release's, e.g., `/en/vX.Y.Z/`, `blob/vX.Y.Z/`, as the
 published notes don't change) (`scripts/release_notes.py check`, tested in
 `tests/test_release_notes.py`, which also checks the notes in
-`docs/releases/`); on re-runs, it replaces the notes of an existing release
+`docs/releases/`), and so does the CI job "Check release readiness" on
+pushes (see above); on re-runs, it replaces the notes of an existing release
 (also overwriting manual edits). Detailed upgrade steps belong on the
 [Upgrading](upgrading.md) page, linked from the intro.
 

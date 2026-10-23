@@ -235,6 +235,64 @@ jobs:
       # Fails on warnings, e.g., of broken links, anchors and references
       - name: Build documentation
         run: mkdocs build --strict
+  # The release workflow's checks of pins and curated notes, before the
+  # immutable tag exists: for the version in `CITATION.cff` (set before a
+  # release, see "Versioning and releases" in `docs/development.md`) while
+  # it has no tag, or its tag is on this commit. Not a required check, and
+  # not needed for publishing; on pull requests, findings are warnings. On
+  # pushes, findings fail the run, which the release workflow requires to
+  # pass for the release commit
+  release_readiness:
+    name: Check release readiness
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The scripts use the standard library only
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+      - name: Check pins and release notes
+        env:
+          EVENT: ${{ github.event_name }}
+          SHA: ${{ github.sha }}
+        run: |
+          version="$(sed -En "s/^version:[[:space:]]*[\"']?([0-9A-Za-z.+-]+)[\"']?[[:space:]]*(#.*)?$/\1/p" CITATION.cff)"
+          if [[ -z "${version}" ]]; then
+              echo "No version in CITATION.cff: no release in preparation"
+              exit 0
+          fi
+          # The commit of the (annotated) tag, if any: later commits are
+          # skipped, but not the tagged commit itself (e.g., if it was
+          # tagged before this job ran)
+          tagged="$(git ls-remote origin "refs/tags/v${version}^{}" | cut -f1)"
+          if [[ -n "${tagged}" && "${tagged}" != "${SHA}" ]]; then
+              echo "v${version} is tagged: no release in preparation"
+              exit 0
+          fi
+          level=error
+          if [[ "${EVENT}" == "pull_request" ]]; then
+              level=warning
+          fi
+          status=0
+          python scripts/check_release_pins.py 2> pins.txt || status=1
+          sed "s/^::error::/::${level}::/" pins.txt
+          notes="docs/releases/${version}.md"
+          if [[ -f "${notes}" ]]; then
+              if grep -n "TODO" "${notes}"; then
+                  echo "::${level}::${notes} contains TODO: finish the release notes before tagging v${version}"
+                  status=1
+              fi
+              python scripts/release_notes.py check "${notes}" 2> notes.txt || status=1
+              sed "s/^::error /::${level} /" notes.txt
+          fi
+          if [[ "${level}" == "error" ]]; then
+              exit "${status}"
+          fi
   # Runs the app as deployed with Docker Compose (app, Celery worker,
   # MongoDB, RabbitMQ), relaying tasks to a fake TES backend instead of the
   # public TES instances of the config (`tests/smoke/`)

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft-07/schema#",
-  "$comment": "Schema of the values of the proTES chart: app-values.schema.json of the library chart foca-common (the version in Chart.yaml), with the app's key (protes, with extraEnv) and Flower (flower) added; update it with the library chart",
+  "$comment": "Schema of the values of the proTES chart: app-values.schema.json of the library chart foca-common 0.2.0 (the version that release 0.3.0 requires, with FOCA 0.17; scripts/check_release_pins.py checks that Chart.yaml and Chart.lock pin it), with the app's key (protes, with extraEnv) and Flower (flower) added; update it with the library chart",
   "$defs": {
     "tmpSizeLimit": {
       "type": [
