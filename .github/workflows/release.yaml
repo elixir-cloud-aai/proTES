@@ -125,7 +125,10 @@ jobs:
               python scripts/release_notes.py check "${notes}"
           fi
       # Temporary pins to development versions (e.g., a FOCA commit, to test
-      # unreleased changes) must be replaced by releases first
+      # unreleased changes) must be replaced by releases first, and the chart
+      # must pin the version of the library chart that the release requires
+      # (named in `deployment/values.schema.json`); this applies to every
+      # tag, pre-releases included
       - name: Check that dependencies are releases
         run: python scripts/check_release_pins.py
       # The checks above don't run the tests: require a successful run of
