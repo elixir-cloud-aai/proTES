@@ -1,7 +1,7 @@
 version: 2
 # Every entry targets `dev` (`target-branch`), which takes all pull
-# requests: the default branch `main` only moves forward to releases
-# (security updates always target the default branch, though)
+# requests whatever the default branch is (`main` only moves forward to
+# releases); security updates always target the default branch, though
 updates:
   # Dependencies in `pyproject.toml`
   - package-ecosystem: pip

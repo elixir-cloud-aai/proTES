@@ -7,12 +7,14 @@
 # workflow fails on critical and high vulnerabilities that have a fix (fixed
 # by a new release). Accepted findings are listed in `.trivyignore.yaml`.
 # Scheduled runs use this workflow, the composite action and
-# `.trivyignore.yaml` as on the default branch, `main`, i.e., as released with
-# the scanned image; to apply findings accepted on `dev` since, run the
-# workflow by hand on `dev`. The image is public, so no Docker Hub secrets are
-# needed; its organization is the repository variable `DOCKERHUB_ORG` (by
-# default `elixircloud`, as in `checks.yaml` and `release.yaml`; forks set it
-# to the organization they publish to).
+# `.trivyignore.yaml` as on the default branch, and file their findings under
+# it; once that is `main`, these are the copies released with the scanned
+# image, so findings accepted on `dev` after a release apply from the next
+# release on (dismiss their alerts in code scanning until then). The image is
+# public, so no Docker Hub secrets are needed; its organization is the
+# repository variable `DOCKERHUB_ORG` (by default `elixircloud`, as in
+# `checks.yaml` and `release.yaml`; forks set it to the organization they
+# publish to).
 
 name: Scan release image
 

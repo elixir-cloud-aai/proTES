@@ -52,8 +52,7 @@ The project follows a variant of the GitHub flow: all changes reach the
 development branch `dev` through pull requests, which are reviewed and
 tested; `main` only holds releases: it only moves forward to released
 commits (see [Versioning and
-releases](development.md#versioning-and-releases)) and is the default
-branch, so that visitors see the latest release.
+releases](development.md#versioning-and-releases)).
 
 1. Create a feature branch from an up-to-date `dev`, named after the type and
    topic of the change, e.g., `fix/<topic>` or `docs/<topic>`.
