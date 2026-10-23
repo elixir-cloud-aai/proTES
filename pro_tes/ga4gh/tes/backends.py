@@ -136,6 +136,9 @@ class TokenProvider:
             except BackendAuthError as exc:
                 if token is None or time.monotonic() >= token.expires_at:
                     raise
+                # the messages of BackendAuthError name endpoints and error
+                # types only, never tokens or client secrets
+                # nosemgrep  # logger-credential-disclosure: see above
                 logger.warning(
                     "Using the cached access token until it expires: %s", exc
                 )

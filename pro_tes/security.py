@@ -144,6 +144,8 @@ def check_backends(conf: Tes | None = None) -> None:
                 "TES backend %s: no authentication (`auth: none`)", backend.url
             )
     if token_backends:
+        # logs the URLs of the backends, not tokens
+        # nosemgrep  # logger-credential-disclosure: see above
         logger.info(
             "TES backends with access tokens of proTES: %s", ", ".join(token_backends)
         )
