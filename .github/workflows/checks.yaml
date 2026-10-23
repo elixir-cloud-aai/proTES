@@ -45,6 +45,11 @@ jobs:
         run: |
           pre-commit run --all-files --show-diff-on-failure
           pre-commit run --all-files --hook-stage manual gitleaks-all
+      # In its own environment, as cffconvert pins an old jsonschema; its
+      # dependencies resolve within its own bounds. 2.0.0 is the latest stable
+      # release (not bumped by Dependabot; update manually)
+      - name: Validate citation metadata
+        run: pipx run --spec cffconvert==2.0.0 cffconvert --validate -i CITATION.cff
       - name: Build distributions
         run: python -m build
       - name: Check wheel contents
