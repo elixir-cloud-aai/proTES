@@ -37,7 +37,7 @@ spec:
           name: protes-volume
       containers:
       - name: protes
-        image: {{ .Values.protes.image }}
+        image: {{ include "protes.image" (dict "root" . "values" .Values.protes "key" "protes") }}
         imagePullPolicy: Always
         command: [ 'gunicorn' ]
         args: [ '--config', 'python:pro_tes.gunicorn_config', '--log-level', 'debug', 'pro_tes.app:init_app()' ]

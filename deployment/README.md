@@ -23,7 +23,19 @@ namespace. How the namespace is created depends on the cluster, so we won't
 document it here.
 
 Make sure you have both the Kubernetes client (`kubectl`) and Helm 3
-installed, and clone the repository:
+installed. The chart of each release is attached to its [GitHub
+release](https://github.com/elixir-cloud-aai/proTES/releases) and deploys
+the image of that release:
+
+```bash
+helm install protes \
+  https://github.com/elixir-cloud-aai/proTES/releases/download/vX.Y.Z/protes-X.Y.Z.tgz \
+  -f values-prod.yaml
+```
+
+The commands below use the chart in the repository instead, which deploys the
+`dev` image unless `protes.tag` is set (see [Image](#image)); clone the
+repository:
 
 ```bash
 git clone https://github.com/elixir-cloud-aai/proTES.git
@@ -56,6 +68,31 @@ helm install . --generate-name --set protes.appName=proxyT
 
 where `proxyT` will be the name of the proTES deployment and associated
 objects.
+
+## Image
+
+The app image is `protes.image` (default `elixircloud/protes`) with tag
+`protes.tag`, which defaults to the chart's `appVersion`. The Celery worker
+runs the same image, unless `celeryWorker.image` (with `celeryWorker.tag`) is
+set. Charts attached to
+[GitHub releases](https://github.com/elixir-cloud-aai/proTES/releases) have
+the release version as `version` and `appVersion`, so they deploy the image
+of their release (`X.Y.Z`). In the repository, both are placeholders, and
+`appVersion` is `dev`: the chart deploys the latest image of branch `dev`,
+which changes with every commit. Deployments from the repository should set
+the tag of a release (e.g., `0.3.0`) or of a commit on `dev`
+(`sha-<commit>`, the full commit SHA) in the values file:
+
+```yaml
+protes:
+  tag: sha-0123456789abcdef0123456789abcdef01234567
+```
+
+`protes.image` may also include a tag or digest (e.g.,
+`elixircloud/protes:0.3.0`, as in earlier chart versions); then `protes.tag`
+must be empty. See [Versioning and
+releases](https://protes.readthedocs.io/en/latest/development/#versioning-and-releases)
+for the image tags.
 
 ## Deployment
 
