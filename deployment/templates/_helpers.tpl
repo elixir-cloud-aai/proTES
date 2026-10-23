@@ -67,20 +67,36 @@ chart), which the chart would otherwise ignore; renders nothing.
 {{- end -}}
 
 {{/*
-As the app on startup, refuse to render without trusted token issuers, with
-a group mapping but no group claim, or without a group mapped to the role
-`admin` (unless admins are explicitly not required); renders nothing. The
-audience is checked by the library (`requireAudience`).
+As the app on startup, refuse to render without trusted token issuers (if
+access control is enabled, `security.access_control.enabled`), and, if it is
+also enforced (`security.access_control.enforce`), with a group mapping but no
+group claim, or without a group mapped to the role `admin` (unless admins are
+explicitly not required); renders nothing. The audience is checked by the
+library (`requireAudience`).
 */}}
 {{- define "protes.checkSecurity" -}}
 {{- $config := .Values.config | default dict -}}
 {{- $mapping := dict -}}
 {{- $claimGroups := "" -}}
 {{- $issuers := list -}}
+{{- $enabled := "true" -}}
+{{- $enforce := "true" -}}
 {{- $security := get $config "security" -}}
 {{- if kindIs "map" $security -}}
 {{- $securityAccessControl := get $security "access_control" -}}
 {{- if kindIs "map" $securityAccessControl -}}
+{{- if hasKey $securityAccessControl "enabled" -}}
+{{- $enabled = include "protes.parseBool" (dict
+  "value" (get $securityAccessControl "enabled")
+  "key" "config.security.access_control.enabled"
+) -}}
+{{- end -}}
+{{- if hasKey $securityAccessControl "enforce" -}}
+{{- $enforce = include "protes.parseBool" (dict
+  "value" (get $securityAccessControl "enforce")
+  "key" "config.security.access_control.enforce"
+) -}}
+{{- end -}}
 {{- /* Only if set, as `get` returns an empty string for missing keys */ -}}
 {{- if hasKey $securityAccessControl "group_mapping" -}}
 {{- $mapping = get $securityAccessControl "group_mapping" -}}
@@ -102,12 +118,14 @@ Issuers are compared with the `iss` claim as written, so surrounding
 whitespace is refused, too
 */ -}}
 {{- $issuersError := "config.security.auth.issuers must list the trusted token issuers (the iss claim of their tokens, e.g., https://login.example.org/oidc/, without surrounding whitespace): the app trusts none by default" -}}
+{{- if eq $enabled "true" -}}
 {{- if not (and (kindIs "slice" $issuers) $issuers) -}}
 {{- fail $issuersError -}}
 {{- end -}}
 {{- range $issuer := $issuers -}}
 {{- if not (and (kindIs "string" $issuer) (trim $issuer) (eq $issuer (trim $issuer))) -}}
 {{- fail $issuersError -}}
+{{- end -}}
 {{- end -}}
 {{- end -}}
 {{- if not (kindIs "string" $claimGroups) -}}
@@ -121,7 +139,8 @@ whitespace is refused, too
 {{- else if not (kindIs "map" $mapping) -}}
 {{- fail "config.security.access_control.group_mapping must be a map of groups to roles" -}}
 {{- end -}}
-{{- if and $mapping (not $claimGroups) -}}
+{{- $enforced := and (eq $enabled "true") (eq $enforce "true") -}}
+{{- if and $enforced $mapping (not $claimGroups) -}}
 {{- fail "config.security.access_control.claim_groups must name the claim with the groups of users (e.g., groups), as groups are mapped to roles (group_mapping); also add it to config.security.auth.userinfo_claims if the identity provider releases it via user info only" -}}
 {{- end -}}
 {{- $requireAdmin := "true" -}}
@@ -136,7 +155,7 @@ whitespace is refused, too
   "key" "config.custom.access_control.require_admin"
 ) -}}
 {{- end -}}
-{{- if and (eq $requireAdmin "true") (not (has "admin" (values $mapping))) -}}
+{{- if and $enforced (eq $requireAdmin "true") (not (has "admin" (values $mapping))) -}}
 {{- fail "config.security.access_control.group_mapping must map a group to the role admin (e.g., the admin group of the identity provider), or set config.custom.access_control.require_admin to false" -}}
 {{- end -}}
 {{- end -}}
@@ -180,7 +199,7 @@ Fails unless `protes.extraEnv` is a list of environment variables (each with
 a `name`, set once) that the chart does not set itself; renders nothing.
 */}}
 {{- define "protes.checkExtraEnv" -}}
-{{- $env := .Values.protes.extraEnv -}}
+{{- $env := dig "extraEnv" nil (.Values.protes | default dict) -}}
 {{- if not (kindIs "invalid" $env) -}}
 {{- if not (kindIs "slice" $env) -}}
 {{- fail "protes.extraEnv must be a list of environment variables (name and value or valueFrom)" -}}
@@ -210,7 +229,7 @@ e.g., credentials from Secrets for TES backends; unchanged without them.
 Call with a dict of the root context (`root`) and the manifest.
 */}}
 {{- define "protes.withExtraEnv" -}}
-{{- $env := .root.Values.protes.extraEnv | default list -}}
+{{- $env := dig "extraEnv" nil (.root.Values.protes | default dict) | default list -}}
 {{- if and $env (trim .manifest) -}}
 {{- $manifest := .manifest | fromYaml -}}
 {{- if hasKey $manifest "Error" -}}
@@ -255,20 +274,31 @@ nothing.
 {{/*
 Fails on upgrades of releases of the legacy chart (versions 2 and 3, before
 the library chart), which would delete their volumes with the MongoDB data,
-as their names changed; renders nothing. A claim of the release without the
-label `app.kubernetes.io/instance` was created by the legacy chart. Included
-once (in the app's ConfigMap template), as it looks up resources in the
-cluster. `lookup` finds nothing in `helm template` and client-side dry runs.
+as their names changed; renders nothing. Releases are recognized by their
+Deployments (`protes.failIfLegacy`), which, unlike claims of volumes, do not
+outlast an uninstallation. Included once (in the app's ConfigMap template),
+as it looks up resources in the cluster. `lookup` finds nothing in
+`helm template` and client-side dry runs.
 */}}
 {{- define "protes.checkUpgrade" -}}
 {{- if .Release.IsUpgrade -}}
-{{- $claims := lookup "v1" "PersistentVolumeClaim" .Release.Namespace "" | default dict -}}
-{{- range $claim := (get $claims "items" | default list) -}}
-{{- $owner := dig "metadata" "annotations" "meta.helm.sh/release-name" "" $claim -}}
-{{- $labels := dig "metadata" "labels" dict $claim -}}
-{{- if and (eq $owner $.Release.Name) (not (hasKey $labels "app.kubernetes.io/instance")) -}}
-{{- fail (printf "release %s was installed with the legacy chart (version 2 or 3), and upgrading it would delete its volume %s with the MongoDB data: uninstall it and install the current chart instead, keeping the data as described in deployment/README.md (From the legacy chart)" $.Release.Name (dig "metadata" "name" "" $claim)) -}}
+{{- $deployments := lookup "apps/v1" "Deployment" .Release.Namespace "" | default dict -}}
+{{- range $deployment := (get $deployments "items" | default list) -}}
+{{- include "protes.failIfLegacy" (dict "root" $ "resource" $deployment) -}}
 {{- end -}}
 {{- end -}}
+{{- end -}}
+
+{{/*
+Fails if a Deployment (looked up in the cluster) belongs to this release, but
+was created by the legacy chart (version 2 or 3): without the label
+`app.kubernetes.io/instance`. Call with a dict of the root context (`root`)
+and the Deployment (`resource`).
+*/}}
+{{- define "protes.failIfLegacy" -}}
+{{- $owner := dig "metadata" "annotations" "meta.helm.sh/release-name" "" .resource -}}
+{{- $labels := dig "metadata" "labels" dict .resource -}}
+{{- if and (eq $owner .root.Release.Name) (not (hasKey $labels "app.kubernetes.io/instance")) -}}
+{{- fail (printf "release %s was installed with the legacy chart (version 2 or 3), and upgrading it would delete its volume with the MongoDB data (Deployment %s): uninstall it and install the current chart instead, keeping the data as described in deployment/README.md (From the legacy chart)" .root.Release.Name (dig "metadata" "name" "" .resource)) -}}
 {{- end -}}
 {{- end -}}

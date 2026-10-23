@@ -17,8 +17,8 @@ annotations on standard error, if:
 - a dependency of the Helm chart (`deployment/Chart.yaml`) has another
   version than a release (`X.Y.Z`, e.g., a pre-release or a range), a
   repository other than an OCI or HTTPS one (e.g., a `file://` path to a
-  checkout of a commit), or is given in flow style (`{...}`, `[...]`), which
-  the check can't read.
+  checkout of a commit) or none (a chart in `deployment/charts/`), or is
+  given in flow style (`{...}`, `[...]`), which the check can't read.
 
 Usage: `python scripts/check_release_pins.py [<repository root>]`.
 
@@ -143,7 +143,14 @@ def find_dev_pins(root: Path) -> list[str]:
                 "a release version"
             )
     # Flow style is reported above
-    for repository in _chart_dependency_values(chart, "repository"):
+    names = [n for n in _chart_dependency_values(chart, "name") if n is not None]
+    repositories = _chart_dependency_values(chart, "repository")
+    if len(names) > len([r for r in repositories if r is not None]):
+        pins.append(
+            "deployment/Chart.yaml: a dependency has no repository (an OCI or "
+            "HTTPS one)"
+        )
+    for repository in repositories:
         if repository is not None and not RELEASE_CHART_REPOSITORY.fullmatch(
             repository
         ):

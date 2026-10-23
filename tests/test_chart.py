@@ -29,6 +29,7 @@ from tests.helm import (
     Manifest,
     render,
     render_notes,
+    render_with,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -428,6 +429,28 @@ def test_extra_env() -> None:
         assert docs[("Deployment", name)] == default[("Deployment", name)]
 
 
+def test_reserved_env() -> None:
+    """The variables reserved for the chart are those it sets.
+
+    In the app's and the worker's containers, also with the worker's
+    settings, so that `protes.extraEnv` can't set any of them again.
+    """
+    template = (
+        "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: reserved-test\n"
+        'data:\n  names: {{ include "protes.reservedEnv" . | quote }}\n'
+    )
+    docs = render_with({"reserved-test.yaml": template}, "--set", "hostName=x")
+    (configmap,) = [doc for doc in docs if doc["metadata"]["name"] == "reserved-test"]
+    reserved = set(json.loads(configmap["data"]["names"]))
+    indexed = {(doc["kind"], doc["metadata"]["name"]): doc for doc in docs}
+    names = {
+        name
+        for container in (APP, WORKER)
+        for name in _env(_container(indexed, container))
+    }
+    assert names == reserved
+
+
 def test_extra_env_worker_disabled() -> None:
     """`protes.extraEnv` doesn't render a worker that is disabled."""
     docs = _render(*WITH_EXTRA_ENV, "--set", "worker.enabled=false")
@@ -488,14 +511,33 @@ def test_flower() -> None:
     assert pod["securityContext"]["runAsNonRoot"] is True
     assert pod["automountServiceAccountToken"] is False
     assert pod["enableServiceLinks"] is False
+    assert "--port=5555" in container["command"]
+    (port,) = container["ports"]
+    assert (port["name"], port["containerPort"]) == ("http", 5555)
+    for probe in ("readinessProbe", "livenessProbe"):
+        assert container[probe]["tcpSocket"]["port"] == 5555
     service = docs[("Service", FLOWER)]
     assert service["spec"]["type"] == "ClusterIP"
+    assert service["spec"]["ports"] == [
+        {"name": "http", "port": 5555, "protocol": "TCP", "targetPort": "http"}
+    ]
     assert service["spec"]["selector"] == _labels(docs, "Deployment", FLOWER)
     assert not [
         doc
         for (kind, _), doc in docs.items()
         if kind == "Ingress" and doc["metadata"]["name"] != APP
     ]
+
+
+def test_flower_external_broker() -> None:
+    """Flower connects to an external broker, too (`broker.enabled: false`)."""
+    docs = _render(*FLOWER_ON, "--set", "broker.enabled=false")
+    assert ("StatefulSet", BROKER) not in docs
+    container = _container(docs, FLOWER)
+    assert _secret_refs(container)["CELERY_BROKER_URL"] == (
+        BROKER_SECRET,
+        "broker-url",
+    )
 
 
 def test_flower_openshift() -> None:
@@ -619,6 +661,17 @@ def test_legacy_values(args: tuple[str, ...], error: str) -> None:
     assert error in _render_error(*args)
 
 
+def test_legacy_values_first() -> None:
+    """Legacy values are reported instead of their consequences.
+
+    E.g., `applicationDomain` instead of the missing `hostName`.
+    """
+    with pytest.raises(subprocess.CalledProcessError) as exc:
+        render("--set", "applicationDomain=example.org")
+    assert "applicationDomain was removed" in exc.value.stderr
+    assert "hostName" in exc.value.stderr.split("removed", 1)[1]
+
+
 @pytest.mark.parametrize(
     ("args", "kwargs", "error"),
     [
@@ -670,9 +723,103 @@ def test_admins_not_required(value: str) -> None:
     assert ("Deployment", APP) in docs
 
 
+@pytest.mark.parametrize(
+    ("args", "kwargs"),
+    [
+        (
+            ("--set", "config.security.access_control.enabled=false"),
+            {"issuer": None, "group_claim": None, "admin_group": None},
+        ),
+        (
+            ("--set", "config.security.access_control.enforce=off"),
+            {"group_claim": None, "admin_group": None},
+        ),
+        (
+            (
+                "--set-json",
+                'config.security.access_control.group_mapping={"x": "user"}',
+                "--set",
+                "config.security.access_control.enforce=false",
+            ),
+            {"group_claim": None, "admin_group": None},
+        ),
+    ],
+    ids=["disabled", "not-enforced", "mapping-not-enforced"],
+)
+def test_access_control_off(args: tuple[str, ...], kwargs: dict[str, Any]) -> None:
+    """Without access control, the app needs no issuers, groups or admins.
+
+    If access control is not enforced, it needs issuers, but no groups or
+    admins.
+    """
+    assert ("Deployment", APP) in _render(*args, **kwargs)
+
+
+@pytest.mark.parametrize(
+    ("args", "error"),
+    [
+        (
+            ("--set", "config.security.access_control.enforce=off"),
+            "config.security.auth.issuers must list",
+        ),
+        (
+            ("--set", "config.security.access_control.enabled=maybe"),
+            "config.security.access_control.enabled must be true or false",
+        ),
+        (
+            ("--set", "config.security.access_control.enforce=maybe"),
+            "config.security.access_control.enforce must be true or false",
+        ),
+    ],
+)
+def test_access_control_off_invalid(args: tuple[str, ...], error: str) -> None:
+    """Issuers are required if access control is enabled, and booleans checked."""
+    assert error in _render_error(*args, issuer=None)
+
+
 def test_upgrade() -> None:
     """Upgrades render without a cluster (no legacy resources found)."""
     assert ("Deployment", APP) in _render("--is-upgrade")
+
+
+@pytest.mark.parametrize(
+    ("owner", "labels", "fails"),
+    [
+        ("protes", {"app": "protes"}, True),
+        ("protes", {"app.kubernetes.io/instance": "protes"}, False),
+        ("other", {"app": "protes"}, False),
+        ("", {"app": "protes"}, False),
+    ],
+    ids=["legacy", "current", "other-release", "unmanaged"],
+)
+def test_upgrade_legacy(owner: str, labels: dict[str, str], fails: bool) -> None:
+    """Upgrades fail if the release has Deployments of the legacy chart.
+
+    The legacy chart is versions 2 and 3, whose volume with the MongoDB data
+    the upgrade would delete; checked with a Deployment as returned by
+    `lookup`, which finds nothing in `helm template`.
+    """
+    resource = {
+        "metadata": {
+            "name": "protes",
+            "annotations": {"meta.helm.sh/release-name": owner} if owner else {},
+            "labels": labels,
+        }
+    }
+    # A template string literal (JSON-quoted) with the resource as JSON
+    literal = json.dumps(json.dumps(resource))
+    template = (
+        '{{- include "protes.failIfLegacy" (dict "root" .'
+        f' "resource" (fromJson {literal})) }}}}'
+    )
+    args = ({"legacy-test.yaml": template}, "--set", "hostName=x")
+    if fails:
+        with pytest.raises(subprocess.CalledProcessError) as exc:
+            render_with(*args)
+        assert "legacy chart (version 2 or 3)" in exc.value.stderr
+        assert "(Deployment protes)" in exc.value.stderr
+    else:
+        render_with(*args)
 
 
 def test_probes() -> None:
@@ -746,7 +893,7 @@ def test_notes_flower() -> None:
 def test_ci_values() -> None:
     """The values of CI render, and set what each deployment must set."""
     assert HELM is not None
-    for files in (["test-values.yaml"], ["test-values.yaml", "flower-values.yaml"]):
+    for files in (["test-values.yaml"], ["test-values.yaml", "optional-values.yaml"]):
         args = [arg for name in files for arg in ("-f", str(CHART / "ci" / name))]
         docs = render(
             *args,
