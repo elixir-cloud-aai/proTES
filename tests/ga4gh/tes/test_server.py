@@ -11,14 +11,14 @@ from connexion import FlaskApp
 from flask.testing import FlaskClient
 from pydantic import ValidationError
 from pymongo import MongoClient
-from pymongo.errors import DuplicateKeyError
+from pymongo.errors import DuplicateKeyError, PyMongoError
 import pytest
 import requests
 import tes
 
 from pro_tes.config_models import ListTasks
 from pro_tes.exceptions import BackendAuthError, BadRequest
-from pro_tes.ga4gh.tes import task_runs
+from pro_tes.ga4gh.tes import ownership, task_runs
 from pro_tes.ga4gh.tes.models import DbDocument, TesTask
 from pro_tes.middleware.middleware_handler import MiddlewareHandler
 from pro_tes.plugins.middlewares.task_distribution.random import (
@@ -26,7 +26,7 @@ from pro_tes.plugins.middlewares.task_distribution.random import (
 )
 from pro_tes.tasks import track_task_progress
 from pro_tes.utils.misc import get_custom_config
-from tests.conftest import DB
+from tests.conftest import DB, USER
 from tests.ga4gh.tes.conftest import (
     BACKENDS,
     BASE_PATH,
@@ -279,12 +279,6 @@ def test_get_task_views(client: FlaskClient, backend: type[FakeBackend]) -> None
     assert [item.get("content") for item in full["inputs"]] == [None, "hello"]
 
 
-def test_get_task_not_found(client: FlaskClient) -> None:
-    """Unknown tasks are not found (`404`)."""
-    response = client.get(f"{BASE_PATH}/tasks/UNKNOWN")
-    assert response.status_code == 404
-
-
 def test_cancel_task(
     client: FlaskClient,
     task_id: str,
@@ -325,12 +319,6 @@ def test_cancel_task_finished(
     assert response.status_code == 200
     assert not backend.canceled
     assert stored(mongo_client, task_id)["task"]["state"] == state
-
-
-def test_cancel_task_not_found(client: FlaskClient) -> None:
-    """Unknown tasks are not found (`404`)."""
-    response = client.post(f"{BASE_PATH}/tasks/UNKNOWN:cancel")
-    assert response.status_code == 404
 
 
 def test_cancel_task_nested_forwards(
@@ -906,28 +894,19 @@ def test_create_task_body_removed(
     assert not relayed(backend)
 
 
-def test_list_tasks_user(
-    app: FlaskApp, task_id: str, mongo_client: MongoClient[dict[str, Any]]
-) -> None:
-    """Tasks are filtered by user if a user is given."""
-    mongo_client[DB]["tasks"].update_one(
-        {"task.id": task_id}, {"$set": {"user_id": "user-1"}}
-    )
-    with app.app.test_request_context():
-        task_list = task_runs.TaskRuns().list_tasks
-        assert task_list(user_id="user-1")["tasks"] == [{"id": task_id, "state": ANY}]
-        assert task_list(user_id="user-2")["tasks"] == []
-
-
 def test_invalid_view(app: FlaskApp) -> None:
     """Invalid views are rejected (connexion rejects them first)."""
     with app.app.app_context(), pytest.raises(BadRequest):
         task_runs.TaskRuns()._set_projection(view="ALL")
 
 
-def test_task_id_taken(app: FlaskApp, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_task_id_taken(
+    app: FlaskApp,
+    monkeypatch: pytest.MonkeyPatch,
+    mongo_client: MongoClient[dict[str, Any]],
+) -> None:
     """Task identifiers are generated until one is unused, or attempts run out."""
-    with app.app.app_context():
+    with app.app.test_request_context():
         runs = task_runs.TaskRuns()
         attempts = runs.custom_config.controllers.post_task.db.insert_attempts
         inserted: list[str] = []
@@ -943,12 +922,22 @@ def test_task_id_taken(app: FlaskApp, monkeypatch: pytest.MonkeyPatch) -> None:
             raise DuplicateKeyError("taken")
 
         monkeypatch.setattr(runs.db_client, "insert_one", insert_one)
-        task_id, _ = runs._write_doc_to_db(document=DbDocument())
+        task_id, _ = runs._write_doc_to_db(
+            document=DbDocument(), owner=USER, collection=f"{BASE_PATH}/tasks"
+        )
         assert inserted[-1] == task_id
         assert len(inserted) == attempts
+        # only the stored task keeps its owner
+        rules = mongo_client[DB]["policy_rules"].find({"ptype": "g2"})
+        assert sorted(rule["v2"] for rule in rules) == [
+            f"{BASE_PATH}/tasks/{task_id}",
+            f"{BASE_PATH}/tasks/{task_id}:cancel",
+        ]
         monkeypatch.setattr(runs.db_client, "insert_one", insert_none)
-        with pytest.raises(DuplicateKeyError, match="Could not insert"):
-            runs._write_doc_to_db(document=DbDocument())
+        with pytest.raises(DuplicateKeyError, match="unused task identifier"):
+            runs._write_doc_to_db(
+                document=DbDocument(), owner=USER, collection=f"{BASE_PATH}/tasks"
+            )
 
 
 def test_forward_stored_no_logs(app: FlaskApp) -> None:
@@ -962,3 +951,64 @@ def test_forward_stored_no_logs(app: FlaskApp) -> None:
             tes_url=BACKENDS[0],
             remote_task_id="remote-1",
         )
+
+
+def test_task_not_stored(
+    app: FlaskApp,
+    monkeypatch: pytest.MonkeyPatch,
+    mongo_client: MongoClient[dict[str, Any]],
+) -> None:
+    """The owner is revoked if the task can't be stored."""
+
+    def insert_one(document: dict[str, Any]) -> None:
+        """Fail to insert the document.
+
+        Raises:
+            pymongo.errors.PyMongoError: Always.
+        """
+        raise PyMongoError("unavailable")
+
+    with app.app.test_request_context():
+        runs = task_runs.TaskRuns()
+        monkeypatch.setattr(runs.db_client, "insert_one", insert_one)
+        with pytest.raises(PyMongoError, match="unavailable"):
+            runs._write_doc_to_db(
+                document=DbDocument(), owner=USER, collection=f"{BASE_PATH}/tasks"
+            )
+    assert mongo_client[DB]["policy_rules"].count_documents({"ptype": "g2"}) == 0
+
+
+def test_task_owner_partly_granted(
+    app: FlaskApp,
+    monkeypatch: pytest.MonkeyPatch,
+    mongo_client: MongoClient[dict[str, Any]],
+) -> None:
+    """Owner roles granted partly are revoked, and the task is not stored."""
+    add_owner = ownership.add_owner
+    granted: list[str] = []
+
+    def add_owner_once(resource: str, subject: str) -> None:
+        """Grant the first owner role only.
+
+        Args:
+            resource: Resource of the role.
+            subject: Owner.
+
+        Raises:
+            pymongo.errors.PyMongoError: For the second role.
+        """
+        if granted:
+            raise PyMongoError("unavailable")
+        granted.append(resource)
+        add_owner(resource=resource, subject=subject)
+
+    monkeypatch.setattr(ownership, "add_owner", add_owner_once)
+    with app.app.test_request_context():
+        runs = task_runs.TaskRuns()
+        with pytest.raises(PyMongoError, match="unavailable"):
+            runs._write_doc_to_db(
+                document=DbDocument(), owner=USER, collection=f"{BASE_PATH}/tasks"
+            )
+    assert granted
+    assert mongo_client[DB]["policy_rules"].count_documents({"ptype": "g2"}) == 0
+    assert mongo_client[DB]["tasks"].count_documents({}) == 0

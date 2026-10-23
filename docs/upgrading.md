@@ -18,8 +18,9 @@ database, so the `service_info` collection can be dropped.
 
 API specifications (`api.specs`) and access control rules
 (`security.access_control.policies`) of the base config are named entries
-(the spec `tes`; rules `users-create-list-tasks` and
-`users-get-cancel-tasks`), which overlays change by name (see
+(the spec `tes`; rules `users-create-list-tasks`,
+`owners-get-cancel-tasks`, `admins-list-add-permissions` and
+`admins-manage-permissions`), which overlays change by name (see
 [Roles](access-control.md#roles)); overlays that give lists still replace
 them. The configured rules replace the stored ones atomically on startup,
 and stored configured rules are removed if an overlay sets no rules. During
@@ -52,6 +53,30 @@ providers that set another `typ` header, or none). The challenge of `401`
 responses for invalid tokens has an `error_description`, too. The new
 option `security.auth.clients` limits the accepted tokens to those of
 certain clients (by default, clients are not restricted).
+
+## Task ownership
+
+Users see, read and cancel only their own tasks, and admins no longer may do
+everything: they can't see the tasks of others, and only manage the access
+control rules (see [Task ownership](access-control.md#task-ownership)).
+Tasks of others and unknown tasks get `403 Forbidden` (was `404 Not Found`
+for unknown tasks). The rule `users-get-cancel-tasks` is replaced by
+`owners-get-cancel-tasks`, and the access control model
+(`pro_tes/access_control/model.conf`) has owner roles (`g2`) and no longer
+lets admins do everything: overlays naming the old rule, or custom models,
+must be updated. Rules added via the permissions API are kept: check that
+none of them gives users or admins access to all tasks (e.g., `p, user,
+/ga4gh/tes/v1/tasks/:id, GET`).
+
+proTES refuses to start if access control is not enabled and enforced, or
+if service clients are configured (`security.auth.service_clients`,
+`on_behalf_of_header`, `security.access_control.client_mapping`), which it
+doesn't support yet.
+
+Tasks stored by earlier versions have no owner, so nobody can see them
+through the API; operators can give them to their users, or purge them (see
+[Task owners](operations.md#task-owners)). Each new task adds two rules to
+the access control database.
 
 ## TES instances and their credentials
 
@@ -162,10 +187,10 @@ default command), and runs the Celery worker with `celery --app
 pro_tes.celery_worker worker`. `/app/pro_tes`, `gunicorn.py` and `wsgi.py` are
 gone, and the environment variables `GUNICORN_PROCESSES` and
 `GUNICORN_THREADS` are replaced by `GUNICORN_CMD_ARGS` (see
-[Server](configuration.md#server)). The Helm chart of this version (3.0.0 in
-the repository before releases from Git tags) needs images of this version,
-and earlier charts need earlier images. Released charts have the version of
-their release (e.g., 0.3.0), so chart versions restart below 3.0.0.
+[Server](configuration.md#server)). The Helm chart of this version needs
+images of this version, and the legacy chart (versions 2 and 3.0.0) needs
+earlier images. Released charts have the version of their release (e.g.,
+0.3.0), so chart versions restart below 3.0.0.
 
 Images are tagged `dev` and `sha-<commit>` for commits on `dev`, and `X.Y.Z`
 for releases; `latest` is the highest stable release, no longer the latest
@@ -173,9 +198,22 @@ commit on `dev`, and date tags are no longer pushed (see [Versioning and
 releases](development.md#versioning-and-releases)). The Helm chart takes
 the image tag from `protes.tag`, which defaults to the chart's `appVersion`:
 `dev` in the repository, the release version in released charts (see
-[Image](deployment.md#image)). Values that set `protes.image` or
-`celeryWorker.image` with a tag (e.g., `elixircloud/protes:latest`) still
-work; without them, the Celery worker runs the app's image.
+[Image](deployment.md#image)). `protes.image` may still include a tag (e.g.,
+`elixircloud/protes:0.3.0`); the Celery worker runs the app's image.
+
+## Helm chart
+
+The Helm chart is replaced by a chart on FOCA's library chart `foca-common`
+(see [Deployment](deployment.md)): other values (camelCase, e.g., `hostName`
+instead of `applicationDomain`), resource names and selectors, Secrets of
+your own for MongoDB and the broker instead of credentials in the values
+(the broker's user was `guest:guest`), Flower off by default and with
+credentials from a Secret (was always on, with `admin:admin`),
+NetworkPolicies, pinned images, and an Ingress for all paths (was
+`/ga4gh/tes/v1` only), or a Gateway API HTTPRoute. Releases of the legacy
+chart can't be upgraded: uninstall them and install the new chart, keeping
+the data as described in [From the legacy
+chart](deployment.md#from-the-legacy-chart).
 
 ## Docker Compose
 

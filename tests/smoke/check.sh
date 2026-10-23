@@ -64,15 +64,21 @@ check GET "/tasks/${id}?view=FULL" 200 \
   '.name == "smoke" and .logs[0].metadata.forwarded_to[0].url == "http://fake-tes:8080"'
 check GET '/tasks?view=MINIMAL' 200 "any(.tasks[]; .id == \"${id}\")"
 check POST "/tasks/${id}:cancel" 200 '. == {}'
-check GET /tasks/UNKNWN 404 '.status == 404'
-# Access control: no token (but the service info is public), no role, admin
+# Unknown tasks are forbidden, as tasks of others are
+check GET /tasks/UNKNWN 403 '.status == 403'
+# Access control: no token (but the service info is public), no role, other
+# users and admins (only owners see and cancel tasks)
 auth=""
 check GET /service-info 200 '.type.artifact == "tes"'
 check GET /tasks 401 '.status == 401'
 auth="$(token eve)"
 check GET /tasks 403 '.status == 403'
+auth="$(token bob)"
+check GET '/tasks?view=MINIMAL' 200 "all(.tasks[]; .id != \"${id}\")"
+check GET "/tasks/${id}" 403 '.status == 403'
+check POST "/tasks/${id}:cancel" 403 '.status == 403'
 auth="$(token admin)"
-check GET "/tasks/${id}" 200 ".id == \"${id}\""
+check GET "/tasks/${id}" 403 '.status == 403'
 # The fake backend got the task (and those of earlier runs, if not
 # restarted), with the access token of proTES (which it requires); listed
 # with a token of proTES' client

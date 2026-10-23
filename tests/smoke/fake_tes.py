@@ -38,6 +38,7 @@ CLIENT_SECRET = "smoke-protes-secret"  # noqa: S105 (fictitious)
 # Groups of the users (user info), as mapped to roles in `config.yaml`
 GROUPS = {
     "alice": ["smoke-users"],
+    "bob": ["smoke-users"],
     "admin": ["smoke-admins"],
     "eve": ["other-group"],
 }

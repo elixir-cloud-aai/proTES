@@ -1,0 +1,81 @@
+{{- /*
+Flower, the monitoring UI of the Celery worker, if `flower.enabled`: one pod,
+connected to the broker with the URL of `broker.existingSecret` (key
+`broker-url`), with basic authentication from `flower.existingSecret` (key
+`basic-auth`, `<user>:<password>`), as it shows the arguments of tasks. It is
+not exposed outside the cluster (see deployment/README.md, Flower).
+*/ -}}
+{{- $context := dict "root" . "settings" (include "protes.settings" . | fromYaml) -}}
+{{- include "foca-common.checkSettings" $context -}}
+{{- if dig "enabled" false (.Values.flower | default dict) -}}
+{{- $flower := .Values.flower -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "protes.flowerFullname" . | quote }}
+  labels:
+    {{- include "foca-common.labels" (dict "root" . "component" "flower") | nindent 4 }}
+spec:
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      {{- include "foca-common.selectorLabels" (dict "root" . "component" "flower") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "foca-common.selectorLabels" (dict "root" . "component" "flower") | nindent 8 }}
+    spec:
+      # The pod doesn't call the Kubernetes API
+      automountServiceAccountToken: false
+      # No `<SERVICE>_PORT` etc. variables of the Services in the namespace,
+      # which Flower might read as options (`FLOWER_PORT` of a Service
+      # `flower`)
+      enableServiceLinks: false
+      containers:
+      - name: flower
+        image: {{ required "flower.image must be set" $flower.image | quote }}
+        imagePullPolicy: {{ $flower.imagePullPolicy | default "Always" }}
+        command: ["celery", "flower", "--port=5555"]
+        env:
+        - name: CELERY_BROKER_URL
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.broker.existingSecret | quote }}
+              key: broker-url
+        - name: FLOWER_BASIC_AUTH
+          valueFrom:
+            secretKeyRef:
+              name: {{ $flower.existingSecret | quote }}
+              key: basic-auth
+        ports:
+        - name: http
+          containerPort: 5555
+          protocol: TCP
+        # The UI requires authentication, so the probes only connect
+        readinessProbe:
+          tcpSocket:
+            port: 5555
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        livenessProbe:
+          tcpSocket:
+            port: 5555
+          initialDelaySeconds: 30
+          periodSeconds: 20
+          timeoutSeconds: 5
+          failureThreshold: 3
+        resources: {{- toYaml ($flower.resources | default dict) | nindent 10 }}
+        securityContext:
+          {{- include "foca-common.securityContext" (dict "root" . "context" $flower.securityContext) | nindent 10 }}
+        volumeMounts:
+        # Writable, as the root file system is read-only by default
+        - mountPath: /tmp
+          name: tmp
+      securityContext:
+        {{- include "foca-common.securityContext" (dict "root" . "context" $flower.podSecurityContext) | nindent 8 }}
+      volumes:
+      - name: tmp
+        {{- include "foca-common.emptyDir" $flower.tmpSizeLimit | nindent 8 }}
+{{ end -}}

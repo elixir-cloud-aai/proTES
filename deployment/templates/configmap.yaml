@@ -1,0 +1,2 @@
+{{- include "protes.checkUpgrade" . -}}
+{{- include "foca-common.configMap" (dict "root" . "settings" (include "protes.settings" . | fromYaml)) }}

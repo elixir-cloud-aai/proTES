@@ -14,7 +14,9 @@ annotations on standard error, if:
 - the base image of the `Dockerfile` (`elixircloud/foca`) has no release
   tag (`<X.Y.Z>-py<X.Y>`, e.g., a dated development image);
 - a dependency of the Helm chart (`deployment/Chart.yaml`) has another
-  version than a release (`X.Y.Z`, e.g., a pre-release or a range), or is
+  version than a release (`X.Y.Z`, e.g., a pre-release or a range), a
+  repository other than an OCI or HTTPS one (e.g., a `file://` path to a
+  checkout of a commit) or none (a chart in `deployment/charts/`), or is
   given in flow style (`{...}`, `[...]`), which the check can't read.
 
 Usage: `python scripts/check_release_pins.py [<repository root>]`.
@@ -46,42 +48,44 @@ LOCAL_VERSION = re.compile(r"[0-9]\+[A-Za-z0-9]")
 # The base image, with its tag
 BASE_IMAGE = re.compile(r"^FROM\s+elixircloud/foca:(?P<tag>[^@\s]+)", re.MULTILINE)
 RELEASE_IMAGE_TAG = re.compile(SEMVER + r"-py3\.[0-9]+")
-# A chart dependency's version (`version: <version>`, in a list item of
-# `dependencies`), up to a comment; the chart is read line by line, without a
-# YAML parser
-CHART_VERSION = re.compile(
-    r"^\s*(?:-\s+)?version:\s*[\"']?(?P<version>.*?)[\"']?\s*(?:#.*)?$"
-)
+# A key of a chart dependency (`<key>: <value>`, in a list item of
+# `dependencies`, e.g., `version`), up to a comment; the chart is read line by
+# line, without a YAML parser
+CHART_KEY = r"^\s*(?:-\s+)?{key}:\s*[\"']?(?P<value>.*?)[\"']?\s*(?:#.*)?$"
 RELEASE_CHART_VERSION = re.compile(SEMVER)
+# Repositories of released charts: OCI registries and chart repositories
+RELEASE_CHART_REPOSITORY = re.compile(r"(oci|https)://\S+")
 
 
-def _chart_dependency_versions(path: Path) -> list[str | None]:
-    """Get the versions of the dependencies of a chart.
+def _chart_dependency_values(path: Path, key: str = "version") -> list[str | None]:
+    """Get the values of a key of the dependencies of a chart.
 
-    The `version` keys of the `dependencies` section, i.e., of the lines
-    after the line `dependencies:` that are indented or list items, up to the
-    next top-level key.
+    The `key` keys of the `dependencies` section, i.e., of the lines after
+    the line `dependencies:` that are indented or list items, up to the next
+    top-level key.
 
     Args:
         path: The chart's `Chart.yaml`.
+        key: The key, e.g., `version` or `repository`.
 
     Returns:
-        The versions, in order; `None` for dependencies in flow style
+        The values, in order; `None` for dependencies in flow style
         (`{...}`, `[...]`), which aren't read.
     """
-    versions: list[str | None] = []
+    pattern = re.compile(CHART_KEY.format(key=re.escape(key)))
+    values: list[str | None] = []
     in_dependencies = False
     for line in path.read_text().splitlines():
         if line and line[0] not in " \t-#":
-            key, _, value = line.split("#", 1)[0].partition(":")
-            in_dependencies = key.strip() == "dependencies"
+            name, _, value = line.split("#", 1)[0].partition(":")
+            in_dependencies = name.strip() == "dependencies"
             if in_dependencies and value.strip():
-                versions.append(None)
+                values.append(None)
         elif in_dependencies and re.match(r"\s*(-\s*)?[{\[]", line):
-            versions.append(None)
-        elif in_dependencies and (match := CHART_VERSION.match(line)):
-            versions.append(match["version"])
-    return versions
+            values.append(None)
+        elif in_dependencies and (match := pattern.match(line)):
+            values.append(match["value"])
+    return values
 
 
 def find_dev_pins(root: Path) -> list[str]:
@@ -126,7 +130,8 @@ def find_dev_pins(root: Path) -> list[str]:
             f"Dockerfile: base image tag '{match['tag']}' is not a release tag "
             "(<X.Y.Z>-py<X.Y>)"
         )
-    for version in _chart_dependency_versions(root / "deployment" / "Chart.yaml"):
+    chart = root / "deployment" / "Chart.yaml"
+    for version in _chart_dependency_values(chart):
         if version is None:
             pins.append(
                 "deployment/Chart.yaml: dependencies in flow style can't be checked"
@@ -135,6 +140,22 @@ def find_dev_pins(root: Path) -> list[str]:
             pins.append(
                 f"deployment/Chart.yaml: dependency version '{version}' is not "
                 "a release version"
+            )
+    # Flow style is reported above
+    names = [n for n in _chart_dependency_values(chart, "name") if n is not None]
+    repositories = _chart_dependency_values(chart, "repository")
+    if len(names) > len([r for r in repositories if r is not None]):
+        pins.append(
+            "deployment/Chart.yaml: a dependency has no repository (an OCI or "
+            "HTTPS one)"
+        )
+    for repository in repositories:
+        if repository is not None and not RELEASE_CHART_REPOSITORY.fullmatch(
+            repository
+        ):
+            pins.append(
+                f"deployment/Chart.yaml: dependency repository '{repository}' is "
+                "not an OCI or HTTPS repository"
             )
     return pins
 

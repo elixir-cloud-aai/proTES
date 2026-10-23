@@ -1,82 +1,169 @@
-# Default values for protes_helm.
+# Default values for protes.
 # This is a YAML-formatted file.
 # Declare variables to be passed into your templates.
+# The chart's templates are mostly those of FOCA's library chart foca-common
+# (see `Chart.yaml`), which reads these values (see deployment/README.md).
 
-applicationDomain: ""
+# Resource names are derived from the release name: `<release>-protes` (or
+# `<release>` if it contains `protes`) for the app and `<that name>-mongodb`,
+# `-worker`, `-broker` and `-flower` for MongoDB, the Celery worker, the
+# broker and Flower; `nameOverride` replaces the chart name,
+# `fullnameOverride` the derived app name (camelCase, as in other Helm
+# charts). Set them at installation only: changing them later changes the
+# pod selectors, which cannot be upgraded
+nameOverride: ""
+fullnameOverride: ""
+
+# Public host name of the app (of the Ingress, HTTPRoute or OpenShift Route),
+# e.g., `tes.example.org`
+hostName: ""
 
 # App config overriding the base config in the image (`pro_tes/config.yaml`
 # of the image's version); mappings are merged recursively, other values
 # (including lists) are replaced. Stored in a ConfigMap, so must not contain
-# secrets. Deployments must set the trusted token issuers, the audience and
-# the groups of the roles; the app refuses to start without them (see
-# https://protes.readthedocs.io/en/latest/access-control/), e.g.:
+# secrets. Deployments must set the trusted token issuers
+# (`security.auth.issuers`) and `security.auth.audience` (unless
+# `security.auth.verify_audience` is false), and map an admin group to the
+# role `admin` (unless `custom.access_control.require_admin` is false), with
+# the claim with the groups of users (`security.access_control.claim_groups`),
+# and must not disable access control; rendering fails otherwise (see
+# deployment/README.md, Configuration).
+# Examples:
 config: {}
 #   security:
 #     auth:
+#       # Trusted token issuers (`iss` claim)
 #       issuers: ["https://login.example.org/oidc/"]
 #       # Client IDs of the apps calling proTES
 #       audience: ["my-portal-client-id"]
+#       # Claims released via user info only, not in access tokens
 #       userinfo_claims: ["groups"]
 #     access_control:
+#       # Claim with the groups of users
 #       claim_groups: groups
 #       group_mapping:
 #         compute-users: user
 #         compute-admins: admin
-
-# which cluster type proTES is going to be deployed on
-# it can be either 'kubernetes' or 'openshift'
-clusterType: kubernetes
-
-# mongodb-pvc.yaml/rabbitmq-pvc.yaml, change to ReadWriteMany if storageClass can do RWX
-storageAccessMode: ReadWriteOnce
-
-flower:
-  appName: protes-flower
-  basicAuth: admin:admin
-  image: endocode/flower
-  resources:
-    limits:
-      cpu: 200m
-      memory: 500Mi
-    requests:
-      cpu: 200m
-      memory: 500Mi
+#   custom:
+#     # TES instances that tasks are distributed to
+#     tes:
+#       service_list:
+#         - "https://tes.example.org"
+#   # Service info (GA4GH `Service` schema); mappings are merged with the
+#   # defaults, which describe the app with placeholders, so set all fields
+#   # of the deployment
+#   service_info:
+#     service:
+#       id: "org.example.tes"
+#       name: "My TES gateway"
+#       organization:
+#         name: "My organization"
+#         url: "https://organization.example.org"
+#       contactUrl: "mailto:tes@example.org"
+#       environment: "prod"
 
 protes:
-  appName: protes
-  # Image and tag; the tag defaults to the chart's `appVersion`. An image
-  # with a tag or digest (e.g., `elixircloud/protes:0.3.0`) is used as it
-  # is (then `tag` must be empty)
+  # Image repository; may include a tag or digest instead of setting `tag`
+  # (e.g., `elixircloud/protes:0.3.0`). The image of the app also runs the
+  # Celery worker (`worker`)
   image: elixircloud/protes
+  # Image tag; defaults to the chart's `appVersion`, i.e., the release
+  # version for released charts and `dev` (the latest commit on `dev`) for
+  # the chart in the repository (see deployment/README.md, Image)
   tag: ""
-  initResources:
-    limits:
-      memory: 16Mi
-      cpu: 50m
-    requests:
-      memory: 16Mi
-  resources:
-    limits:
-      memory: 256Mi
-      cpu: 100m
-    requests:
-      memory: 256Mi
-      cpu: 100m
-
-celeryWorker:
-  appName: celery-worker
-  # Image and tag, as `protes.image` and `protes.tag`; if `image` is empty,
-  # the worker runs the app's image (`protes.image` and `protes.tag`), and
-  # `tag` must be empty
-  image: ""
-  tag: ""
-  initResources:
-    limits:
-      memory: 16Mi
-      cpu: 50m
-    requests:
-      memory: 16Mi
-      cpu: 50m
+  # Pull policy of the image (`Always`, `IfNotPresent` or `Never`)
+  imagePullPolicy: Always
+  # Path of the app's startup, readiness and liveness probes; change it if
+  # the config disables the Swagger UI
+  probePath: /ga4gh/tes/v1/ui/
+  # Environment variables of the app's and the worker's containers
+  # (Kubernetes `EnvVar`s), e.g., credentials for TES instances from a
+  # Secret (`valueFrom.secretKeyRef`), which must not be in `config`; see
+  # deployment/README.md, Secrets. Rendering fails for the variables that
+  # the chart sets (`FOCA_CONFIG_OVERLAY`, `GUNICORN_CMD_ARGS`,
+  # `MONGO_USERNAME`, `MONGO_PASSWORD`, `CELERY_BROKER_URL`,
+  # `CELERY_RESULT_BACKEND`), and for `MONGO_DBNAME`, as the chart
+  # provisions the database `taskStore`
+  extraEnv: []
+  # The app is exposed for `hostName` via one of: an Ingress (`ingress`), a
+  # Gateway API HTTPRoute (`httpRoute`; disable the Ingress to enable it) or,
+  # if neither is enabled and the cluster serves Routes, an OpenShift Route
+  # (`route`). See deployment/README.md, Exposing the app
+  ingress:
+    enabled: true
+    # Ingress class (`spec.ingressClassName`); the cluster's default class if
+    # empty
+    className: ""
+    # Annotations of the Ingress, e.g., for the ingress controller; they take
+    # precedence over those set by the chart: for `https`, and
+    # `nginx.ingress.kubernetes.io/proxy-body-size`, the size limit of request
+    # bodies of the app (`config.server.max_content_length`) for
+    # ingress-nginx. `null` removes an annotation set by the chart
+    annotations: {}
+    https:
+      # Request a certificate from cert-manager (via `issuer`, a
+      # ClusterIssuer) and serve HTTPS
+      enabled: false
+      issuer: letsencrypt-prod
+  # Gateway API HTTPRoute (`gateway.networking.k8s.io/v1`) for `hostName`,
+  # attached to an existing Gateway, whose listener terminates TLS; requires
+  # `ingress.enabled: false`
+  httpRoute:
+    enabled: false
+    # Annotations of the HTTPRoute
+    annotations: {}
+    # Gateways (or listeners, via `sectionName` or `port`) to attach to;
+    # required if enabled, e.g., the HTTPS listener of a shared Gateway:
+    # `[{name: gateway, namespace: gateway-system, sectionName: https}]`.
+    # The Gateway's listener must allow routes from the release's namespace
+    parentRefs: []
+    # Filters of the route's rule (`HTTPRouteFilter`s), e.g., an
+    # `ExtensionRef` to a resource of the Gateway implementation that limits
+    # body sizes or rates; the Gateway API has no standard for these, so the
+    # app's `config.server.max_content_length` stays the enforcing limit
+    filters: []
+    # A second HTTPRoute (`<app name>-https-redirect`) that redirects HTTP to
+    # HTTPS (`301`), attached to the Gateway's HTTP listener(s) in
+    # `parentRefs` (required if enabled), e.g.,
+    # `[{name: gateway, namespace: gateway-system, sectionName: http}]`; they
+    # must not attach to the listeners of `httpRoute.parentRefs` (set
+    # `sectionName` in both, or `port` in both). It has no annotations
+    httpsRedirect:
+      enabled: false
+      parentRefs: []
+  # OpenShift Route (TLS at the router, which redirects HTTP to HTTPS)
+  route:
+    # Annotations of the Route, e.g., for rate limits of the router
+    # (`haproxy.router.openshift.io/rate-limit-connections`)
+    annotations: {}
+  # NetworkPolicy allowing connections to the app only from `ingressFrom`
+  # (and the kubelet's probes; see deployment/README.md, Network policies);
+  # clusters without NetworkPolicy support ignore it. Disabled by default:
+  # before enabling it, make `ingressFrom` match the pods of the ingress
+  # controller or Gateway
+  networkPolicy:
+    enabled: false
+    # NetworkPolicy peers (`spec.ingress[].from`) allowed to connect to the
+    # app; by default, the namespace of ingress-nginx. Must not be empty
+    # (which would allow all sources); on OpenShift, use the router's
+    # namespaces (`policy-group.network.openshift.io/ingress: ""`)
+    ingressFrom:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: ingress-nginx
+  # Security contexts of the pod and the container (also of the worker); the
+  # image runs as user 1000, and with a read-only root file system, temporary
+  # files go to an `emptyDir` at `/tmp`. On OpenShift, `runAsUser`,
+  # `runAsGroup` and `fsGroup` are omitted, as OpenShift assigns them
+  podSecurityContext:
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: ["ALL"]
+    readOnlyRootFilesystem: true
   resources:
     limits:
       cpu: 200m
@@ -84,17 +171,103 @@ celeryWorker:
     requests:
       cpu: 100m
       memory: 256Mi
+  # Size limit of the `emptyDir` at `/tmp` (the pod is evicted if it is
+  # exceeded): a quantity (e.g., `64Mi`) or a number of bytes; `null` for none
+  tmpSizeLimit: 64Mi
+  # Seconds that the app keeps serving after its pod is deleted, before it
+  # shuts down (`preStop` hook), so that the ingress controller and Service
+  # stop sending requests to it first; 0: no delay (no hook)
+  preStopSleepSeconds: 5
+  # Gunicorn, the image's WSGI server (passed via `GUNICORN_CMD_ARGS`; see
+  # deployment/README.md, Server). Each worker loads the whole app, so raise
+  # the memory in `resources` before raising `workers`
+  gunicorn:
+    # Worker processes, and threads per worker (requests served at once)
+    workers: 1
+    threads: 4
+    # Seconds after which workers whose main loop does not respond are
+    # restarted (requests run in threads, so slow requests don't count)
+    timeout: 30
+    # Seconds that workers get to finish requests on shutdown (after
+    # `preStopSleepSeconds`); the pod's termination grace period is both
+    # plus 10 seconds
+    gracefulTimeout: 20
+    # Seconds after which idle keep-alive connections are closed (0: no
+    # keep-alive); keep it longer than the upstream keep-alive timeout of the
+    # ingress controller (60 seconds for ingress-nginx), which would otherwise
+    # reuse connections as they are closed (failing requests with `502`)
+    keepalive: 75
+    # Further Gunicorn options, e.g., `["--access-logfile", "-"]` for an
+    # access log; rendering fails for `--bind`/`-b` (the chart's ports are
+    # 8080), `--preload` (MongoDB clients must be created after forking) and
+    # `--graceful-timeout` (set `gracefulTimeout`)
+    extraArgs: []
 
 mongodb:
-  appName: mongodb
-  secret:
-    databaseRootUsername: ""
-    databaseRootPassword: ""
-    databaseUser: ""
-    databasePassword: ""
-    databaseName: ""
-  volumeSize: 1Gi
-  image: docker.io/library/mongo:noble
+  # Deploy MongoDB with the app; if false, set the host (and port) of an
+  # external MongoDB in `config.db`, and its app user's credentials via
+  # `auth.existingSecret` (see deployment/README.md, External MongoDB)
+  enabled: true
+  # MongoDB 8.0 refuses to start on Linux kernels 6.19 to 7.0.13
+  # (https://jira.mongodb.org/browse/SERVER-121912); see deployment/README.md
+  # (MongoDB version) before changing the version of an existing database
+  # Pinned to a patch version (or pin a digest), so that restarts don't
+  # change it; update it with the chart
+  image: docker.io/library/mongo:7.0.45
+  # Pull policy of the image (`Always`, `IfNotPresent` or `Never`)
+  imagePullPolicy: IfNotPresent
+  auth:
+    # Require credentials (set `existingSecret`); enforced on every start,
+    # but users are only created when MongoDB starts with an empty data
+    # directory, so create them first for existing databases. Without
+    # authentication, any pod that can reach the MongoDB service can read
+    # and modify the data, so disable it explicitly only if that is
+    # acceptable
+    enabled: true
+    # Name of an existing Secret with keys `root-username` and
+    # `root-password` (MongoDB root user; not needed for an external MongoDB)
+    # and `username` and `password` (app user, created with access to the
+    # app's database, `taskStore`)
+    existingSecret: ""
+  # NetworkPolicy allowing connections to MongoDB only from the app's and
+  # the worker's pods of this release (and the kubelet's probes); clusters
+  # without NetworkPolicy support ignore it
+  networkPolicy:
+    enabled: true
+  # Volume with MongoDB's data: a PersistentVolumeClaim (`<app name>-mongodb`)
+  # of `size`, with `accessModes` and `storageClass` (the cluster's default
+  # class if empty, `-` for no dynamic provisioning), or the existing claim
+  # `existingClaim`. If disabled, the data is kept in an `emptyDir` (limited
+  # to `size`) and lost when MongoDB's pod is replaced, e.g., for tests.
+  # With `resourcePolicy: keep`, Helm keeps the claim (and the database) when
+  # the release is uninstalled, or when the claim is removed from it (by
+  # disabling persistence or switching to an existing claim); reinstalling
+  # the release with the same name and namespace uses it again. Delete the
+  # claim by hand to remove the data. Empty: Helm deletes the claim
+  persistence:
+    enabled: true
+    size: 1Gi
+    accessModes: ["ReadWriteOnce"]
+    storageClass: ""
+    existingClaim: ""
+    resourcePolicy: keep
+  # Security contexts of the pod and the container; the image starts as root
+  # and switches to user `mongodb` (999), so the user is set here, and
+  # `fsGroup` makes the data volume writable for it. On OpenShift,
+  # `runAsUser`, `runAsGroup` and `fsGroup` are omitted, as OpenShift assigns
+  # them
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 999
+    runAsGroup: 999
+    fsGroup: 999
+    seccompProfile:
+      type: RuntimeDefault
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: ["ALL"]
+    readOnlyRootFilesystem: true
   resources:
     limits:
       cpu: 200m
@@ -102,15 +275,165 @@ mongodb:
     requests:
       cpu: 200m
       memory: 512Mi
+  # Size limit of the `emptyDir` at `/tmp` (the pod is evicted if it is
+  # exceeded): a quantity (e.g., `64Mi`) or a number of bytes; `null` for none
+  tmpSizeLimit: 64Mi
 
-rabbitmq:
-  appName: rabbitmq
-  volumeSize: 1Gi
-  image: rabbitmq:4.1.4-management
+# Celery worker, which relays tasks to the TES instances and tracks their
+# states: a Deployment with the app's image, config overlay, MongoDB
+# credentials, `protes.extraEnv` and security contexts, connected to the
+# broker via `broker.existingSecret`. Required for proTES to track tasks
+worker:
+  enabled: true
+  # Command of the worker's container; each process tracks one task at a
+  # time (`--concurrency`, raise `resources` with it), and `--task-events`
+  # sends the events that Flower shows
+  command:
+  - celery
+  - --app
+  - pro_tes.celery_worker
+  - worker
+  - --concurrency=2
+  - --task-events
+  - --loglevel=INFO
+  replicas: 1
+  # Probes of the worker's container (Kubernetes probe specs; none by
+  # default, so its pods are ready once started, also while Celery retries
+  # to connect to the broker), e.g., an `exec` probe that runs
+  # `celery --app pro_tes.celery_worker inspect ping` for the pod's worker;
+  # such a check starts Python and creates the app, so give it long periods
+  # and timeouts
+  readinessProbe: {}
+  livenessProbe: {}
+  # Seconds that the worker gets to finish running tasks after its pod is
+  # deleted (Celery's warm shutdown), before it is killed; tasks that are
+  # killed are not acknowledged, so the broker delivers them again
+  terminationGracePeriodSeconds: 30
   resources:
     limits:
       cpu: 200m
-      memory: 256Mi
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 512Mi
+  # Size limit of the `emptyDir` at `/tmp` (the pod is evicted if it is
+  # exceeded): a quantity (e.g., `64Mi`) or a number of bytes; `null` for none
+  tmpSizeLimit: 64Mi
+
+# Message broker of Celery
+broker:
+  # Deploy RabbitMQ as the broker (one pod), which keeps queued tasks in a
+  # PersistentVolumeClaim (see `persistence`), so that they survive restarts
+  # of its pod (e.g., on upgrades or node failures); if false, set
+  # `existingSecret` to the URL of an external broker
+  enabled: true
+  # Name of an existing Secret with the key `broker-url`, the broker URL
+  # (passed to the app, the worker and Flower as `CELERY_BROKER_URL`),
+  # optionally `result-backend` (`CELERY_RESULT_BACKEND`; by default
+  # `jobs.backend` of the config) and, for the bundled RabbitMQ, `username`
+  # and `password` of its user, which its URL must contain, e.g.,
+  # `pyamqp://<username>:<password>@<app name>-broker:5672//` (see
+  # deployment/README.md, Broker; URL-encode reserved characters of the
+  # credentials). Required
+  existingSecret: ""
+  # Pinned to a patch version (or pin a digest), so that restarts don't
+  # change it; update it with the chart
+  image: docker.io/library/rabbitmq:4.3.7
+  # Pull policy of the image (`Always`, `IfNotPresent` or `Never`)
+  imagePullPolicy: IfNotPresent
+  # NetworkPolicy allowing connections to the broker only from the app's,
+  # the worker's (and Flower's) pods of this release (and the kubelet's
+  # probes); clusters without NetworkPolicy support ignore it
+  networkPolicy:
+    enabled: true
+  # Security contexts of the pod and the container; the image runs as user
+  # `rabbitmq` (999), and `fsGroup` makes the data volume writable for it.
+  # On OpenShift, `runAsUser`, `runAsGroup` and `fsGroup` are omitted, as
+  # OpenShift assigns them
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 999
+    runAsGroup: 999
+    fsGroup: 999
+    seccompProfile:
+      type: RuntimeDefault
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: ["ALL"]
+    readOnlyRootFilesystem: true
+  resources:
+    limits:
+      cpu: 200m
+      memory: 512Mi
     requests:
       cpu: 200m
+      memory: 512Mi
+  # Volume with the broker's data (queued tasks; Celery's queues are durable
+  # and its task messages persistent): a PersistentVolumeClaim
+  # (`<app name>-broker`) of `size`, with `accessModes` and `storageClass`
+  # (the cluster's default class if empty, `-` for no dynamic provisioning),
+  # or the existing claim `existingClaim`. RabbitMQ creates its user from
+  # `existingSecret` only when it starts with empty data: after changing the
+  # Secret's password, also change the user's (see deployment/README.md,
+  # Broker). If disabled, the data is kept in an `emptyDir`, and queued tasks
+  # are lost when the broker's pod is replaced. Helm deletes the claim when
+  # the release is uninstalled, unless `resourcePolicy` is `keep`
+  persistence:
+    enabled: true
+    size: 1Gi
+    accessModes: ["ReadWriteOnce"]
+    storageClass: ""
+    existingClaim: ""
+    resourcePolicy: ""
+  # Size limits of the `emptyDir`s with the broker's home (and, without
+  # `persistence`, its data) and at `/tmp` (the pod is evicted if they are
+  # exceeded): quantities (e.g., `1Gi`) or numbers of bytes; `null` for none
+  dataSizeLimit: 1Gi
+  tmpSizeLimit: 64Mi
+
+# Flower, the monitoring UI of the Celery worker (optional; it shows the
+# arguments of tasks, so it requires basic authentication). Not exposed
+# outside the cluster: reach it with `kubectl port-forward` (see
+# deployment/README.md, Flower)
+flower:
+  enabled: false
+  # Name of an existing Secret with the key `basic-auth`, the credentials of
+  # Flower's basic authentication (`<user>:<password>`); required if enabled
+  existingSecret: ""
+  # Pinned to a version (or pin a digest), so that restarts don't change it
+  image: docker.io/mher/flower:2.0.1
+  # Pull policy of the image (`Always`, `IfNotPresent` or `Never`)
+  imagePullPolicy: IfNotPresent
+  # NetworkPolicy allowing connections to Flower only from `ingressFrom`
+  # (none by default: `kubectl port-forward` is not affected); clusters
+  # without NetworkPolicy support ignore it
+  networkPolicy:
+    enabled: true
+    # NetworkPolicy peers (`spec.ingress[].from`) allowed to connect to
+    # Flower, e.g., an ingress controller in front of it
+    ingressFrom: []
+  # Security contexts of the pod and the container; the image runs as user
+  # `flower` (1000). On OpenShift, `runAsUser`, `runAsGroup` and `fsGroup`
+  # are omitted, as OpenShift assigns them
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    runAsGroup: 1000
+    seccompProfile:
+      type: RuntimeDefault
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: ["ALL"]
+    readOnlyRootFilesystem: true
+  resources:
+    limits:
+      cpu: 100m
       memory: 256Mi
+    requests:
+      cpu: 100m
+      memory: 256Mi
+  # Size limit of the `emptyDir` at `/tmp` (the pod is evicted if it is
+  # exceeded): a quantity (e.g., `64Mi`) or a number of bytes; `null` for none
+  tmpSizeLimit: 64Mi

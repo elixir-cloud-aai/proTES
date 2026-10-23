@@ -25,29 +25,58 @@ def _groups_of_role(mapping: dict[str, str], role: str) -> list[str]:
     return sorted(group for group, value in mapping.items() if value == role)
 
 
+def check_task_ownership() -> None:
+    """Check that only the owners of tasks can access them.
+
+    Owners are enforced by access control (cf.
+    :py:mod:`pro_tes.ga4gh.tes.ownership`), so it must be enabled and
+    enforced. Tasks are owned by the users of the access tokens only, so
+    service clients, which are enforced as clients, are not supported yet.
+    Must be called in an app context.
+
+    Raises:
+        RuntimeError: Access control is not enabled and enforced, or service
+            clients (`security.auth.service_clients`,
+            `on_behalf_of_header` or `security.access_control.client_mapping`)
+            are configured.
+    """
+    security = get_config().security
+    conf = security.access_control
+    if not (conf.enabled and conf.enforce):
+        raise RuntimeError(
+            "Access control must be enabled and enforced "
+            "(`security.access_control.enabled` and `enforce`), so that only "
+            "the owners of tasks can access them"
+        )
+    if (
+        security.auth.service_clients
+        or security.auth.on_behalf_of_header is not None
+        or conf.client_mapping
+    ):
+        raise RuntimeError(
+            "Service clients (`security.auth.service_clients`, "
+            "`on_behalf_of_header` and `security.access_control.client_mapping`) "
+            "are not supported yet: tasks are owned by the users of access "
+            "tokens only"
+        )
+
+
 def check_role_groups() -> None:
     """Check that groups are mapped to the role `admin`, and log the mapping.
 
-    Without such groups, nobody has the role `admin` (who may do
-    everything), so this is an error unless
+    Without such groups, nobody has the role `admin` (who may use the
+    permissions API), so this is an error unless
     `custom.access_control.require_admin` is false; so is a group mapping
     without the claim of the groups (`claim_groups`), which no group would
     match. A warning is logged if no group is mapped to the role `user`, as
-    only admins can use the API then, and if access control is not enabled
-    and enforced. Must be called in an app context.
+    nobody can create tasks then. Must be called in an app context.
 
     Raises:
-        RuntimeError: Access control is enabled, no group is mapped to the
-            role `admin` (or `claim_groups` is not set), and
+        RuntimeError: No group is mapped to the role `admin` (or
+            `claim_groups` is not set), and
             `custom.access_control.require_admin` is true.
     """
     conf = get_config().security.access_control
-    if not (conf.enabled and conf.enforce):
-        logger.warning(
-            "Access control is not enforced, so anyone with a valid access "
-            "token may do everything"
-        )
-        return
     mapping = conf.group_mapping or {}
     if mapping and conf.claim_groups is None:
         logger.warning(
@@ -60,8 +89,7 @@ def check_role_groups() -> None:
         logger.info("Groups mapped to the role 'user': %s", ", ".join(users))
     else:
         logger.warning(
-            "No group is mapped to the role 'user', so only admins can create, "
-            "list, read and cancel tasks"
+            "No group is mapped to the role 'user', so nobody can create or list tasks"
         )
     admins = _groups_of_role(mapping, "admin")
     if admins:

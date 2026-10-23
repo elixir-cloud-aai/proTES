@@ -138,17 +138,21 @@ jobs:
         with:
           version: v3.22.1
       # `appVersion` (the default image tag) is the release version. The
+      # library chart foca-common is packaged with the chart, in the version
+      # locked in `Chart.lock` (TEMPORARY: from the FOCA commit of
+      # `Chart.yaml`, which the pin check refuses to release, #246). The
       # chart is packaged from a copy whose README links to the docs and files
       # of the release instead of the latest docs and branch `dev` (see
       # `scripts/chart_readme.py`; fails if any link to a version that moves
-      # is left). The chart is linted without `--strict`, as its Ingresses
-      # use a deprecated API until it moves to FOCA's library chart (#216)
+      # is left)
       - name: Package chart
         env:
           VERSION: ${{ steps.version.outputs.version }}
           CHART_VERSION: ${{ steps.version.outputs.chart_version }}
         run: |
-          helm lint deployment
+          scripts/foca_common.sh
+          helm dependency build deployment
+          helm lint deployment --strict -f deployment/ci/test-values.yaml
           chart="$(mktemp -d)/protes"
           cp -R deployment "${chart}"
           python scripts/chart_readme.py "${chart}/README.md" "v${VERSION}"
@@ -157,6 +161,10 @@ jobs:
           package="dist/protes-${CHART_VERSION}.tgz"
           # The packaged README is the checked one
           tar -xzOf "${package}" protes/README.md | cmp - "${chart}/README.md"
+          # The library chart is packaged with it, in the locked version
+          library="$(tar -xzOf "${package}" protes/charts/foca-common/Chart.yaml \
+              | yq .version)"
+          [[ "${library}" == "$(yq '.dependencies[0].version' deployment/Chart.lock)" ]]
       - name: Upload chart
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
