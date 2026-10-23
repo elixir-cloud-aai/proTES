@@ -477,8 +477,9 @@ class TaskRuns:
                 continue
             document.task.id = task_id
             document.worker_id = uuid()
-            add_task_owner(collection=collection, task_id=task_id, owner=owner)
             try:
+                # within `try`, so that a partial grant is revoked, too
+                add_task_owner(collection=collection, task_id=task_id, owner=owner)
                 self.db_client.insert_one(
                     document.model_dump(mode="json", exclude_none=True)
                 )

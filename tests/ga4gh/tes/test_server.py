@@ -17,7 +17,7 @@ import tes
 
 from pro_tes.config_models import ListTasks
 from pro_tes.exceptions import BadRequest
-from pro_tes.ga4gh.tes import task_runs
+from pro_tes.ga4gh.tes import ownership, task_runs
 from pro_tes.ga4gh.tes.models import DbDocument, TesTask
 from pro_tes.middleware.middleware_handler import MiddlewareHandler
 from pro_tes.plugins.middlewares.task_distribution.random import (
@@ -806,3 +806,39 @@ def test_task_not_stored(
                 document=DbDocument(), owner=USER, collection=f"{BASE_PATH}/tasks"
             )
     assert mongo_client[DB]["policy_rules"].count_documents({"ptype": "g2"}) == 0
+
+
+def test_task_owner_partly_granted(
+    app: FlaskApp,
+    monkeypatch: pytest.MonkeyPatch,
+    mongo_client: MongoClient[dict[str, Any]],
+) -> None:
+    """Owner roles granted partly are revoked, and the task is not stored."""
+    add_owner = ownership.add_owner
+    granted: list[str] = []
+
+    def add_owner_once(resource: str, subject: str) -> None:
+        """Grant the first owner role only.
+
+        Args:
+            resource: Resource of the role.
+            subject: Owner.
+
+        Raises:
+            pymongo.errors.PyMongoError: For the second role.
+        """
+        if granted:
+            raise PyMongoError("unavailable")
+        granted.append(resource)
+        add_owner(resource=resource, subject=subject)
+
+    monkeypatch.setattr(ownership, "add_owner", add_owner_once)
+    with app.app.test_request_context():
+        runs = task_runs.TaskRuns()
+        with pytest.raises(PyMongoError, match="unavailable"):
+            runs._write_doc_to_db(
+                document=DbDocument(), owner=USER, collection=f"{BASE_PATH}/tasks"
+            )
+    assert granted
+    assert mongo_client[DB]["policy_rules"].count_documents({"ptype": "g2"}) == 0
+    assert mongo_client[DB]["tasks"].count_documents({}) == 0
