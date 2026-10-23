@@ -8,6 +8,7 @@ info:
   contact:
     name: ELIXIR On-Cloud
     url: https://github.com/elixir-cloud-aai/proTES
+    email: cloud-service@elixir-europe.org
   license:
     name: Apache 2.0
     url: https://www.apache.org/licenses/LICENSE-2.0.html
