@@ -13,9 +13,11 @@
 # scans it again if the scan failed). The tag is the only source of the
 # version: it is passed to the image build (the Docker build gets no Git
 # metadata) and set as the chart's `version` and `appVersion`. Release notes
-# are taken from `docs/releases/<version>.md` if it exists (the run fails if
-# it contains `TODO`), otherwise generated; add such notes to the `nav` of
-# `mkdocs.yml` too (the docs build fails otherwise).
+# are the curated `docs/releases/<version>.md` followed by GitHub's generated
+# notes if the former exists (the run fails if it contains `TODO` or is not
+# in the agreed format, see `scripts/release_notes.py`), otherwise the
+# generated notes alone; add curated notes to the `nav` of `mkdocs.yml` too
+# (the docs build fails otherwise).
 # Publishing runs in the `release` environment (required reviewer, Docker
 # Hub secrets). Release tags are immutable (tag ruleset). See "Versioning
 # and releases" in `docs/development.md`. Until 1.0.0, all releases are GitHub
@@ -108,15 +110,19 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
         run: python scripts/citation.py check "${VERSION}"
       # Curated release notes are published as written, so unfinished ones
-      # (with a `TODO`) must not be published
+      # (with a `TODO`) must not be published, nor ones that are not in the
+      # agreed format (`scripts/release_notes.py`)
       - name: Check release notes
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           notes="docs/releases/${VERSION}.md"
-          if [[ -f "${notes}" ]] && grep -n "TODO" "${notes}"; then
-              echo "::error::${notes} contains TODO: finish the release notes, then tag a new release"
-              exit 1
+          if [[ -f "${notes}" ]]; then
+              if grep -n "TODO" "${notes}"; then
+                  echo "::error::${notes} contains TODO: finish the release notes, then tag a new release"
+                  exit 1
+              fi
+              python scripts/release_notes.py check "${notes}"
           fi
       # Temporary pins to development versions (e.g., a FOCA commit, to test
       # unreleased changes) must be replaced by releases first
@@ -161,6 +167,13 @@ jobs:
           helm lint deployment --strict -f deployment/ci/test-values.yaml
           chart="$(mktemp -d)/protes"
           cp -R deployment "${chart}"
+          # The default image is the published one, also in forks that
+          # publish to another organization (`DOCKERHUB_ORG`); `values.yaml`
+          # is rewritten (by yq) only then
+          image="${IMAGE_NAME#docker.io/}"
+          if [[ "$(yq .protes.image "${chart}/values.yaml")" != "${image}" ]]; then
+              IMAGE="${image}" yq -i '.protes.image = strenv(IMAGE)' "${chart}/values.yaml"
+          fi
           python scripts/chart_readme.py "${chart}/README.md" "v${VERSION}"
           helm package "${chart}" \
               --version "${CHART_VERSION}" --app-version "${VERSION}" -d dist
@@ -171,6 +184,8 @@ jobs:
           library="$(tar -xzOf "${package}" protes/charts/foca-common/Chart.yaml \
               | yq .version)"
           [[ "${library}" == "$(yq '.dependencies[0].version' deployment/Chart.lock)" ]]
+          [[ "$(tar -xzOf "${package}" protes/values.yaml | yq .protes.image)" \
+              == "${image}" ]]
       - name: Upload chart
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -305,8 +320,8 @@ jobs:
           ref: ${{ needs.prepare.outputs.sha }}
           # All tags and `main`, to determine the highest release
           fetch-depth: 0
-      # For `scripts/release_version.py` (standard library only); the Python
-      # version of `checks.yaml`
+      # For `scripts/release_version.py` and `scripts/release_notes.py`
+      # (standard library only); the Python version of `checks.yaml`
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
@@ -387,6 +402,26 @@ jobs:
           for chart in dist/*.tgz; do
               cosign sign-blob --yes --bundle "${chart}.sigstore.json" "${chart}"
           done
+      # GitHub's generated notes list the merged pull requests since the
+      # previous release in the history of the release commit (see
+      # `scripts/release_version.py`), or since the start for the first
+      # release. Only tags with a published GitHub release count, so that the
+      # changes of a tag whose release failed (and was replaced by a new
+      # patch version) are listed in the next release
+      - name: Determine the previous release
+        id: previous
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -o pipefail
+          published="$(mktemp)"
+          gh release list --limit 1000 --exclude-drafts --json tagName \
+              --jq '.[].tagName' > "${published}"
+          git tag -l 'v*' --merged HEAD \
+              | { grep -Fx -f "${published}" || [[ $? -eq 1 ]]; } \
+              | python scripts/release_version.py previous "${TAG}" >> "${GITHUB_OUTPUT}"
       - name: Create release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -394,10 +429,25 @@ jobs:
           TAG: ${{ github.ref_name }}
           LATEST: ${{ steps.latest.outputs.latest }}
           PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
+          PREVIOUS: ${{ steps.previous.outputs.previous_tag }}
         run: |
-          # Curated notes of the release commit if there are any, otherwise
-          # notes generated from the merged pull requests
-          notes_file="docs/releases/${VERSION}.md"
+          # With curated notes of the release commit, the body is the curated
+          # notes, then the generated ones (the agreed format, see
+          # `scripts/release_notes.py`); otherwise the generated ones alone
+          curated="docs/releases/${VERSION}.md"
+          notes_file=""
+          if [[ -f "${curated}" ]]; then
+              generate=(-f "tag_name=${TAG}")
+              if [[ -n "${PREVIOUS}" ]]; then
+                  generate+=(-f "previous_tag_name=${PREVIOUS}")
+              fi
+              generated="$(mktemp)"
+              notes_file="$(mktemp)"
+              gh api "repos/${GH_REPO}/releases/generate-notes" "${generate[@]}" \
+                  --jq .body > "${generated}"
+              python scripts/release_notes.py body "${curated}" "${generated}" \
+                  > "${notes_file}"
+          fi
           # GitHub never marks pre-releases as the latest release, so don't
           # ask it to
           if [[ "${PRERELEASE}" == "true" ]]; then
@@ -407,14 +457,17 @@ jobs:
           if gh release view "${TAG}" > /dev/null 2>&1; then
               gh release upload "${TAG}" dist/* --clobber
               edit=(--prerelease="${PRERELEASE}" --latest="${LATEST}")
-              if [[ -f "${notes_file}" ]]; then
+              if [[ -n "${notes_file}" ]]; then
                   edit+=(--notes-file "${notes_file}")
               fi
               gh release edit "${TAG}" "${edit[@]}"
               exit 0
           fi
           notes=(--generate-notes)
-          if [[ -f "${notes_file}" ]]; then
+          if [[ -n "${PREVIOUS}" ]]; then
+              notes+=(--notes-start-tag "${PREVIOUS}")
+          fi
+          if [[ -n "${notes_file}" ]]; then
               notes=(--notes-file "${notes_file}")
           fi
           gh release create "${TAG}" dist/* \
