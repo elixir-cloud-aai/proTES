@@ -242,7 +242,7 @@ def main(argv: Sequence[str] | None = None, path: Path = CITATION) -> int:
     check_parser.add_argument("version", help="release version, e.g., 1.2.3")
     args = parser.parse_args(argv)
     # `datetime.UTC` is new in Python 3.11
-    today = datetime.datetime.now(datetime.timezone.utc).date()
+    today = datetime.datetime.now(datetime.UTC).date()
     try:
         text = path.read_text(encoding="utf-8")
         if args.command == "set":

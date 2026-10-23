@@ -2,7 +2,7 @@
 
 import base64
 from copy import deepcopy
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import ANY
@@ -590,9 +590,9 @@ def test_timestamps(
     # so are the logs
     response = client.post(f"{BASE_PATH}/tasks", json={**TASK, "logs": [{}]})
     assert response.status_code == 400
-    before = datetime.now(timezone.utc)
+    before = datetime.now(UTC)
     response = client.post(f"{BASE_PATH}/tasks", json=TASK)
-    after = datetime.now(timezone.utc)
+    after = datetime.now(UTC)
     task = stored(mongo_client, response.get_json()["id"])["task"]
     (log,) = task["logs"]
     times = [task["creation_time"], log["start_time"], log["end_time"]]

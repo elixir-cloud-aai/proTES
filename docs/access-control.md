@@ -20,13 +20,22 @@ with `403 Forbidden` (both as [problem details](api.md#errors)).
 
 proTES accepts only tokens that:
 
+- are access tokens as per [RFC 9068](https://www.rfc-editor.org/rfc/rfc9068)
+  (`typ` header `at+jwt`), not, e.g., ID tokens;
 - are issued by one of the trusted issuers (`security.auth.issuers`, the
   `iss` claim), and verified with the issuer's keys (from its OpenID Connect
   discovery document);
 - are for one of the configured audiences (`security.auth.audience`, the
   `aud` claim), i.e., were issued to one of the apps that call proTES (e.g.,
   its front ends, by their client IDs);
+- if `security.auth.clients` is set, were obtained by one of these clients
+  (the `client_id` claim, or `azp` if there is none);
 - have not expired.
+
+If your identity provider sets another `typ` header on its access tokens,
+list it in `security.auth.token_types`; if it sets none, disable the check
+with `security.auth.verify_token_type: false` (see [FOCA's authentication
+options](https://foca.readthedocs.io/en/latest/configuration/auth/)).
 
 ## Roles
 
@@ -44,8 +53,22 @@ cancel all tasks, not only their own.
 
 The roles and their permissions are the policies of
 `security.access_control.policies` in the base config (see
-[FOCA's access control](https://foca.readthedocs.io/en/latest/access-control/));
-change them with a config overlay (the list replaces the base config's).
+[FOCA's access control](https://foca.readthedocs.io/en/latest/access-control/)),
+named rules (`users-create-list-tasks` and `users-get-cancel-tasks`): a config
+overlay adds, changes or removes (`null`) single rules by name, e.g., a rule
+that lets the role `user` only list and read tasks:
+
+```yaml
+security:
+  access_control:
+    policies:
+      users-create-list-tasks: [p, user, /ga4gh/tes/v1/tasks, (GET)|(HEAD)]
+      users-get-cancel-tasks: [p, user, "/ga4gh/tes/v1/tasks/:id", (GET)|(HEAD)]
+```
+
+A list replaces all rules of the base config. The configured rules replace
+the stored ones atomically on each startup; if an overlay leaves no rules,
+the stored ones are removed.
 The role `admin` comes only from groups in `group_mapping`: the startup
 check doesn't count `g` rules of the policies or of the permissions API.
 

@@ -318,6 +318,8 @@ def make_token(
     key: rsa.RSAPrivateKey = KEY,
     issuer: str = ISSUER,
     audience: str = AUDIENCE,
+    typ: str = "at+jwt",
+    claims: dict[str, Any] | None = None,
 ) -> str:
     """Get an access token of a user.
 
@@ -326,6 +328,9 @@ def make_token(
         key: Key that signs the token.
         issuer: Issuer of the token (`iss` claim).
         audience: Audience of the token (`aud` claim).
+        typ: Type of the token (`typ` header), `at+jwt` for access
+            tokens (RFC 9068); e.g., `JWT` for ID tokens.
+        claims: Other claims, e.g., `client_id`.
 
     Returns:
         Access token.
@@ -338,10 +343,11 @@ def make_token(
             "iss": issuer,
             "iat": now,
             "exp": now + 300,
+            **(claims or {}),
         },
         key,
         algorithm="RS256",
-        headers={"kid": "rsa1", "typ": "at+jwt"},
+        headers={"kid": "rsa1", "typ": typ},
     )
 
 

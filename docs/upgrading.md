@@ -7,13 +7,27 @@ FOCA 0.12).
 
 ## Configuration
 
-Since the upgrade to FOCA 0.15, custom configs must apply the config changes
-of FOCA 0.14 and 0.15 (see the FOCA release notes and migration guides),
-e.g., `exceptions.mapping` instead of the old exception members, and no
-`validation_methods`, `validation_checks`, `environment` or `use_reloader`.
+proTES runs on FOCA 0.17 and Python 3.13. Custom configs must apply the
+config changes of FOCA 0.14 to 0.17 (see the FOCA release notes and
+migration guides), e.g., `exceptions.mapping` instead of the old exception
+members, and no `validation_methods`, `validation_checks`, `environment` or
+`use_reloader`.
 The service info is configured in `service_info.service` (see [Service
 info](configuration.md#service-info)); it is no longer stored in the
 database, so the `service_info` collection can be dropped.
+
+API specifications (`api.specs`) and access control rules
+(`security.access_control.policies`) of the base config are named entries
+(the spec `tes`; rules `users-create-list-tasks` and
+`users-get-cancel-tasks`), which overlays change by name (see
+[Roles](access-control.md#roles)); overlays that give lists still replace
+them. The configured rules replace the stored ones atomically on startup,
+and stored configured rules are removed if an overlay sets no rules. During
+a rolling update, instances of earlier versions don't get this guarantee:
+update all instances before changing the configured rules, and don't start
+earlier versions again afterwards (see FOCA's [migration guide to
+0.17](https://foca.readthedocs.io/en/latest/migration-0.17/), also for
+downgrades).
 
 ## Authentication
 
@@ -31,6 +45,14 @@ requests are no longer passed through to TES instances, as the
 can't be used until proTES has credentials of its own for them
 ([#213](https://github.com/elixir-cloud-aai/proTES/issues/213)). The Helm
 chart sets the config overlay from the value `config`.
+
+Only access tokens as per RFC 9068 (`typ` header `at+jwt`) are accepted;
+other tokens of the trusted issuers, such as ID tokens, are rejected with
+`401` (see [Authentication](access-control.md#authentication) for identity
+providers that set another `typ` header, or none). The challenge of `401`
+responses for invalid tokens has an `error_description`, too. The new
+option `security.auth.clients` limits the accepted tokens to those of
+certain clients (by default, clients are not restricted).
 
 ## Errors
 
@@ -69,6 +91,18 @@ most 2047 (`custom.controllers.list_tasks`, see
 [Tasks](configuration.md#tasks)). `name_prefix` is taken literally, not as a
 regular expression. proTES no longer starts if
 `custom.controllers.list_tasks.default_page_size` exceeds `max_page_size`.
+
+## Distance-based task distribution
+
+The distance-based middleware still looks up the places of IP addresses with
+DB-IP's API, now over HTTPS (was HTTP), and geocodes the place names with
+Nominatim (see [Built-in middlewares](middlewares.md#built-in-middlewares)),
+but no longer with the unmaintained package `ip2geotools`, which doesn't
+install on Python 3.13. Requests time out after 10 seconds (was 62). It no
+longer locates addresses that are not global (e.g., private ones), which
+aren't sent to the services anymore, nor places without city or country:
+it falls back to the next middleware for them, instead of distributing
+tasks by an arbitrary location.
 
 ## Middleware management API
 

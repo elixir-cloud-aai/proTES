@@ -36,6 +36,11 @@ updates:
       # get the old FOCA reinstalled on top; see the `pip` entry)
       - dependency-name: elixircloud/foca
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      # TEMPORARY, while the base image is FOCA's development image of the
+      # commit that `pyproject.toml` pins (#214): its dated tag moves with
+      # later commits, so updates of its digest would change FOCA; remove
+      # with the FOCA release, keeping the entry above
+      - dependency-name: elixircloud/foca
     groups:
       docker:
         patterns: ["*"]

@@ -1,8 +1,7 @@
-"""Security checks on startup, and the Bearer challenge of 401 responses."""
+"""Security checks on startup."""
 
 import logging
 
-from flask import Response, request
 from foca import get_config
 
 from pro_tes.utils.misc import get_custom_config
@@ -74,27 +73,3 @@ def check_role_groups() -> None:
         )
     else:
         logger.warning("No group is mapped to the role 'admin'")
-
-
-def add_bearer_challenge(response: Response) -> Response:
-    """Add a Bearer challenge to `401 Unauthorized` responses (RFC 6750).
-
-    That is, `WWW-Authenticate: Bearer`, with `error="invalid_token"` if the
-    request has a bearer token (which was rejected). FOCA adds the challenge
-    from version 0.16 on; until then, it is added here, as an `after_request`
-    function of the Flask app.
-
-    Args:
-        response: Response.
-
-    Returns:
-        The response, with the challenge if its status is `401`.
-    """
-    if response.status_code != 401 or "WWW-Authenticate" in response.headers:
-        return response
-    authorization = request.headers.get("Authorization", "")
-    if authorization.lower().startswith("bearer "):
-        response.headers["WWW-Authenticate"] = 'Bearer error="invalid_token"'
-    else:
-        response.headers["WWW-Authenticate"] = "Bearer"
-    return response

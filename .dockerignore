@@ -4,6 +4,8 @@
 !LICENSE
 !pyproject.toml
 !README.md
+# Run by the image build to list the requirements to install
+!scripts/image_requirements.py
 
 # Exclude caches and local files within the included paths
 **/__pycache__

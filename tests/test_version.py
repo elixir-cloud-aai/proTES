@@ -4,16 +4,11 @@ from importlib.metadata import version
 from pathlib import Path
 import shutil
 import subprocess
-import sys
+import tomllib
 
 from packaging.version import Version
 import pytest
 import setuptools_scm
-
-if sys.version_info >= (3, 11):
-    import tomllib
-else:
-    import tomli as tomllib
 
 ROOT = Path(__file__).parents[1]
 GIT = shutil.which("git")

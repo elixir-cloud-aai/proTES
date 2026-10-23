@@ -1,6 +1,6 @@
 """Miscellaneous utilities."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from urllib.parse import urlsplit, urlunsplit
 
 from foca import get_config
@@ -52,4 +52,4 @@ def utc_now() -> str:
     Returns:
         The current time, e.g., `2026-10-22T12:34:56.789012+00:00`.
     """
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()

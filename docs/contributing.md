@@ -124,9 +124,10 @@ scripts/citation.py set X.Y.Z` sets its `version` and `date-released`, and
 
 ## Python guidelines
 
-The app supports Python 3.10 or later (`requires-python` in
-`pyproject.toml`); CI tests the oldest version and that of the image (3.10
-and 3.12).
+The app targets one Python version, that of the base image in the
+`Dockerfile` (3.13): it is the minimum of `requires-python` in
+`pyproject.toml`, the target of ruff and mypy, and the version of CI and Read
+the Docs (`tests/test_build.py` checks that they match).
 Most of the following is checked by pre-commit and CI (see
 [Development](development.md) for how to run the checks locally); the rest is
 checked in reviews.

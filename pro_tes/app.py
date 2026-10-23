@@ -6,7 +6,7 @@ from pathlib import Path
 from connexion import FlaskApp
 from foca import Foca, get_config
 
-from pro_tes.security import add_bearer_challenge, check_role_groups
+from pro_tes.security import check_role_groups
 
 logger = logging.getLogger(__name__)
 # Placeholders of the service info in `config.yaml`, with reserved example
@@ -66,7 +66,6 @@ def init_app() -> FlaskApp:
         custom_config_model="pro_tes.config_models.CustomConfig",
     )
     app = foca.create_app()
-    app.app.after_request(add_bearer_challenge)
     with app.app.app_context():
         check_role_groups()
         warn_placeholder_service_info()

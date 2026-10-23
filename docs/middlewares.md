@@ -17,11 +17,17 @@ ways of distributing tasks. Both forward to the TES instances of
   `pro_tes.plugins.middlewares.task_distribution.distance.TaskDistributionDistance`
   orders the TES instances by the distance that the task's input data has to
   travel to them: the sum of the geodesic distances between the instance and
-  each input (`inputs[].url`). Locations are looked up from the IP addresses
-  of their hosts, with the free geolocation service of
-  [DB-IP](https://db-ip.com/), which thus learns the hosts of the inputs. It
-  can't be applied to tasks without input URLs, or if a location can't be
-  determined.
+  each input (`inputs[].url`). Locations are looked up for each task, from
+  the IP addresses of the hosts: the free API of [DB-IP](https://db-ip.com/)
+  gives the place of an IP address (city, region and country), and
+  [Nominatim](https://nominatim.org/) of
+  [OpenStreetMap](https://www.openstreetmap.org/) its coordinates. Both are
+  called over HTTPS, and thus learn the IP addresses of the hosts (DB-IP) and
+  their places (Nominatim); mind their usage limits (e.g., DB-IP's daily
+  requests, and Nominatim's one request per second). Addresses that are not
+  global (e.g., private ones, of hosts in the same cluster) are not sent
+  to them. The middleware can't be applied to tasks without input URLs, or if
+  a location can't be determined, e.g., of such an address.
 - **Load balancing:**
   `pro_tes.plugins.middlewares.task_distribution.random.TaskDistributionRandom`
   orders the TES instances randomly.
