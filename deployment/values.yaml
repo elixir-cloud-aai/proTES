@@ -103,9 +103,9 @@ protes:
     className: ""
     # Annotations of the Ingress, e.g., for the ingress controller's size
     # limit of request bodies, TLS redirect or rate limits; the chart sets
-    # none for particular controllers (see deployment/README.md, Ingress,
-    # for examples). They take precedence over those set by the chart for
-    # `https`; `null` removes one of these
+    # none for particular controllers (see deployment/README.md, Exposing the
+    # app, for examples). They take precedence over those set by the chart
+    # for `https`; `null` removes one of these
     annotations: {}
     https:
       # Request a certificate from cert-manager (via `issuer`, a

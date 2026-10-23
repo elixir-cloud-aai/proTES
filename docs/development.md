@@ -86,8 +86,8 @@ suppress a false positive, add a comment with the reason to the line:
 The [Helm chart](deployment.md) in `deployment/` is a thin chart over FOCA's
 library chart `foca-common` (see the [library chart's
 documentation](https://github.com/elixir-cloud-aai/foca/blob/chart-v0.2.0/docs/helm-chart.md)):
-its templates are one-line includes of the library's templates, with the app's settings
-and checks in `templates/_helpers.tpl` (`protes.settings`,
+its templates are one-line includes of the library's templates, with the
+app's settings and checks in `templates/_helpers.tpl` (`protes.settings`,
 `protes.validate`), and templates of its own for Flower. `values.yaml` has
 all values of the library chart, and `values.schema.json` is the library's
 `app-values.schema.json` with the app's key (`protes`, plus `extraEnv`) and
@@ -118,11 +118,11 @@ again. Dependabot doesn't update it: to bump it, change the version in
 sha256sum charts/foca-common-X.Y.Z.tgz > charts.sha256`, after checking the
 archive), copy the library's `app-values.schema.json` to
 `deployment/values.schema.json` with the changes noted in its `$comment`
-(which names the new version), add values it introduces to
-`deployment/values.yaml`, update the links to the library's docs in
-`deployment/README.md` (the tests check that they point to the pinned
-version, `chart-vX.Y.Z`), and check the rendered chart with the tests and
-`helm template`.
+(which names the new version, `foca-common X.Y.Z`, as the release pin check
+requires), add values it introduces to `deployment/values.yaml`, update
+the links to the library's docs in `deployment/README.md` (the tests check
+that they point to the pinned version, `chart-vX.Y.Z`), and check the
+rendered chart with the tests and `helm template`.
 
 ## Documentation
 
