@@ -1,9 +1,10 @@
 """Check that a release only pins released versions of its dependencies.
 
 For releases, so that temporary pins to development versions (e.g., of
-FOCA, to test unreleased changes) can't be released by accident: run by the
-tests of release checkouts (`tests/test_check_release_pins.py`), and to be
-run by the release workflow (#44). Fails, with errors as GitHub
+FOCA, to test unreleased changes) can't be released by accident: run for
+release tags (`.github/workflows/release-pins.yaml`, until the release
+workflow of #44 runs it) and by the tests of release checkouts
+(`tests/test_check_release_pins.py`). Fails, with errors as GitHub
 annotations on standard error, if:
 
 - a dependency of the app (`project.dependencies` or

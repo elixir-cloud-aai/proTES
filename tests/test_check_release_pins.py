@@ -279,7 +279,7 @@ annotations:
 
 
 def test_script(tmp_path: Path) -> None:
-    """The script runs as the release workflow is to call it."""
+    """The script runs as the workflows call it."""
     shutil.copytree(ROOT / "scripts", tmp_path / "scripts")
     _write(tmp_path, chart_version="0.2.0-rc1")
     result = subprocess.run(  # noqa: S603 (fixed arguments, no shell)
@@ -298,9 +298,9 @@ def test_release_checkout() -> None:
 
     The version of the checkout (from Git tags) is a release, or a
     pre-release, unless it is a development version or has a local part
-    (commits after the tag, or changes). Until the release workflow runs the
-    check (#44), this test does, so that tests of a release checkout fail
-    while it pins development versions; other checkouts may pin them.
+    (commits after the tag, or changes). Tests of a release checkout fail
+    while it pins development versions, as does the workflow for release
+    tags (`release-pins.yaml`); other checkouts may pin them.
     """
     try:
         checkout = Version(setuptools_scm.get_version(root=str(ROOT)))
