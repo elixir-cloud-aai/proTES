@@ -22,9 +22,9 @@ without access token and redirects are not followed. Each process (e.g.,
 each Gunicorn or Celery worker) caches the discovered backends, refreshing
 them every `refresh_interval` seconds, and keeps the last good list while
 the registry is unreachable or returns invalid responses (retrying after
-`RETRY_INTERVAL` seconds at most), and backends whose hosts can't be
-resolved for the time being. Changes are logged. Backends of `service_list`
-take precedence over discovered ones with the same URL.
+`RETRY_INTERVAL` seconds at most), and, for one more read, backends whose
+hosts can't be resolved for the time being. Changes are logged. Backends of
+`service_list` take precedence over discovered ones with the same URL.
 """
 
 from collections.abc import Iterable
@@ -295,10 +295,13 @@ class Selection:
         backends: Discovered backends, in the order of the registry.
         rejected: Why verified TES services of an accepted version and
             environment were not used.
+        unresolved: Identifiers of the services whose backends were kept
+            although their hosts could not be resolved.
     """
 
     backends: list[DiscoveredBackend] = field(default_factory=list)
     rejected: list[str] = field(default_factory=list)
+    unresolved: set[str] = field(default_factory=set)
 
 
 def _verifications(document: object) -> dict[str, tuple[object, object]]:
@@ -329,6 +332,7 @@ def _accept(
     url: str,
     conf: Discovery,
     previous: dict[str, DiscoveredBackend],
+    unresolved: set[str],
 ) -> DiscoveredBackend:
     """Get the backend of a verified TES service, checking its URL.
 
@@ -337,10 +341,13 @@ def _accept(
         url: URL of the service, as registered and verified.
         conf: Discovery configuration.
         previous: Backends discovered before, by service identifier.
+        unresolved: Identifiers of the services whose backends are kept
+            although their hosts can't be resolved; updated.
 
     Returns:
         The backend; also if its host can't be resolved for the time being,
-        if it was discovered with the same URL before.
+        if it was discovered with the same URL before (and is added to
+        `unresolved`).
 
     Raises:
         foca.utils.urls.InvalidURL: The URL is invalid, or not an `https`
@@ -363,10 +370,11 @@ def _accept(
             raise
         # checked before each request, too
         logger.warning(
-            "Host of TES backend %s not resolved; keeping it until the next"
-            " read of the registry",
+            "Host of TES backend %s not resolved; keeping it for this read of"
+            " the registry",
             backend.url,
         )
+        unresolved.add(service_id)
     return backend
 
 
@@ -386,8 +394,8 @@ def select_backends(
         services: Response of `GET /services`.
         verifications: Response of `GET /verifications`.
         conf: Discovery configuration.
-        previous: Backends discovered before, which are kept if their hosts
-            can't be resolved for the time being.
+        previous: Backends discovered before, which are kept for this read
+            if their hosts can't be resolved for the time being.
 
     Returns:
         The selected backends, unique by URL, and why verified TES services
@@ -418,7 +426,13 @@ def select_backends(
             )
             continue
         try:
-            backend = _accept(service_id, url=url, conf=conf, previous=known)
+            backend = _accept(
+                service_id,
+                url=url,
+                conf=conf,
+                previous=known,
+                unresolved=selection.unresolved,
+            )
         except (InvalidURL, BackendAddressNotAllowed) as exc:
             selection.rejected.append(f"{service_id!r}: {exc}")
             continue
@@ -445,6 +459,7 @@ class BackendDiscovery:
         self._last_read = 0.0
         self._next_read = 0.0
         self._rejected: set[str] = set()
+        self._unresolved: set[str] = set()
 
     def clear(self) -> None:
         """Remove the discovered backends, so that the registry is read anew."""
@@ -454,6 +469,7 @@ class BackendDiscovery:
         self._last_read = 0.0
         self._next_read = 0.0
         self._rejected = set()
+        self._unresolved = set()
 
     def _reset_lock(self) -> None:
         """Replace the lock, e.g., in a forked process."""
@@ -529,7 +545,12 @@ class BackendDiscovery:
                 services=services,
                 verifications=verifications,
                 conf=conf,
-                previous=self._backends,
+                # backends kept once already are not kept again
+                previous=[
+                    backend
+                    for backend in self._backends
+                    if backend.service_id not in self._unresolved
+                ],
             )
         except Exception as exc:
             # `RegistryError` for invalid responses; others are bugs
@@ -547,6 +568,7 @@ class BackendDiscovery:
             if reason not in self._rejected:
                 logger.warning("Registry service not used: %s", reason)
         self._rejected = set(selection.rejected)
+        self._unresolved = selection.unresolved
         urls = [backend.url for backend in selection.backends]
         if not self._read or urls != [backend.url for backend in self._backends]:
             logger.info(

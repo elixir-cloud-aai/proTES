@@ -652,9 +652,10 @@ def test_cache_unexpected_error(
 
 
 def test_cache_host_not_resolved(registry: FakeRegistry, clock: Clock) -> None:
-    """Backends whose hosts can't be resolved for now are kept until next time.
+    """Backends whose hosts can't be resolved for now are kept for one read.
 
-    Only backends discovered before, with the same URL.
+    Only backends discovered before, with the same URL; not those with hosts
+    that resolve to addresses that are not public.
     """
     registry.add(service("a", "https://tes1.example.org"))
     cache = discovery.BackendDiscovery()
@@ -665,7 +666,10 @@ def test_cache_host_not_resolved(registry: FakeRegistry, clock: Clock) -> None:
     clock.now += 300
     assert urls(cache.get_backends(conf())) == ["https://tes1.example.org"]
     clock.now += 300
-    assert urls(cache.get_backends(conf())) == ["https://tes1.example.org"]
+    assert cache.get_backends(conf()) == []
+    registry.hosts["tes1.example.org"] = [PUBLIC_IPV4]
+    clock.now += 300
+    assert len(cache.get_backends(conf())) == 1
     registry.hosts["tes1.example.org"] = ["10.0.0.1"]
     clock.now += 300
     assert cache.get_backends(conf()) == []

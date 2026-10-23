@@ -7,7 +7,9 @@ from typing import Any
 from foca import get_collection
 
 from pro_tes.celery_worker import celery
+from pro_tes.exceptions import BackendNotConfigured
 from pro_tes.ga4gh.tes.backends import create_client
+from pro_tes.ga4gh.tes.discovery import MIN_REFRESH_INTERVAL
 from pro_tes.ga4gh.tes.models import TesState, TesTask
 from pro_tes.ga4gh.tes.states import States
 from pro_tes.utils.db import DbDocumentConnector
@@ -15,6 +17,9 @@ from pro_tes.utils.misc import get_custom_config, has_credentials, strip_auth
 from pro_tes.utils.models import TaskModelConverter
 
 logger = logging.getLogger(__name__)
+# Retries of tasks whose backend is unknown, if backends are discovered
+# (every `MIN_REFRESH_INTERVAL` seconds)
+BACKEND_RETRIES = 3
 
 
 @celery.task(
@@ -34,7 +39,10 @@ def task__track_task_progress(
 
     proTES authenticates at the TES service as configured for it (see
     :py:mod:`pro_tes.ga4gh.tes.backends`), with fresh credentials for each
-    request.
+    request. If the backend is unknown and backends are discovered in a
+    registry, the task is retried (`BACKEND_RETRIES` times, after
+    `MIN_REFRESH_INTERVAL` seconds each), as the worker may not have read
+    the registry since another process discovered the backend.
 
     Args:
         self: Celery task instance (bound task).
@@ -63,6 +71,17 @@ def task__track_task_progress(
     try:
         cli = create_client(host=remote_host, base_path=remote_base_path)
         response = cli.get_task(task_id=remote_task_id)
+    except BackendNotConfigured as exc:
+        # the worker may not know a backend that another process discovered
+        # in the registry yet, and reads it at most every
+        # `MIN_REFRESH_INTERVAL` seconds
+        if (
+            get_custom_config().tes.discovery.enabled
+            and self.request.retries < BACKEND_RETRIES
+        ):
+            raise self.retry(exc=exc, countdown=MIN_REFRESH_INTERVAL) from exc
+        db_client.update_task_state(state=TesState.SYSTEM_ERROR.value)
+        raise
     except Exception:
         db_client.update_task_state(state=TesState.SYSTEM_ERROR.value)
         raise

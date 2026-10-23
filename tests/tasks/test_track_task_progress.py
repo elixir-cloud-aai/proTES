@@ -12,9 +12,9 @@ import requests
 import tes
 
 from pro_tes.app import init_app
-from pro_tes.config_models import TesBackend
+from pro_tes.config_models import Discovery, TesBackend
 from pro_tes.exceptions import BackendNotConfigured
-from pro_tes.ga4gh.tes import backends
+from pro_tes.ga4gh.tes import backends, discovery
 from pro_tes.tasks import track_task_progress
 from pro_tes.utils.db import DbDocumentConnector
 from pro_tes.utils.misc import get_custom_config
@@ -210,6 +210,50 @@ def test_backend_not_configured(
         run()
     assert stored_states == ["INITIALIZING", "SYSTEM_ERROR"]
     assert not client_class.clients
+
+
+class Retried(Exception):
+    """Raised instead of retrying the Celery task."""
+
+
+@pytest.mark.parametrize("retries, retried", [(0, True), (3, False)])
+def test_backend_unknown_retried(
+    tasks: Collection[dict[str, Any]],
+    client_class: type[FakeClient],
+    sleeps: list[float],
+    stored_states: list[str],
+    monkeypatch: pytest.MonkeyPatch,
+    retries: int,
+    retried: bool,
+) -> None:
+    """With discovery, tasks of unknown backends are retried, then fail.
+
+    The worker may not know a backend that another process discovered yet.
+    """
+    task = track_task_progress.task__track_task_progress
+    calls: list[dict[str, Any]] = []
+
+    def retry(**kwargs: Any) -> Retried:
+        """Record the retry."""
+        calls.append(kwargs)
+        return Retried()
+
+    monkeypatch.setattr(task, "retry", retry)
+    monkeypatch.setattr(task.request, "retries", retries, raising=False)
+    tes_config = get_custom_config().tes
+    tes_config.service_list = []
+    tes_config.discovery = Discovery(
+        registry_url="https://registry.example.org/api", auth="none"
+    )
+    with pytest.raises(Retried if retried else BackendNotConfigured):
+        run()
+    if retried:
+        assert stored_states == ["INITIALIZING"]
+        assert calls[0]["countdown"] == discovery.MIN_REFRESH_INTERVAL
+        assert isinstance(calls[0]["exc"], BackendNotConfigured)
+    else:
+        assert stored_states == ["INITIALIZING", "SYSTEM_ERROR"]
+        assert not calls
 
 
 def test_states_tracked(

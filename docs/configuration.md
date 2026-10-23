@@ -97,10 +97,11 @@ Each process (each Gunicorn worker and Celery worker) reads it every
 `refresh_interval` seconds, and keeps the last good list while the
 registry is unreachable or returns invalid responses, retrying after 30
 seconds at most; TES instances whose hosts can't be resolved for the time
-being are kept until the next read, too. A process that doesn't know the
+being are kept for one more read, too. A process that doesn't know the
 TES instance of a task (e.g., the Celery worker, for a TES instance that
 the app's process discovered first) reads the registry again, at most every
-10 seconds. A service whose verification is removed is no longer used once
+10 seconds; the Celery worker retries tracking such a task three times,
+10 seconds apart, before it gives up (state `SYSTEM_ERROR`). A service whose verification is removed is no longer used once
 the registry has been read again. Changes of the list and rejected verified
 services are logged. `timeout` applies to each request to the registry; the
 hosts of the services are resolved with the timeouts of the system's
