@@ -207,10 +207,8 @@ def test_main_keeps_links_and_mode(tmp_path: Path) -> None:
     assert list(tmp_path.glob(".*.tmp")) == [planted]
 
 
-def test_main_mode_via_descriptor(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """`set` sets the permissions through the descriptor, not by name."""
+def test_main_mode_not_by_name(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """`set` keeps the permissions without setting them by name."""
     path = tmp_path / "CITATION.cff"
     path.write_text(TEXT, encoding="utf-8")
     # Differs from the mode of new temporary files (0o600)
