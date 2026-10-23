@@ -369,7 +369,7 @@
               "type": "integer",
               "minimum": 0,
               "maximum": 3600,
-              "description": "Seconds after which idle keep-alive connections are closed (0: no keep-alive); longer than the upstream keep-alive timeout of the ingress controller (e.g., 60 for ingress-nginx, 90 for Traefik)"
+              "description": "Seconds after which idle keep-alive connections are closed (0: no keep-alive); longer than the upstream keep-alive timeout of the ingress controller (60 for ingress-nginx)"
             },
             "extraArgs": {
               "type": "array",
