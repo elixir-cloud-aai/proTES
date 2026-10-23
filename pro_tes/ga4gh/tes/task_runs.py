@@ -45,7 +45,7 @@ from pro_tes.ga4gh.tes.ownership import (
 from pro_tes.ga4gh.tes.states import States
 from pro_tes.middleware.middleware_handler import MiddlewareHandler
 from pro_tes.tasks.track_task_progress import task__track_task_progress
-from pro_tes.utils.db import DbDocumentConnector
+from pro_tes.utils.db import TASK_COLLECTION, TASK_DB, DbDocumentConnector
 from pro_tes.utils.misc import (
     get_custom_config,
     has_credentials,
@@ -93,7 +93,7 @@ class TaskRuns:
         """Construct object instance."""
         self.custom_config: CustomConfig = get_custom_config()
         self.db_client: Collection[dict[str, Any]] = get_collection(
-            "taskStore", "tasks"
+            TASK_DB, TASK_COLLECTION
         )
         self.store_logs = self.custom_config.storeLogs.execution_trace
 
@@ -437,10 +437,14 @@ class TaskRuns:
 
         Identifiers of stored tasks, and identifiers that roles are granted
         on (e.g., left by deleted tasks), are not used again, so that nobody
-        gets access to the task of someone else. The owner is granted the
-        role before the task is stored, so that tasks are never stored
-        without owner, and the identifier is taken right away; the role is
-        revoked again if the task can't be stored.
+        gets access to the task of someone else. Concurrent requests may
+        still draw the same unused identifier: the unique index on task
+        identifiers (cf. `db` in `config.yaml`) lets only one of them store
+        its task, and the others try again with another identifier. The
+        owner is granted the role only once the task is stored, so that
+        requests losing the race never get a role on the task of someone
+        else; if the role can't be granted, the task is deleted, and roles
+        granted partly are revoked.
 
         Args:
             document: Document to be written to database.
@@ -473,15 +477,17 @@ class TaskRuns:
             document.task.id = task_id
             document.worker_id = uuid()
             try:
-                # within `try`, so that a partial grant is revoked, too
-                add_task_owner(collection=collection, task_id=task_id, owner=owner)
                 self.db_client.insert_one(
                     document.model_dump(mode="json", exclude_none=True)
                 )
             except DuplicateKeyError:
-                remove_task_owner(collection=collection, task_id=task_id, owner=owner)
+                # another request stored a task with the identifier first
                 continue
+            try:
+                add_task_owner(collection=collection, task_id=task_id, owner=owner)
             except Exception:
+                # deleted first: roles left on deleted tasks give no access
+                self.db_client.delete_one({"worker_id": document.worker_id})
                 remove_task_owner(collection=collection, task_id=task_id, owner=owner)
                 raise
             return task_id, document.worker_id

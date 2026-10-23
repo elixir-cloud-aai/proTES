@@ -12,7 +12,7 @@ from pro_tes.ga4gh.tes.backends import create_client
 from pro_tes.ga4gh.tes.discovery import MIN_REFRESH_INTERVAL
 from pro_tes.ga4gh.tes.models import TesState, TesTask
 from pro_tes.ga4gh.tes.states import States
-from pro_tes.utils.db import DbDocumentConnector
+from pro_tes.utils.db import TASK_COLLECTION, TASK_DB, DbDocumentConnector
 from pro_tes.utils.misc import get_custom_config, has_credentials, strip_auth
 from pro_tes.utils.models import TaskModelConverter
 
@@ -60,7 +60,7 @@ def task__track_task_progress(
 
     # create database client
     db_client = DbDocumentConnector(
-        collection=get_collection("taskStore", "tasks"),
+        collection=get_collection(TASK_DB, TASK_COLLECTION),
         worker_id=worker_id,
     )
 

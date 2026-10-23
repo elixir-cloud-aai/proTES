@@ -92,13 +92,17 @@ db:
     taskStore:
       collections:
         tasks:
+          # Task identifiers are unique, so that no task is stored under the
+          # identifier of another (and its owner roles); creation fails while
+          # stored tasks share identifiers (see docs/upgrading.md)
           indexes:
             - keys:
-                task_id: 1
-                worker_id: 1
+                task.id: 1
               options:
                 "unique": True
-                "sparse": True
+            # Celery workers find tasks by worker identifier
+            - keys:
+                worker_id: 1
         middlewares:
           indexes:
             - keys:

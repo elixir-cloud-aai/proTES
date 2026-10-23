@@ -9,12 +9,36 @@ from foca import Foca
 
 from pro_tes.config_models import CustomConfig
 from pro_tes.security import check_backends
+from pro_tes.utils.db import check_unique_task_ids
 
 foca = Foca(
     config_file=Path(__file__).resolve().parent / "config.yaml",
     custom_config_model="pro_tes.config_models.CustomConfig",
 )
-celery: Celery = foca.create_celery_app()
+
+
+def create_celery_app(foca: Foca) -> Celery:
+    """Create the Celery app, reporting stored tasks that share identifiers.
+
+    Args:
+        foca: FOCA instance.
+
+    Returns:
+        Celery app.
+
+    Raises:
+        RuntimeError: Stored tasks share identifiers (cf.
+            :py:func:`pro_tes.utils.db.check_unique_task_ids`).
+        ValueError: A configured index conflicts with an existing index.
+    """
+    try:
+        return foca.create_celery_app()
+    except ValueError as exc:
+        check_unique_task_ids(foca=foca, exc=exc)
+        raise
+
+
+celery: Celery = create_celery_app(foca)
 
 
 @worker_init.connect

@@ -5,6 +5,7 @@ import importlib.util
 from pathlib import Path
 import re
 import stat
+from typing import Self
 
 import pytest
 
@@ -158,7 +159,7 @@ def test_main_default_date(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
         """Clock at a time that is a day later in UTC than in UTC-1."""
 
         @classmethod
-        def now(cls, tz: datetime.tzinfo | None = None) -> "Clock":
+        def now(cls, tz: datetime.tzinfo | None = None) -> Self:
             """Return the time in a time zone (local time if `None`)."""
             utc = cls(2026, 10, 23, 0, 30, tzinfo=datetime.UTC)
             return utc.astimezone(tz or datetime.timezone(-datetime.timedelta(hours=1)))
@@ -204,6 +205,25 @@ def test_main_keeps_links_and_mode(tmp_path: Path) -> None:
     assert stat.S_IMODE(path.stat().st_mode) == 0o640
     assert 'version: "1.0.0"\n' in path.read_text(encoding="utf-8")
     assert list(tmp_path.glob(".*.tmp")) == [planted]
+
+
+def test_main_mode_not_by_name(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """`set` keeps the permissions without setting them by name."""
+    path = tmp_path / "CITATION.cff"
+    path.write_text(TEXT, encoding="utf-8")
+    # Differs from the mode of new temporary files (0o600)
+    path.chmod(0o604)
+
+    def fail(*_args: object, **_kwargs: object) -> None:
+        """Fail like a change of mode by name."""
+        raise AssertionError("mode set by name")
+
+    monkeypatch.setattr(citation.os, "chmod", fail)
+    monkeypatch.setattr(Path, "chmod", fail)
+    assert citation.main(["set", "1.0.0"], path) == 0
+    assert 'version: "1.0.0"\n' in path.read_text(encoding="utf-8")
+    assert stat.S_IMODE(path.stat().st_mode) == 0o604
+    assert not list(tmp_path.glob(".*.tmp"))
 
 
 def test_main_future_date(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
