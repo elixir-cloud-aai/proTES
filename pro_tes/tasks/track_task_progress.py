@@ -2,30 +2,29 @@
 
 import logging
 from time import sleep
+from typing import Any
 
 from foca import get_collection
-import tes  # type: ignore
+import tes
 
-from pro_tes.ga4gh.tes.models import TesState, TesTask
-from pro_tes.utils.db import DbDocumentConnector
-from pro_tes.ga4gh.tes.states import States
 from pro_tes.celery_worker import celery
+from pro_tes.ga4gh.tes.models import TesState, TesTask
+from pro_tes.ga4gh.tes.states import States
+from pro_tes.utils.db import DbDocumentConnector
 from pro_tes.utils.misc import get_custom_config
 from pro_tes.utils.models import TaskModelConverter
 
 logger = logging.getLogger(__name__)
 
 
-# pylint: disable-msg=too-many-locals
-# pylint: disable=unsubscriptable-object
 @celery.task(
     name="tasks.track_run_progress",
     bind=True,
     ignore_result=True,
     track_started=True,
 )
-def task__track_task_progress(  # pylint: disable=too-many-arguments,R0917
-    self,  # pylint: disable=unused-argument
+def task__track_task_progress(
+    self: Any,
     worker_id: str,
     remote_host: str,
     remote_base_path: str,
@@ -36,6 +35,7 @@ def task__track_task_progress(  # pylint: disable=too-many-arguments,R0917
     """Relay task run request to remote TES and track run progress.
 
     Args:
+        self: Celery task instance (bound task).
         worker_id: Worker identifier.
         remote_host: Host at which the TES API is served that is processing
             this request; note that this should include the path information
@@ -83,7 +83,7 @@ def task__track_task_progress(  # pylint: disable=too-many-arguments,R0917
             response = cli.get_task(
                 task_id=remote_task_id,
             )
-        except Exception as exc:  # pylint: disable=broad-except
+        except Exception as exc:
             if attempt <= polling.attempts:
                 attempt += 1
                 logger.warning(exc, exc_info=True)
@@ -101,8 +101,8 @@ def task__track_task_progress(  # pylint: disable=too-many-arguments,R0917
 
     # updating task after task is finished
     document.task.state = task_converted.state
-    assert task_converted.logs is not None
-    assert document.task.logs is not None
+    if task_converted.logs is None or document.task.logs is None:
+        raise ValueError(f"[{worker_id}] Task has no logs")
     for index, logs in enumerate(task_converted.logs):
         document.task.logs[index].logs = logs.logs
         document.task.logs[index].outputs = logs.outputs

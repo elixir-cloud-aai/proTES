@@ -1,8 +1,9 @@
 """Middleware handler."""
 
+from collections.abc import Sequence
 import importlib
 import logging
-from typing import Sequence, Union
+from typing import Any
 
 import flask
 
@@ -24,7 +25,7 @@ class MiddlewareHandler:
         """Class constructor."""
         self.middlewares: list[list[type[AbstractMiddleware]]] = []
 
-    def set_middlewares(self, paths: Sequence[Union[str, list[str]]]) -> None:
+    def set_middlewares(self, paths: Sequence[str | list[str]]) -> None:
         """Import and set middlewares from paths.
 
         An example of aected input format:
@@ -50,11 +51,10 @@ class MiddlewareHandler:
     def apply_middlewares(
         self,
         request: flask.Request,
-        *args,
-        **kwargs,
+        *args: Any,
+        **kwargs: Any,
     ) -> flask.Request:
-        """
-        Apply middlewares to a request.
+        """Apply middlewares to a request.
 
         This method iterates through the list of available middlewares and
         attempts to apply them in order. Each middleware can be a single class
@@ -76,13 +76,13 @@ class MiddlewareHandler:
         """
         for middleware in self.middlewares:
             for mw_class in middleware:
-                logger.info(f"Applying middleware: {mw_class}")
+                logger.info("Applying middleware: %s", mw_class)
                 instance = mw_class()
                 try:
                     request = instance.apply_middleware(request, *args, **kwargs)
-                except Exception as exc:  # pylint: disable=W0703
+                except Exception as exc:
                     logger.warning(
-                        f"Error occurred in middleware class '{mw_class}': {exc}"
+                        "Error occurred in middleware class '%s': %s", mw_class, exc
                     )
                     continue
                 break

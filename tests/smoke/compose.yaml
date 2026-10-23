@@ -1,0 +1,42 @@
+# Compose override for the smoke test in CI (job `smoke_test` of
+# `.github/workflows/checks.yaml`): proTES and the Celery worker relay tasks
+# to a fake TES backend (`fake_tes.py`) instead of the TES instances of
+# `config.yaml` (overlay `config.yaml` of this directory). Use it with
+# `docker compose -f docker-compose.yaml -f tests/smoke/compose.yaml up -d
+# --build --wait`; relative paths are resolved against the directory of the
+# first file, i.e., the repository root
+
+services:
+
+    protes:
+        environment:
+            FOCA_CONFIG_OVERLAY: /smoke/config.yaml
+        volumes:
+            - ./tests/smoke:/smoke:ro
+        depends_on:
+            fake-tes:
+                condition: service_healthy
+
+    protes-worker:
+        environment:
+            FOCA_CONFIG_OVERLAY: /smoke/config.yaml
+        volumes:
+            - ./tests/smoke:/smoke:ro
+        depends_on:
+            fake-tes:
+                condition: service_healthy
+
+    # The fake TES backend runs in the app's image (which is built for the
+    # other services), with the image's health check probing its service info
+    # (more often)
+    fake-tes:
+        image: protes:local
+        pull_policy: never
+        command: ["python", "/smoke/fake_tes.py"]
+        environment:
+            HEALTHCHECK_URL: http://localhost:8080/ga4gh/tes/v1/service-info
+        volumes:
+            - ./tests/smoke:/smoke:ro
+        healthcheck:
+            interval: 5s
+            start_period: 5s

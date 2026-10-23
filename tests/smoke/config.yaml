@@ -1,0 +1,28 @@
+# Config overlay for the Compose smoke test (`tests/smoke/compose.yaml`):
+# tasks go to the fake TES backend only (no public TES instances), and are
+# distributed without geolocation services; the fake backend is also the
+# identity provider (`fake_tes.py`)
+security:
+  auth:
+    issuers:
+      - http://fake-tes:8080/oidc/
+    audience:
+      - smoke-client
+    userinfo_claims:
+      - groups
+  access_control:
+    claim_groups: groups
+    group_mapping:
+      smoke-users: user
+      smoke-admins: admin
+custom:
+  tes:
+    service_list:
+      - "http://fake-tes:8080"
+  # a list of middlewares, each a list of alternatives
+  middlewares:
+    - - "pro_tes.plugins.middlewares.task_distribution.random.TaskDistributionRandom"
+  controllers:
+    post_task:
+      polling:
+        wait: 1

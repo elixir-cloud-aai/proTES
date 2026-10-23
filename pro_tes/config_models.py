@@ -1,11 +1,6 @@
 """Custom app config models."""
 
-from typing import List, Optional
-
-from pydantic import BaseModel, RootModel  # pylint: disable=no-name-in-module
-
-
-# pragma pylint: disable=too-few-public-methods
+from pydantic import BaseModel, Field, PositiveInt, RootModel, model_validator
 
 
 class DB(BaseModel):
@@ -51,9 +46,9 @@ class Timeout(BaseModel):
         job: Timeout for job execution (None disables timeout).
     """
 
-    post: Optional[int] = None
+    post: int | None = None
     poll: int = 2
-    job: Optional[int] = None
+    job: int | None = None
 
 
 class Polling(BaseModel):
@@ -97,14 +92,42 @@ class PostTask(BaseModel):
 class ListTasks(BaseModel):
     """Configuration for GET /tasks.
 
+    Defaults are those of the TES specification (pages of fewer than 2048
+    tasks).
+
     Args:
-        default_page_size: Default pagination size.
+        default_page_size: Number of tasks per page if the request sets no
+            page size.
+        max_page_size: Maximum number of tasks per page, at most 2047;
+            larger requested page sizes are reduced to it.
 
     Attributes:
-        default_page_size: Default pagination size.
+        default_page_size: Number of tasks per page if the request sets no
+            page size.
+        max_page_size: Maximum number of tasks per page; larger requested
+            page sizes are reduced to it.
     """
 
-    default_page_size: int = 5
+    default_page_size: PositiveInt = 256
+    # the TES specification allows pages of fewer than 2048 tasks
+    max_page_size: PositiveInt = Field(default=2047, le=2047)
+
+    @model_validator(mode="after")
+    def check_default_page_size(self) -> "ListTasks":
+        """Check that the default page size is at most the maximum.
+
+        Returns:
+            The validated configuration.
+
+        Raises:
+            ValueError: The default page size exceeds the maximum.
+        """
+        if self.default_page_size > self.max_page_size:
+            raise ValueError(
+                f"default_page_size ({self.default_page_size}) exceeds"
+                f" max_page_size ({self.max_page_size})"
+            )
+        return self
 
 
 class Monitor(BaseModel):
@@ -165,7 +188,7 @@ class Tes(BaseModel):
         service_list: List of available TES services.
     """
 
-    service_list: List[str] = [
+    service_list: list[str] = [
         "https://csc-tesk-noauth.rahtiapp.fi",
         "https://funnel.cloud.e-infra.cz/",
         "https://tesk-eu.hypatia-comp.athenarc.gr",
@@ -187,7 +210,7 @@ class StoreLogs(BaseModel):
     execution_trace: bool = True
 
 
-class Middlewares(RootModel[List[List[str]]]):
+class Middlewares(RootModel[list[list[str]]]):
     """Middleware configuration.
 
     Args:
@@ -197,7 +220,7 @@ class Middlewares(RootModel[List[List[str]]]):
         root: A list of middleware class paths.
     """
 
-    root: List[List[str]] = [
+    root: list[list[str]] = [
         [
             (
                 "pro_tes.plugins.middlewares.task_distribution.distance."
@@ -211,22 +234,42 @@ class Middlewares(RootModel[List[List[str]]]):
     ]
 
 
+class AccessControl(BaseModel):
+    """Access control settings of the app.
+
+    Args:
+        require_admin: Whether the app refuses to start unless a group is
+            mapped to the role `admin` (in
+            `security.access_control.group_mapping`).
+
+    Attributes:
+        require_admin: Whether the app refuses to start unless a group is
+            mapped to the role `admin` (in
+            `security.access_control.group_mapping`).
+    """
+
+    require_admin: bool = True
+
+
 class CustomConfig(BaseModel):
     """Custom app configuration.
 
     Args:
+        access_control: Access control settings of the app.
         controllers: All controller-related config.
         tes: TES service list and defaults.
         store_logs: Logging preferences.
         middlewares: Middleware class paths.
 
     Attributes:
+        access_control: Access control settings of the app.
         controllers: All controller-related config.
         tes: TES service list and defaults.
         store_logs: Logging preferences.
         middlewares: Middleware class paths.
     """
 
+    access_control: AccessControl = AccessControl()
     controllers: Controllers = Controllers()
     tes: Tes = Tes()
     storeLogs: StoreLogs = StoreLogs()

@@ -6,7 +6,7 @@ from pathlib import Path
 import re
 import sys
 
-from gunicorn.app.wsgiapp import WSGIApplication  # type: ignore
+from gunicorn.app.wsgiapp import WSGIApplication
 
 DOCKERFILE = Path(__file__).parents[1] / "Dockerfile"
 

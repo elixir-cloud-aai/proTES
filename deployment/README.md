@@ -40,7 +40,11 @@ vim values.yaml
 
 Set `clusterType` according to your target cluster: `openshift` for
 OpenShift clusters, `kubernetes` for plain Kubernetes clusters. Change the
-default credentials of Flower (`flower.basicAuth`, `admin:admin`).
+default credentials of Flower (`flower.basicAuth`, `admin:admin`). Set the
+app config in `config` (a config overlay): at least the trusted token
+issuers, the audience and the groups of the roles, without which the app
+doesn't start (see [Access
+control](https://protes.readthedocs.io/en/latest/access-control/)).
 
 Alternatively, for CI/CD use cases for example, override values when
 installing the chart, e.g.:

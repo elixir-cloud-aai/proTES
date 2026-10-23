@@ -50,11 +50,23 @@ custom:
   task has finished, and gives up (state `SYSTEM_ERROR`) after `attempts`
   failed requests;
 - `list_tasks.default_page_size`: the number of tasks per page of
-  `GET /tasks` if the request sets no `page_size`.
+  `GET /tasks` if the request sets no `page_size` (default 256, as in the
+  TES specification);
+- `list_tasks.max_page_size`: the maximum number of tasks per page; larger
+  `page_size`s are reduced to it (default and upper limit 2047: the TES
+  specification requires fewer than 2048).
 
 `custom.storeLogs.execution_trace` sets whether proTES records the TES
 instance and the remote task identifier of each forwarded task in the task's
-logs (`logs[].metadata.forwarded_to`).
+logs (`logs[].metadata.forwarded_to`); proTES keeps them for cancellation
+either way.
+
+## Security
+
+The TES API requires access tokens of the trusted issuers
+(`security.auth`), and roles from groups (`security.access_control`); the
+issuers, the audience and the groups are deployment settings without
+defaults. See [Access control](access-control.md).
 
 ## Request size limit
 

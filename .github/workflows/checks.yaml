@@ -9,30 +9,47 @@ on:
 permissions:
   contents: read
 
+# Cancel superseded runs of a pull request; runs for pushes get their own
+# group, so that queued runs for successive pushes are not dropped
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'push' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  lint:
-    name: Run linting (Python ${{ matrix.python-version }})
+  analyze_code:
+    name: Static code analysis
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ["3.10", "3.12"]
+    timeout-minutes: 15
     steps:
       - name: Check out repository
-        uses: actions/checkout@v3
-      - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          python-version: ${{ matrix.python-version }}
-      - name: Pin pip version
-        run: python -m pip install --upgrade "pip<24.1"
-      - name: Install requirements
-        run: pip install -e ".[dev]"
-      - name: Lint with Flake8
-        run: flake8 pro_tes/
-      - name: Lint with Pylint
-        run: pylint pro_tes/
-      - name: Type check with mypy
-        run: mypy pro_tes/
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.10"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      # mypy checks imports, so runtime dependencies are needed too
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip==24.0
+          pip install -e ".[dev]"
+      - name: Cache pre-commit hook environments
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
+      - name: Run linters, type checks and security checks
+        run: |
+          pre-commit run --all-files --show-diff-on-failure
+          pre-commit run --all-files --hook-stage manual gitleaks-all
+      # In its own environment, as cffconvert pins an old jsonschema; its
+      # dependencies resolve within its own bounds. 2.0.0 is the latest stable
+      # release (not bumped by Dependabot; update manually)
+      - name: Validate citation metadata
+        run: pipx run --spec cffconvert==2.0.0 cffconvert --validate -i CITATION.cff
       - name: Build distributions
         run: python -m build
       - name: Check wheel contents
@@ -45,24 +62,95 @@ jobs:
           grep -qx 'pro_tes/config.yaml' wheel-contents.txt
           grep -Eqx 'pro_tes-[^/]+\.dist-info/licenses/LICENSE' wheel-contents.txt
           grep -q '^pro_tes/api/.*\.yaml$' wheel-contents.txt
-  unit-test:
-    name: Run unit tests (Python ${{ matrix.python-version }})
+  test:
+    name: Run tests (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     strategy:
+      fail-fast: false
       matrix:
+        # 3.12: Python version of the base image in the Dockerfile
         python-version: ["3.10", "3.12"]
     steps:
       - name: Check out repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Install requirements
-        run: pip install -e ".[dev]"
-      # The tests in `tests/unitTest` are not collectable yet (#207)
-      - name: Run unit tests
-        run: pytest tests --ignore=tests/unitTest --ignore=tests/test_integration
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip==24.0
+          pip install -e ".[dev]"
+      - name: Calculate unit test coverage
+        run: |
+          coverage run -m pytest -W ignore::DeprecationWarning
+          coverage xml
+      # Upload errors fail the workflow only on pushes, because pull requests
+      # from forks and Dependabot get no access to the Codecov token
+      - name: Submit Report to Codecov
+        if: matrix.python-version == '3.12'
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage.xml
+          fail_ci_if_error: ${{ github.event_name == 'push' }}
+          verbose: true
+  # The other test jobs use mongomock; this one runs all tests against
+  # MongoDB (`MONGODB_TEST_URI`, see `tests/conftest.py`), the version of
+  # `docker-compose.yaml` (8.0 doesn't start on some kernels of the runners:
+  # https://jira.mongodb.org/browse/SERVER-121912). One Python version (that
+  # of the Dockerfile) suffices; coverage is reported by `test`
+  test_mongodb:
+    name: Run tests (MongoDB 7.0)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      mongodb:
+        image: mongo:7.0
+        ports: ["27017:27017"]
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand({ping: 1}).ok'"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      MONGODB_TEST_URI: mongodb://localhost:27017
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip==24.0
+          pip install -e ".[dev]"
+      # Fails instead of falling back to mongomock if the URI is missing
+      - name: Run tests
+        run: |
+          test -n "${MONGODB_TEST_URI}"
+          pytest -W ignore::DeprecationWarning
+  # Stable check name for branch protection, independent of the matrix
+  tests_passed:
+    name: Run tests
+    runs-on: ubuntu-latest
+    if: always()
+    needs: [test, test_mongodb]
+    steps:
+      - name: Check that all test jobs passed
+        run: |
+          test "${{ needs.test.result }}" = "success"
+          test "${{ needs.test_mongodb.result }}" = "success"
   docs:
     name: Build documentation
     runs-on: ubuntu-latest
@@ -84,24 +172,33 @@ jobs:
       # Fails on warnings, e.g., of broken links, anchors and references
       - name: Build documentation
         run: mkdocs build --strict
-  test:
-    name: Run tests
+  # Runs the app as deployed with Docker Compose (app, Celery worker,
+  # MongoDB, RabbitMQ), relaying tasks to a fake TES backend instead of the
+  # public TES instances of the config (`tests/smoke/`)
+  smoke_test:
+    name: Run app with Docker Compose
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     env:
+      COMPOSE_FILE: docker-compose.yaml:tests/smoke/compose.yaml
+      PROBE_ENDPOINT: http://localhost:8080/ga4gh/tes/v1/ui/
       # Passed to the image build by Docker Compose, as for published images
       SETUPTOOLS_SCM_PRETEND_VERSION: 0.0.0+compose
     steps:
       - name: Check out repository
-        uses: actions/checkout@v3
-      - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          python-version: "3.10"
-      - name: Install requirements
-        run: pip install -e ".[dev]"
-      - name: Deploy app
+          persist-credentials: false
+      - name: Start app
         # Waits until the containers are healthy (see their health checks)
         run: docker compose up -d --build --wait --wait-timeout 300
+      - name: Check that app responds
+        run: |
+          curl --fail --silent --show-error --output /dev/null \
+            --header 'Accept: application/json' "${PROBE_ENDPOINT}"
+      # Relays a task to the fake backend and checks the API (see the script)
+      - name: Check API with fake TES backend
+        run: tests/smoke/check.sh "${PROBE_ENDPOINT%/ui/}"
       - name: Check app version
         run: |
           actual="$(docker compose exec -T protes python -c \
@@ -110,19 +207,15 @@ jobs:
             echo "::error::App reports version '${actual}', expected '${SETUPTOOLS_SCM_PRETEND_VERSION}'"
             exit 1
           fi
-      - name: Run integration tests
-        shell: bash
-        run: pytest tests/test_integration
       - name: Show app logs
         if: failure()
         run: docker compose logs
-      - name: Tear down app
-        run: docker compose down
   publish:
     name: Build and publish app image
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     if: ${{ github.event_name == 'push' }}
-    needs: [lint, unit-test, docs, test]
+    needs: [analyze_code, tests_passed, docs, smoke_test]
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -144,7 +237,7 @@ jobs:
           echo "version=$(python -m setuptools_scm)" >> "$GITHUB_OUTPUT"
       - name: Generate tag
         run: |
-          echo "TAG=$(date '+%Y%m%d')" >> $GITHUB_ENV
+          echo "TAG=$(date '+%Y%m%d')" >> "$GITHUB_ENV"
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Log in to Docker Hub

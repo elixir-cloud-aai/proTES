@@ -1,31 +1,34 @@
 """Tests of the app created from `config.yaml`, with FOCA 0.15."""
 
-# pylint: disable=redefined-outer-name
-
 from importlib.metadata import version
-
 from pathlib import Path
 from typing import Any
 
 from connexion import FlaskApp
 from flask.testing import FlaskClient
 from foca import get_config
-import mongomock
+from pymongo import MongoClient
 import pytest
 import yaml
 
-from pro_tes.app import init_app
+from pro_tes.app import init_app, run_app
+from pro_tes.utils.misc import get_custom_config
+from tests.conftest import set_overlays
 
 BASE_PATH = "/ga4gh/tes/v1"
+# Config overlay of the Compose smoke test
+SMOKE_CONFIG = Path(__file__).parent / "smoke" / "config.yaml"
 
 
 def test_config(app: FlaskApp) -> None:
-    """Debug mode is off, request bodies are limited, no issuer is trusted."""
+    """Debug mode is off, request bodies are limited, the API needs tokens."""
     with app.app.app_context():
         conf = get_config()
     assert conf.server.debug is False
     assert conf.server.max_content_length == 1048576
-    assert not conf.security.auth.issuers
+    assert not any(spec.disable_auth for spec in conf.api.specs)
+    assert conf.security.access_control.enabled
+    assert conf.security.access_control.enforce
 
 
 def test_service_info(client: FlaskClient) -> None:
@@ -49,7 +52,7 @@ def test_service_info(client: FlaskClient) -> None:
 
 
 def test_service_info_not_stored(
-    client: FlaskClient, mongo_client: mongomock.MongoClient
+    client: FlaskClient, mongo_client: MongoClient[dict[str, Any]]
 ) -> None:
     """The service info is not stored in the database."""
     assert client.get(f"{BASE_PATH}/service-info").status_code == 200
@@ -106,7 +109,7 @@ def test_request_body_size_limit(client: FlaskClient) -> None:
 def test_placeholder_service_info(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
-    mongo_client: mongomock.MongoClient,  # pylint: disable=unused-argument
+    app_env: None,
     capsys: pytest.CaptureFixture[str],
     service: dict[str, Any],
     fields: str | None,
@@ -120,7 +123,7 @@ def test_placeholder_service_info(
     overlay.write_text(
         yaml.safe_dump({"service_info": {"service": service}}), encoding="utf-8"
     )
-    monkeypatch.setenv("FOCA_CONFIG_OVERLAY", str(overlay))
+    set_overlays(monkeypatch, overlay)
     init_app()
     # FOCA configures logging to stderr
     err = capsys.readouterr().err
@@ -129,3 +132,28 @@ def test_placeholder_service_info(
     else:
         assert err.count("placeholder values") == 1
         assert f"placeholder values; set {fields} to" in err
+
+
+def test_smoke_test_config(
+    monkeypatch: pytest.MonkeyPatch, mongo_client: MongoClient[dict[str, Any]]
+) -> None:
+    """The config overlay of the Compose smoke test is valid.
+
+    It relays tasks to the fake TES backend only.
+    """
+    monkeypatch.setenv("FOCA_CONFIG_OVERLAY", str(SMOKE_CONFIG))
+    app = init_app()
+    with app.app.app_context():
+        custom = get_custom_config()
+    assert custom.tes.service_list == ["http://fake-tes:8080"]
+    assert custom.middlewares.root == [
+        ["pro_tes.plugins.middlewares.task_distribution.random.TaskDistributionRandom"]
+    ]
+
+
+def test_run_app(app: FlaskApp, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The app is run on its configured port."""
+    calls: list[dict[str, Any]] = []
+    monkeypatch.setattr(app, "run", lambda **kwargs: calls.append(kwargs))
+    run_app(app)
+    assert calls == [{"port": app.port}]

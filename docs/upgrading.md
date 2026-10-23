@@ -15,6 +15,23 @@ The service info is configured in `service_info.service` (see [Service
 info](configuration.md#service-info)); it is no longer stored in the
 database, so the `service_info` collection can be dropped.
 
+## Authentication
+
+The TES API requires access tokens of trusted issuers, and roles from groups
+of the identity provider (see [Access control](access-control.md)); before,
+anyone could create, list, read and cancel all tasks. Deployments must set
+the trusted issuers (`security.auth.issuers`), the audience
+(`security.auth.audience`) and the groups of the roles
+(`security.access_control.claim_groups` and `group_mapping`, at least one
+group of the role `admin`): proTES doesn't start without them (unless
+`custom.access_control.require_admin` is false). Clients send
+`Authorization: Bearer <token>` with each request. HTTP Basic credentials of
+requests are no longer passed through to TES instances, as the
+`Authorization` header carries the token: TES instances that require them
+can't be used until proTES has credentials of its own for them
+([#213](https://github.com/elixir-cloud-aai/proTES/issues/213)). The Helm
+chart sets the config overlay from the value `config`.
+
 ## Errors
 
 Errors are [problem details](api.md#errors) (`title`, `status`, `detail`)
@@ -27,6 +44,31 @@ instead of objects with `message` and `code`.
 `tesNextTes` object. Tasks stored by earlier versions are still read, and
 served with their forwards as lists; they can be tracked and canceled as
 before.
+
+## Task times and remote identifiers
+
+Times of tasks (`creation_time`, and `start_time` and `end_time` of the
+logs) are in UTC, in RFC 3339 format (e.g.,
+`2026-10-22T12:34:56.789012+00:00`), instead of local-time strings such as
+`10-22-2026 14:34:56`; times of tasks stored by earlier versions are served
+as stored. proTES sets `creation_time`, and rejects tasks that set it
+(`400`), as the TES specification marks it read-only.
+
+The identifier of a
+task at its TES instance is also stored in `tes_endpoint.task_id` (not
+served), so that tasks can be canceled with
+`custom.storeLogs.execution_trace: False` too.
+
+## Task listing
+
+`GET /tasks` returns an empty `next_page_token` on the last page (it
+returned the last task's identifier, so clients kept paging), and an empty
+page instead of an error if no task matches; invalid page tokens and page
+sizes are rejected (`400`). Pages have 256 tasks by default (was 5) and at
+most 2047 (`custom.controllers.list_tasks`, see
+[Tasks](configuration.md#tasks)). `name_prefix` is taken literally, not as a
+regular expression. proTES no longer starts if
+`custom.controllers.list_tasks.default_page_size` exceeds `max_page_size`.
 
 ## Middleware management API
 

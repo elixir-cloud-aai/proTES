@@ -1,0 +1,16 @@
+# Config overlay of the app tests, with the settings each deployment must
+# make: a trusted issuer (mocked, see `tests/conftest.py`), the audience, and
+# the groups of the roles
+security:
+  auth:
+    issuers:
+      - https://login.example.org/oidc/
+    audience:
+      - client-id
+    userinfo_claims:
+      - groups
+  access_control:
+    claim_groups: groups
+    group_mapping:
+      compute-users: user
+      "urn:example:group:compute-admins#login.example.org": admin

@@ -1,0 +1,6 @@
+# Bulk formatting changes, ignored by `git blame` (GitHub applies this file
+# automatically; locally, run
+# `git config blame.ignoreRevsFile .git-blame-ignore-revs`)
+
+# style: reformat with ruff (#227)
+cc893a754253fb30ac6a6806029a023e9537a3ab
