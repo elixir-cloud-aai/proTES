@@ -9,6 +9,7 @@ from connexion.exceptions import (
 )
 from pydantic import ValidationError
 from pymongo.errors import PyMongoError
+import requests
 from werkzeug.exceptions import (
     BadRequest,
     InternalServerError,
@@ -22,6 +23,22 @@ class BackendAuthError(RuntimeError):
 
     E.g., because its identity provider issued no access token.
     """
+
+
+class BackendAddressNotAllowed(requests.ConnectionError):
+    """Raised when the host of a discovered TES backend is not public.
+
+    A connection error, so that proTES handles it as it handles unreachable
+    backends; no request is sent.
+    """
+
+
+class HostNotResolved(BackendAddressNotAllowed):
+    """Raised when the host of a discovered TES backend can't be resolved."""
+
+
+class RegistryError(ValueError):
+    """Raised when a response of the service registry is unavailable or invalid."""
 
 
 class BackendNotConfigured(ValueError):

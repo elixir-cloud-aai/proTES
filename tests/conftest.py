@@ -6,8 +6,8 @@ and have no network access, except to the test database: the identity
 provider is mocked, TES backends are replaced by fakes (e.g.,
 `tests/ga4gh/tes/test_server.py`), and the hosts of task inputs and TES
 backends are not resolved (distance-based task distribution, discovery of
-TES backends). The test
-client sends the access token of a user (`USER`) with each request.
+TES backends). The test client sends the access token of a user (`USER`)
+with each request.
 
 The tests use an in-memory database (mongomock), or, if the environment
 variable `MONGODB_TEST_URI` is set, the MongoDB at that URI (e.g.,

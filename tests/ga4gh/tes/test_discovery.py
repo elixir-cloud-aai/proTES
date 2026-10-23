@@ -22,8 +22,13 @@ from pro_tes.config_models import (
     Tes,
     TesBackend,
 )
+from pro_tes.exceptions import (
+    BackendAddressNotAllowed,
+    BackendNotConfigured,
+    HostNotResolved,
+    RegistryError,
+)
 from pro_tes.ga4gh.tes import backends, discovery
-from pro_tes.ga4gh.tes.discovery import BackendAddressNotAllowed, RegistryError
 from pro_tes.utils.misc import get_custom_config
 from tests.conftest import mock_get
 from tests.ga4gh.tes.conftest import BASE_PATH, TASK, FakeBackend, relayed
@@ -285,6 +290,8 @@ def select(registry: FakeRegistry, **kwargs: Any) -> discovery.Selection:
         (f"::ffff:{PUBLIC_IPV4}", True),
         ("64:ff9b::7f00:1", False),
         ("64:ff9b::5db8:d70e", True),
+        ("::7f00:1", False),
+        ("::5db8:d70e", True),
         ("ff02::1", False),
     ],
 )
@@ -368,6 +375,7 @@ def test_fetch_json(registry: FakeRegistry) -> None:
     [
         (FakeResponse(b"[]", status_code=500), "status 500"),
         (FakeResponse(b"", status_code=302), "status 302"),
+        (FakeResponse(b"[" * 200000 + b"]" * 200000), "invalid JSON"),
         (FakeResponse(b"not json"), "invalid JSON"),
         (
             FakeResponse(b"[" + b" " * 70000 + b"]", error=requests.ConnectionError()),
@@ -609,10 +617,63 @@ def test_cache_last_good(
 
 
 def test_cache_registry_down_first(registry: FakeRegistry, clock: Clock) -> None:
-    """Without a good list, no backends are discovered."""
+    """Without a good list, no backends are discovered.
+
+    Failed reads are retried after `RETRY_INTERVAL` seconds.
+    """
     registry.down = True
     cache = discovery.BackendDiscovery()
     assert cache.get_backends(conf()) == []
+    registry.down = False
+    registry.add(service("a", "https://tes1.example.org"))
+    clock.now += discovery.RETRY_INTERVAL - 1
+    assert cache.get_backends(conf()) == []
+    clock.now += 1
+    assert len(cache.get_backends(conf())) == 1
+
+
+def test_cache_unexpected_error(
+    registry: FakeRegistry,
+    clock: Clock,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Unexpected errors of reads are logged; they never fail requests."""
+
+    def fail(*args: Any, **kwargs: Any) -> discovery.Selection:
+        """Fail like a bug."""
+        raise RuntimeError("bug")
+
+    monkeypatch.setattr(discovery, "select_backends", fail)
+    cache = discovery.BackendDiscovery()
+    assert cache.get_backends(conf()) == []
+    assert "TES backends not discovered" in caplog.text
+    assert "RuntimeError: bug" in caplog.text
+
+
+def test_cache_host_not_resolved(registry: FakeRegistry, clock: Clock) -> None:
+    """Backends whose hosts can't be resolved for now are kept until next time.
+
+    Only backends discovered before, with the same URL.
+    """
+    registry.add(service("a", "https://tes1.example.org"))
+    cache = discovery.BackendDiscovery()
+    assert len(cache.get_backends(conf())) == 1
+    del registry.hosts["tes1.example.org"]
+    registry.add(service("b", "https://tes2.example.org"))
+    del registry.hosts["tes2.example.org"]
+    clock.now += 300
+    assert urls(cache.get_backends(conf())) == ["https://tes1.example.org"]
+    clock.now += 300
+    assert urls(cache.get_backends(conf())) == ["https://tes1.example.org"]
+    registry.hosts["tes1.example.org"] = ["10.0.0.1"]
+    clock.now += 300
+    assert cache.get_backends(conf()) == []
+
+
+def test_host_not_resolved_error() -> None:
+    """Unresolved hosts are not allowed."""
+    assert issubclass(HostNotResolved, BackendAddressNotAllowed)
 
 
 def test_cache_config_changed(registry: FakeRegistry, clock: Clock) -> None:
@@ -680,7 +741,7 @@ def test_cache_reset_lock() -> None:
     """The lock can be replaced, e.g., after a fork."""
     cache = discovery.BackendDiscovery()
     cache._lock.acquire()
-    cache.reset_lock()
+    cache._reset_lock()
     assert not cache._lock.locked()
 
 
@@ -737,16 +798,64 @@ def test_service_info(client: FlaskClient) -> None:
     assert response.get_json()["backends"] == ["https://tes.example.org/"]
 
 
+def test_client_discovered(discovering: FakeRegistry) -> None:
+    """Requests to discovered backends don't follow redirects.
+
+    With `auth: none`, they get no credentials.
+    """
+    discovering.add(service("a", "https://tes1.example.org"))
+    kwargs = backends.create_client(host="https://tes1.example.org")._request_params()
+    assert kwargs["allow_redirects"] is False
+    assert "Authorization" not in kwargs["headers"]
+
+
 def test_client_address_checked(discovering: FakeRegistry) -> None:
     """Before each request to a discovered backend, its host is checked."""
     discovering.add(service("a", "https://tes1.example.org"))
     client = backends.create_client(host="https://tes1.example.org")
-    assert "Authorization" not in client._request_params()["headers"]
     discovering.hosts["tes1.example.org"] = ["127.0.0.1"]
     with pytest.raises(BackendAddressNotAllowed, match="not public"):
         client._request_params()
-    get_custom_config().tes.discovery = conf(auth="none", allow_private_addresses=True)
-    client._request_params()
+
+
+def test_client_private_allowed(
+    discovering: FakeRegistry, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Hosts of discovered backends aren't checked if private ones are allowed."""
+    monkeypatch.setattr(
+        get_custom_config().tes,
+        "discovery",
+        conf(auth="none", allow_private_addresses=True),
+    )
+    discovering.add(service("a", "https://tes1.example.org"))
+    discovering.hosts["tes1.example.org"] = ["10.0.0.1"]
+    client = backends.create_client(host="https://tes1.example.org")
+    assert client._request_params()["allow_redirects"] is False
+
+
+def test_get_backend_refresh(discovering: FakeRegistry, clock: Clock) -> None:
+    """Backends that are not in the cache are looked up in the registry again.
+
+    E.g., backends that another process discovered already; at most every
+    `MIN_REFRESH_INTERVAL` seconds.
+    """
+    assert len(discovery.get_backends()) == 1
+    discovering.add(service("a", "https://tes1.example.org"))
+    clock.now += discovery.MIN_REFRESH_INTERVAL
+    assert backends.get_backend("https://TES1.example.org/").url == (
+        "https://tes1.example.org"
+    )
+    discovering.add(service("b", "https://tes2.example.org"))
+    with pytest.raises(BackendNotConfigured):
+        backends.get_backend("https://tes2.example.org")
+    assert len(discovering.requests) == 4
+
+
+def test_get_backend_no_discovery(app: FlaskApp, registry: FakeRegistry) -> None:
+    """Without discovery, unknown backends are not looked up."""
+    with app.app.app_context(), pytest.raises(BackendNotConfigured):
+        backends.get_backend("https://other.example.org")
+    assert not registry.requests
 
 
 def test_client_static_not_checked(discovering: FakeRegistry) -> None:

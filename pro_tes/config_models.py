@@ -411,6 +411,16 @@ class Discovery(BaseModel):
     auth: Literal["client_credentials", "none"] = "client_credentials"
     allow_private_addresses: bool = False
 
+    @property
+    def enabled(self) -> bool:
+        """Whether discovery is on, i.e., `registry_url` is set."""
+        return self.registry_url is not None
+
+    @property
+    def uses_tokens(self) -> bool:
+        """Whether discovery is on, with `auth: client_credentials`."""
+        return self.enabled and self.auth == "client_credentials"
+
     @field_validator("registry_url")
     @classmethod
     def normalize_registry_url(cls, value: str | None) -> str | None:
@@ -495,11 +505,9 @@ class Tes(BaseModel):
                     f"URL scheme of {url!r} not allowed (`url_schemes`:"
                     f" {self.url_schemes})"
                 )
-        uses_tokens = any(
-            backend.auth == "client_credentials" for backend in self.service_list
-        ) or (
-            discovery.registry_url is not None
-            and discovery.auth == "client_credentials"
+        uses_tokens = (
+            any(backend.auth == "client_credentials" for backend in self.service_list)
+            or discovery.uses_tokens
         )
         if uses_tokens and idp.issuer is None and idp.token_endpoint is None:
             raise ValueError(

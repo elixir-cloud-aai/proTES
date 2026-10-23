@@ -139,7 +139,7 @@ def check_backends(conf: Tes | None = None) -> None:
     if conf is None:
         conf = get_custom_config().tes
     discovery = conf.discovery
-    if discovery.registry_url is not None:
+    if discovery.enabled:
         logger.info(
             "Discovering TES backends at registry %s every %d seconds"
             " (`custom.tes.discovery`), with `auth: %s`",
@@ -195,9 +195,7 @@ def check_backends(conf: Tes | None = None) -> None:
         logger.info(
             "TES backends with access tokens of proTES: %s", ", ".join(token_backends)
         )
-    if token_backends or (
-        discovery.registry_url is not None and discovery.auth == "client_credentials"
-    ):
+    if token_backends or discovery.uses_tokens:
         missing.extend(_missing_env(CLIENT_ID_ENV, CLIENT_SECRET_ENV))
     if missing:
         raise RuntimeError(

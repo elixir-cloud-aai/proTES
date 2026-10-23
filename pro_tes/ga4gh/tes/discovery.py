@@ -14,15 +14,17 @@ aren't trusted by default; a backend is used only if:
   :py:mod:`foca.utils.urls`), without user info;
 - its host has public addresses only, unless private addresses are allowed:
   no private, loopback, link-local or other special-purpose addresses. The
-  host is checked on discovery and before each request to the backend.
+  host is checked on discovery and before each request to the backend, and
+  requests to discovered backends don't follow redirects.
 
 The registry, configured by the deployment, is the trust anchor: it is read
 without access token and redirects are not followed. Each process (e.g.,
 each Gunicorn or Celery worker) caches the discovered backends, refreshing
 them every `refresh_interval` seconds, and keeps the last good list while
-the registry is unreachable or returns invalid responses. Changes are
-logged. Backends of `service_list` take precedence over discovered ones with
-the same URL.
+the registry is unreachable or returns invalid responses (retrying after
+`RETRY_INTERVAL` seconds at most), and backends whose hosts can't be
+resolved for the time being. Changes are logged. Backends of `service_list`
+take precedence over discovered ones with the same URL.
 """
 
 from collections.abc import Iterable
@@ -41,6 +43,7 @@ from foca.utils.urls import InvalidURL, normalize_url
 import requests
 
 from pro_tes.config_models import DiscoveredBackend, Discovery, TesBackend
+from pro_tes.exceptions import BackendAddressNotAllowed, HostNotResolved, RegistryError
 from pro_tes.utils.misc import get_custom_config
 
 logger = logging.getLogger(__name__)
@@ -54,21 +57,18 @@ TES_ARTIFACT = "tes"
 TES_API_PATH = "/ga4gh/tes/v1"
 # Maximum size (in bytes) of responses of the registry
 MAX_RESPONSE_SIZE = 16 * 1024 * 1024
-# IPv4/IPv6 translation prefix (RFC 6052), whose addresses embed IPv4
-# addresses
-_NAT64_PREFIX = ipaddress.IPv6Network("64:ff9b::/96")
-
-
-class RegistryError(ValueError):
-    """Raised when a registry response is unavailable or invalid."""
-
-
-class BackendAddressNotAllowed(requests.ConnectionError):
-    """Raised when the host of a discovered TES backend is not public.
-
-    A connection error, so that proTES handles it as it handles unreachable
-    backends; no request is sent.
-    """
+# Maximum seconds until the registry is read again after a failed read
+RETRY_INTERVAL = 30
+# Minimum seconds between reads of the registry for backends that are not in
+# the cache (cf. `BackendDiscovery.get_backends()`)
+MIN_REFRESH_INTERVAL = 10
+# Prefixes of IPv6 addresses that embed IPv4 addresses in their last 32
+# bits: IPv4/IPv6 translation (RFC 6052) and IPv4-compatible addresses
+# (deprecated, RFC 4291)
+_EMBEDDING_PREFIXES = (
+    ipaddress.IPv6Network("64:ff9b::/96"),
+    ipaddress.IPv6Network("::/96"),
+)
 
 
 def is_public_address(address: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
@@ -80,13 +80,13 @@ def is_public_address(address: ipaddress.IPv4Address | ipaddress.IPv6Address) ->
     Returns:
         Whether the address is globally reachable (as per the IANA
         special-purpose address registries) and not a multicast address;
-        IPv4 addresses embedded in IPv6 addresses (IPv4-mapped and NAT64
-        ones) are checked themselves.
+        IPv4 addresses embedded in IPv6 addresses (IPv4-mapped, NAT64 and
+        IPv4-compatible ones) are checked themselves.
     """
     if isinstance(address, ipaddress.IPv6Address):
         if address.ipv4_mapped is not None:
             address = address.ipv4_mapped
-        elif address in _NAT64_PREFIX:
+        elif any(address in prefix for prefix in _EMBEDDING_PREFIXES):
             address = ipaddress.IPv4Address(int(address) & 0xFFFFFFFF)
     return address.is_global and not address.is_multicast
 
@@ -95,14 +95,18 @@ def check_public_host(url: str) -> None:
     """Check that the host of a URL has public addresses only.
 
     Host names are resolved; all their addresses must be public (cf.
-    :py:func:`is_public_address`).
+    :py:func:`is_public_address`). Resolution is not bounded by the timeout
+    of the registry (`Discovery.timeout`), but by that of the system's
+    resolver.
 
     Args:
         url: URL.
 
     Raises:
-        BackendAddressNotAllowed: The host has no public address, or an
-            address that is not public, or can't be resolved.
+        pro_tes.exceptions.HostNotResolved: The host can't be resolved, or
+            has no address.
+        pro_tes.exceptions.BackendAddressNotAllowed: The host has an address
+            that is not public, or a zone identifier.
     """
     parts = urlsplit(url)
     host = parts.hostname or ""
@@ -114,12 +118,12 @@ def check_public_host(url: str) -> None:
         try:
             infos = getaddrinfo(host, parts.port or 443, type=SOCK_STREAM)
         except (OSError, UnicodeError) as exc:
-            raise BackendAddressNotAllowed(
+            raise HostNotResolved(
                 f"Host of {url} not resolved: {type(exc).__name__}"
             ) from exc
         addresses = {str(info[4][0]) for info in infos}
     if not addresses:
-        raise BackendAddressNotAllowed(f"Host of {url} has no address")
+        raise HostNotResolved(f"Host of {url} has no address")
     for address in addresses:
         try:
             public = is_public_address(ipaddress.ip_address(address))
@@ -142,9 +146,10 @@ def fetch_json(url: str, timeout: int) -> Any:
         The document.
 
     Raises:
-        RegistryError: The request failed, or the response is not a JSON
-            document of at most `MAX_RESPONSE_SIZE` bytes with status `200`
-            (also for redirects, which are not followed).
+        pro_tes.exceptions.RegistryError: The request failed, or the
+            response is not a JSON document of at most `MAX_RESPONSE_SIZE`
+            bytes (and nested at most as deeply as the JSON parser allows)
+            with status `200` (also for redirects, which are not followed).
     """
     try:
         response = requests.get(
@@ -173,7 +178,7 @@ def fetch_json(url: str, timeout: int) -> Any:
         response.close()
     try:
         return json.loads(content)
-    except ValueError as exc:
+    except (ValueError, RecursionError) as exc:
         raise RegistryError(f"{url}: invalid JSON") from exc
 
 
@@ -194,6 +199,23 @@ def _same(first: object, second: object) -> bool:
     )
 
 
+def _is_tes(api: object) -> bool:
+    """Check whether an API type is that of TES.
+
+    Args:
+        api: API type of a service (`type`).
+
+    Returns:
+        Whether the group is `org.ga4gh` and the artifact `tes`, ignoring
+        case.
+    """
+    return (
+        isinstance(api, dict)
+        and _same(api.get("group"), TES_GROUP)
+        and _same(api.get("artifact"), TES_ARTIFACT)
+    )
+
+
 def _version_accepted(version: object, versions: list[str]) -> bool:
     """Check whether the TES version of a service is accepted.
 
@@ -211,7 +233,27 @@ def _version_accepted(version: object, versions: list[str]) -> bool:
     )
 
 
-def _base_url(url: str) -> str:
+def _wanted(service: dict[str, Any], conf: Discovery) -> bool:
+    """Check whether a service is a TES of an accepted version and environment.
+
+    Args:
+        service: Service, as listed by the registry.
+        conf: Discovery configuration.
+
+    Returns:
+        Whether the service is a TES service of one of `conf.versions`, and,
+        if `conf.environments` is set, of one of them.
+    """
+    api = service.get("type")
+    return (
+        isinstance(api, dict)
+        and _is_tes(api)
+        and _version_accepted(api.get("version"), conf.versions)
+        and (not conf.environments or service.get("environment") in conf.environments)
+    )
+
+
+def base_url(url: str) -> str:
     """Normalize the URL of a discovered backend, removing the TES API path.
 
     Args:
@@ -229,6 +271,22 @@ def _base_url(url: str) -> str:
     return normalized.removesuffix(TES_API_PATH)
 
 
+def url_key(url: str) -> str:
+    """Get the key of a backend URL, to compare URLs.
+
+    Args:
+        url: URL of a backend.
+
+    Returns:
+        The normalized URL, or, if it is invalid, the URL without trailing
+        slashes.
+    """
+    try:
+        return normalize_url(url)
+    except ValueError:
+        return url.rstrip("/")
+
+
 @dataclass
 class Selection:
     """Backends selected from the services of a registry.
@@ -243,106 +301,130 @@ class Selection:
     rejected: list[str] = field(default_factory=list)
 
 
-def _verifications(document: object) -> dict[str, tuple[object, object, object]]:
+def _verifications(document: object) -> dict[str, tuple[object, object]]:
     """Get the verifications of a registry, by service identifier.
 
     Args:
         document: Response of `GET /verifications`.
 
     Returns:
-        URL, API group and artifact of each verified service, as verified.
+        URL and API type of each verified service, as verified.
 
     Raises:
-        RegistryError: The response is not a list of objects with string
-            identifiers.
+        pro_tes.exceptions.RegistryError: The response is not a list of
+            objects with string identifiers.
     """
     if not isinstance(document, list):
         raise RegistryError("Verifications are not a list")
-    verified: dict[str, tuple[object, object, object]] = {}
+    verified: dict[str, tuple[object, object]] = {}
     for item in document:
         if not isinstance(item, dict) or not isinstance(item.get("service_id"), str):
             raise RegistryError("Verifications without service identifier")
-        api = item.get("type")
-        api = api if isinstance(api, dict) else {}
-        verified[item["service_id"]] = (
-            item.get("url"),
-            api.get("group"),
-            api.get("artifact"),
-        )
+        verified[item["service_id"]] = (item.get("url"), item.get("type"))
     return verified
 
 
+def _accept(
+    service_id: str,
+    url: str,
+    conf: Discovery,
+    previous: dict[str, DiscoveredBackend],
+) -> DiscoveredBackend:
+    """Get the backend of a verified TES service, checking its URL.
+
+    Args:
+        service_id: Identifier of the service.
+        url: URL of the service, as registered and verified.
+        conf: Discovery configuration.
+        previous: Backends discovered before, by service identifier.
+
+    Returns:
+        The backend; also if its host can't be resolved for the time being,
+        if it was discovered with the same URL before.
+
+    Raises:
+        foca.utils.urls.InvalidURL: The URL is invalid, or not an `https`
+            URL.
+        pro_tes.exceptions.BackendAddressNotAllowed: The host of the URL
+            has an address that is not public (unless allowed), or can't be
+            resolved.
+    """
+    backend = DiscoveredBackend(
+        url=base_url(url),
+        auth=conf.auth,
+        service_id=service_id,
+    )
+    if conf.allow_private_addresses:
+        return backend
+    try:
+        check_public_host(backend.url)
+    except HostNotResolved:
+        if previous.get(service_id) != backend:
+            raise
+        # checked before each request, too
+        logger.warning(
+            "Host of TES backend %s not resolved; keeping it until the next"
+            " read of the registry",
+            backend.url,
+        )
+    return backend
+
+
 def select_backends(
-    services: object, verifications: object, conf: Discovery
+    services: object,
+    verifications: object,
+    conf: Discovery,
+    previous: Iterable[DiscoveredBackend] = (),
 ) -> Selection:
     """Select the TES backends to use from the services of a registry.
+
+    Services that are not TES services of an accepted version and
+    environment, and unverified ones, are skipped; verified ones that can't
+    be used are rejected, with the reason.
 
     Args:
         services: Response of `GET /services`.
         verifications: Response of `GET /verifications`.
         conf: Discovery configuration.
+        previous: Backends discovered before, which are kept if their hosts
+            can't be resolved for the time being.
 
     Returns:
         The selected backends, unique by URL, and why verified TES services
         of an accepted version and environment were rejected.
 
     Raises:
-        RegistryError: A response is not a list (of objects, for
-            verifications).
+        pro_tes.exceptions.RegistryError: A response is not a list (of
+            objects, for verifications).
     """
     if not isinstance(services, list):
         raise RegistryError("Services are not a list")
     verified = _verifications(verifications)
+    known = {backend.service_id: backend for backend in previous}
     selection = Selection()
     urls: set[str] = set()
     for service in services:
-        if not isinstance(service, dict):
+        if not isinstance(service, dict) or not _wanted(service, conf):
             continue
         service_id = service.get("id")
-        api = service.get("type")
-        if not isinstance(service_id, str) or not isinstance(api, dict):
-            continue
-        if not (
-            _same(api.get("group"), TES_GROUP)
-            and _same(api.get("artifact"), TES_ARTIFACT)
-        ):
-            continue
-        if service_id not in verified:
+        if not isinstance(service_id, str) or service_id not in verified:
             logger.debug("Registry service %r is not verified", service_id)
             continue
-        if not _version_accepted(api.get("version"), conf.versions):
-            continue
-        if conf.environments and service.get("environment") not in conf.environments:
-            continue
         url = service.get("url")
-        verified_url, group, artifact = verified[service_id]
-        if not (
-            isinstance(url, str)
-            and url == verified_url
-            and _same(group, TES_GROUP)
-            and _same(artifact, TES_ARTIFACT)
-        ):
+        verified_url, verified_api = verified[service_id]
+        if not isinstance(url, str) or url != verified_url or not _is_tes(verified_api):
             selection.rejected.append(
                 f"{service_id!r}: URL or API type differ from the verified ones"
             )
             continue
         try:
-            base_url = _base_url(url)
-        except InvalidURL as exc:
+            backend = _accept(service_id, url=url, conf=conf, previous=known)
+        except (InvalidURL, BackendAddressNotAllowed) as exc:
             selection.rejected.append(f"{service_id!r}: {exc}")
             continue
-        if not conf.allow_private_addresses:
-            try:
-                check_public_host(base_url)
-            except BackendAddressNotAllowed as exc:
-                selection.rejected.append(f"{service_id!r}: {exc}")
-                continue
-        if base_url in urls:
-            continue
-        urls.add(base_url)
-        selection.backends.append(
-            DiscoveredBackend(url=base_url, auth=conf.auth, service_id=service_id)
-        )
+        if backend.url not in urls:
+            urls.add(backend.url)
+            selection.backends.append(backend)
     return selection
 
 
@@ -357,67 +439,102 @@ class BackendDiscovery:
     def __init__(self) -> None:
         """Create an empty cache."""
         self._lock = threading.Lock()
-        self.clear()
+        self._conf: Discovery | None = None
+        self._backends: list[DiscoveredBackend] = []
+        self._read = False
+        self._last_read = 0.0
+        self._next_read = 0.0
+        self._rejected: set[str] = set()
 
     def clear(self) -> None:
         """Remove the discovered backends, so that the registry is read anew."""
-        self._key: str | None = None
-        self._backends: list[DiscoveredBackend] = []
+        self._conf = None
+        self._backends = []
         self._read = False
-        self._next_refresh = 0.0
-        self._rejected: set[str] = set()
+        self._last_read = 0.0
+        self._next_read = 0.0
+        self._rejected = set()
 
-    def reset_lock(self) -> None:
+    def _reset_lock(self) -> None:
         """Replace the lock, e.g., in a forked process."""
         self._lock = threading.Lock()
 
-    def get_backends(self, conf: Discovery) -> list[DiscoveredBackend]:
+    def get_backends(
+        self, conf: Discovery, refresh: bool = False
+    ) -> list[DiscoveredBackend]:
         """Get the discovered backends, reading the registry when due.
 
         Args:
             conf: Discovery configuration.
+            refresh: Whether to read the registry now, unless it was read in
+                the last `MIN_REFRESH_INTERVAL` seconds, e.g., for a backend
+                that another process discovered already.
 
         Returns:
             The discovered backends; none if discovery is off, or before the
             registry was read successfully.
         """
-        if conf.registry_url is None:
+        if not conf.enabled:
             return []
-        key = conf.model_dump_json()
         backends = self._backends
-        if key == self._key and time.monotonic() < self._next_refresh:
+        if conf == self._conf and not self._due(refresh):
             return list(backends)
         # waits for the read if the configuration changed (e.g., in tests) or
         # the registry was never read; otherwise, uses the cached backends
         # while another thread reads it
-        if not self._lock.acquire(blocking=key != self._key or not self._read):
+        if not self._lock.acquire(blocking=conf != self._conf or not self._read):
             return list(backends)
         try:
-            if key != self._key:
+            if conf != self._conf:
                 self.clear()
-                self._key = key
-            if time.monotonic() >= self._next_refresh:
-                self._refresh(conf=conf, registry_url=conf.registry_url)
+                self._conf = conf.model_copy(deep=True)
+            if self._due(refresh):
+                self._refresh(conf=conf)
             return list(self._backends)
         finally:
             self._lock.release()
 
-    def _refresh(self, conf: Discovery, registry_url: str) -> None:
-        """Read the registry, keeping the last good backends on errors.
+    def _due(self, refresh: bool) -> bool:
+        """Check whether the registry is to be read.
 
         Args:
-            conf: Discovery configuration.
-            registry_url: Base URL of the registry's API.
+            refresh: Whether a read is requested (cf. `get_backends()`).
+
+        Returns:
+            Whether the next read is due, or a read is requested and the last
+            one is at least `MIN_REFRESH_INTERVAL` seconds ago.
         """
-        self._next_refresh = time.monotonic() + conf.refresh_interval
+        now = time.monotonic()
+        return now >= self._next_read or (
+            refresh and now - self._last_read >= MIN_REFRESH_INTERVAL
+        )
+
+    def _refresh(self, conf: Discovery) -> None:
+        """Read the registry, keeping the last good backends on errors.
+
+        Errors of any kind are logged, so that registry responses never
+        fail the requests that read the registry.
+
+        Args:
+            conf: Discovery configuration, with `registry_url`.
+        """
+        registry_url = str(conf.registry_url)
+        now = time.monotonic()
+        self._last_read = now
+        self._next_read = now + min(conf.refresh_interval, RETRY_INTERVAL)
         try:
             verifications = fetch_json(f"{registry_url}/verifications", conf.timeout)
             services = fetch_json(f"{registry_url}/services", conf.timeout)
             selection = select_backends(
-                services=services, verifications=verifications, conf=conf
+                services=services,
+                verifications=verifications,
+                conf=conf,
+                previous=self._backends,
             )
-        except RegistryError as exc:
-            logger.warning(
+        except Exception as exc:
+            # `RegistryError` for invalid responses; others are bugs
+            log = logger.warning if isinstance(exc, RegistryError) else logger.exception
+            log(
                 "TES backends not discovered at registry %s (%s); keeping %d"
                 " backends discovered earlier",
                 registry_url,
@@ -425,6 +542,7 @@ class BackendDiscovery:
                 len(self._backends),
             )
             return
+        self._next_read = now + conf.refresh_interval
         for reason in selection.rejected:
             if reason not in self._rejected:
                 logger.warning("Registry service not used: %s", reason)
@@ -441,29 +559,17 @@ class BackendDiscovery:
 
 
 discovery = BackendDiscovery()
-os.register_at_fork(after_in_child=discovery.reset_lock)
+os.register_at_fork(after_in_child=discovery._reset_lock)
 
 
-def _url_key(url: str) -> str:
-    """Get the key of a backend URL, to compare URLs.
-
-    Args:
-        url: URL of a backend.
-
-    Returns:
-        The normalized URL, or, if it is invalid, the URL without trailing
-        slashes.
-    """
-    try:
-        return normalize_url(url)
-    except ValueError:
-        return url.rstrip("/")
-
-
-def get_backends() -> list[TesBackend]:
+def get_backends(refresh: bool = False) -> list[TesBackend]:
     """Get the TES backends that tasks may be forwarded to.
 
     Must be called in an app context.
+
+    Args:
+        refresh: Whether to read the registry now (rate-limited, cf.
+            :py:meth:`BackendDiscovery.get_backends`).
 
     Returns:
         The backends of `custom.tes.service_list`, followed by those
@@ -471,9 +577,9 @@ def get_backends() -> list[TesBackend]:
     """
     conf = get_custom_config().tes
     backends: list[TesBackend] = list(conf.service_list)
-    known = {_url_key(backend.url) for backend in backends}
-    for backend in discovery.get_backends(conf=conf.discovery):
-        if _url_key(backend.url) not in known:
+    known = {url_key(backend.url) for backend in backends}
+    for backend in discovery.get_backends(conf=conf.discovery, refresh=refresh):
+        if url_key(backend.url) not in known:
             backends.append(backend)
     return backends
 

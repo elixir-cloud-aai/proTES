@@ -16,8 +16,9 @@ those of its callers (`auth` of the backends in `custom.tes.service_list`, and
 
 Credentials are looked up for each request, so that long-running Celery
 tasks get fresh tokens. Before each request to a discovered backend, its host
-is checked to have public addresses only, unless private addresses are
-allowed (`custom.tes.discovery.allow_private_addresses`).
+is checked to have public addresses only (unless private addresses are
+allowed, `custom.tes.discovery.allow_private_addresses`), and redirects are
+not followed.
 """
 
 from contextlib import suppress
@@ -40,7 +41,7 @@ from pro_tes.config_models import (
     split_server_url,
 )
 from pro_tes.exceptions import BackendAuthError, BackendNotConfigured
-from pro_tes.ga4gh.tes.discovery import check_public_host, get_backends
+from pro_tes.ga4gh.tes.discovery import check_public_host, get_backends, url_key
 from pro_tes.utils.misc import get_custom_config
 
 logger = logging.getLogger(__name__)
@@ -293,8 +294,14 @@ token_provider = TokenProvider()
 def get_backend(url: str) -> TesBackend:
     """Get the configuration of a TES backend.
 
+    If no backend has the URL, and discovery is on, the registry is read
+    again (rate-limited), as another process (e.g., the one that forwarded a
+    task that the Celery worker tracks) may have discovered the backend
+    already.
+
     Args:
-        url: Base URL of the backend (trailing slashes are ignored).
+        url: Base URL of the backend; URLs are compared normalized (e.g.,
+            ignoring trailing slashes and the case of the host).
 
     Returns:
         The backend of `custom.tes.service_list`, or discovered in the
@@ -304,9 +311,13 @@ def get_backend(url: str) -> TesBackend:
     Raises:
         pro_tes.exceptions.BackendNotConfigured: No backend has the URL.
     """
-    for backend in get_backends():
-        if backend.url.rstrip("/") == url.rstrip("/"):
-            return backend
+    key = url_key(url)
+    for refresh in (False, True):
+        for backend in get_backends(refresh=refresh):
+            if url_key(backend.url) == key:
+                return backend
+        if not get_custom_config().tes.discovery.enabled:
+            break
     raise BackendNotConfigured(f"TES backend not configured: {url}")
 
 
@@ -345,17 +356,17 @@ class TesClient(tes.HTTPClient):
 
         Raises:
             pro_tes.exceptions.BackendAuthError: No credentials are available.
-            pro_tes.ga4gh.tes.discovery.BackendAddressNotAllowed: The backend
-                was discovered, and its host has an address that is not
-                public (unless allowed).
+            pro_tes.exceptions.BackendAddressNotAllowed: The backend was
+                discovered, and its host has an address that is not public
+                (unless allowed).
         """
         kwargs: dict[str, Any] = super()._request_params(data=data, params=params)
         config = get_custom_config().tes
-        if (
-            isinstance(self.backend, DiscoveredBackend)
-            and not config.discovery.allow_private_addresses
-        ):
-            check_public_host(self.backend.url)
+        if isinstance(self.backend, DiscoveredBackend):
+            # redirects could lead to any address
+            kwargs["allow_redirects"] = False
+            if not config.discovery.allow_private_addresses:
+                check_public_host(self.backend.url)
         if self.backend.auth == "client_credentials":
             token = token_provider.get_token(config=config)
             kwargs["headers"]["Authorization"] = f"Bearer {token}"

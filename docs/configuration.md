@@ -79,29 +79,37 @@ following hold:
   identifier, URL and API type (`type.group`, `type.artifact`);
 - it is a TES service (`org.ga4gh` `tes`) of one of the `versions`, and, if
   `environments` is set, of one of the `environments`;
-- its URL is a valid `https` URL without user info (whatever
-  `url_schemes` allows); the URL is normalized (e.g., lowercase host,
-  without default port and trailing slashes), and the API path
-  `/ga4gh/tes/v1`, which registries list as part of the URL, is removed;
+- its URL is a valid `https` URL without user info (`url_schemes` applies
+  to `service_list`, the registry and the identity provider only); the URL
+  is normalized (e.g., lowercase host, without default port and trailing
+  slashes), and the API path `/ga4gh/tes/v1`, which registries list as part
+  of the URL, is removed;
 - its host has public addresses only: hosts with private, loopback,
   link-local or other special-purpose addresses (e.g., `10.0.0.1`,
   `localhost`, `169.254.169.254`) are rejected, unless
   `allow_private_addresses` is set. Hosts are checked on discovery and
-  before each request to the TES instance.
+  before each request to the TES instance, and requests to discovered TES
+  instances don't follow redirects.
 
 The registry is read without access token (its reads are public), over a
 URL with a scheme of `custom.tes.url_schemes`; redirects are not followed.
 Each process (each Gunicorn worker and Celery worker) reads it every
 `refresh_interval` seconds, and keeps the last good list while the
-registry is unreachable or returns invalid responses; a service whose
-verification is removed is no longer used once the registry has been read
-again. Changes of the list and rejected verified services are logged.
-TES instances of `custom.tes.service_list` are used, too, and come first;
-their settings take precedence over those of discovered ones with the same
-URL. Discovered TES instances get the credentials of `auth` (see
+registry is unreachable or returns invalid responses, retrying after 30
+seconds at most; TES instances whose hosts can't be resolved for the time
+being are kept until the next read, too. A process that doesn't know the
+TES instance of a task (e.g., the Celery worker, for a TES instance that
+the app's process discovered first) reads the registry again, at most every
+10 seconds. A service whose verification is removed is no longer used once
+the registry has been read again. Changes of the list and rejected verified
+services are logged. `timeout` applies to each request to the registry; the
+hosts of the services are resolved with the timeouts of the system's
+resolver. TES instances of `custom.tes.service_list` are used, too, and come
+first; their settings take precedence over those of discovered ones with the
+same URL. Discovered TES instances get the credentials of `auth` (see
 [Credentials of TES
-instances](access-control.md#credentials-of-tes-instances)); tasks of a
-TES instance that is no longer discovered can't be tracked or canceled.
+instances](access-control.md#credentials-of-tes-instances)); tasks of a TES
+instance that is no longer discovered can't be tracked or canceled.
 
 The host check doesn't protect against DNS rebinding (a host whose
 addresses change between the check and the request); restrict the egress
