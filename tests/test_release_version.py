@@ -126,6 +126,76 @@ def test_is_latest(tag: str, tags: list[str], latest: bool) -> None:
     assert release_version.is_latest(tag, tags) is latest
 
 
+@pytest.mark.parametrize(
+    ("tag", "tags", "previous"),
+    [
+        # The first release
+        ("v0.3.0", [], None),
+        ("v0.3.0", ["v0.3.0"], None),
+        ("v0.3.0rc1", ["v0.3.0rc1"], None),
+        # Highest below, compared by numbers, not as text
+        ("v0.10.0", ["v0.2.0", "v0.9.9", "v0.10.0"], "v0.9.9"),
+        ("v1.0.0", ["v0.3.0", "v0.10.0", "v0.9.0"], "v0.10.0"),
+        # Higher releases (e.g., for a fix of an old minor) are ignored
+        ("v0.9.1", ["v0.9.0", "v0.9.1", "v0.10.0"], "v0.9.0"),
+        # Stable releases start after the previous stable release
+        ("v1.0.0", ["v0.3.0", "v1.0.0a1", "v1.0.0b1", "v1.0.0rc2"], "v0.3.0"),
+        # Without a stable release before, the highest pre-release (the
+        # generated notes can't start before the first tag)
+        ("v1.0.0", ["v1.0.0rc1"], "v1.0.0rc1"),
+        ("v0.3.0", ["v0.3.0a1", "v0.3.0rc1", "v0.3.0b2"], "v0.3.0rc1"),
+        ("v1.0.0", ["v0.9.0", "v1.0.0rc1"], "v0.9.0"),
+        # Pre-releases start after the previous release of any kind, ordered
+        # alpha < beta < release candidate < stable, then by number
+        ("v1.0.0rc2", ["v0.3.0", "v1.0.0rc1", "v1.0.0rc10"], "v1.0.0rc1"),
+        ("v1.0.0rc1", ["v0.3.0", "v1.0.0a2", "v1.0.0b1"], "v1.0.0b1"),
+        ("v1.0.0b1", ["v1.0.0a10", "v1.0.0a9", "v1.0.0rc1"], "v1.0.0a10"),
+        ("v1.0.0a1", ["v0.3.0", "v0.3.1rc1", "v1.0.0b1"], "v0.3.1rc1"),
+        ("v0.3.1rc1", ["v0.3.0", "v0.3.0rc1"], "v0.3.0"),
+        # Other tags are ignored
+        ("v0.3.0", ["v0.2.0", "v0.2.9+local", "v0.2.10.0", "garbage", ""], "v0.2.0"),
+    ],
+)
+def test_previous_tag(tag: str, tags: list[str], previous: str | None) -> None:
+    """The previous release is the highest of the right kind below the tag."""
+    assert release_version.previous_tag(tag, tags) == previous
+
+
+def test_order() -> None:
+    """Releases are ordered by number, then pre-release kind and number."""
+    tags = ["v1.0.0", "v1.0.0rc1", "v0.9.0", "v1.0.0a2", "v1.0.0b1", "v1.0.0a10"]
+    assert sorted(tags, key=lambda tag: release_version.parse_tag(tag).order) == [
+        "v0.9.0",
+        "v1.0.0a2",
+        "v1.0.0a10",
+        "v1.0.0b1",
+        "v1.0.0rc1",
+        "v1.0.0",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("tags", "output"),
+    [
+        ("v0.2.0\nv0.3.0\nv0.2.1rc1\n", "previous_tag=v0.2.0\n"),
+        ("v0.3.0\n", "previous_tag=\n"),
+        ("", "previous_tag=\n"),
+    ],
+)
+def test_main_previous(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tags: str,
+    output: str,
+) -> None:
+    """`previous` reads the tags in the release's history from standard input."""
+    monkeypatch.setattr("sys.stdin", io.TextIOWrapper(io.BytesIO(tags.encode())))
+    assert release_version.main(["previous", "v0.3.0"]) == 0
+    captured = capsys.readouterr()
+    assert captured.out == output
+    assert captured.err == ""
+
+
 def test_main_outputs(capsys: pytest.CaptureFixture[str]) -> None:
     """`outputs` prints the outputs of a tag."""
     assert release_version.main(["outputs", "v0.3.0"]) == 0
@@ -161,7 +231,10 @@ def test_main_latest(
     assert captured.err == ""
 
 
-@pytest.mark.parametrize("args", [["outputs", "0.3.0"], ["latest", "v0.3.0+local"]])
+@pytest.mark.parametrize(
+    "args",
+    [["outputs", "0.3.0"], ["latest", "v0.3.0+local"], ["previous", "v0.3"]],
+)
 def test_main_invalid_tag(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -198,6 +271,13 @@ def test_main_usage(capsys: pytest.CaptureFixture[str]) -> None:
             "",
         ),
         (["latest", "v1.2.3"], "v1.2.2\nv1.2.3\n", 0, "latest=true\n", ""),
+        (
+            ["previous", "v1.2.3"],
+            "v1.2.2\nv1.2.3\n",
+            0,
+            "previous_tag=v1.2.2\n",
+            "",
+        ),
         (
             ["outputs", "1.2.3"],
             "",
