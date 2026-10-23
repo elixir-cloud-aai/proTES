@@ -484,14 +484,21 @@ class TaskRuns:
                 )
             except DuplicateKeyError:
                 # another request stored a task with the identifier first
-                # (unique index on `task.id`); if it is the owner's, too, the
-                # role is that task's
-                if not self.db_client.count_documents(
-                    {"task.id": task_id, "user_id": owner}, limit=1
-                ):
-                    remove_task_owner(
-                        collection=collection, task_id=task_id, owner=owner
+                # (unique index on `task.id`; that on `worker_id` doesn't
+                # fail for new Celery identifiers); if it is the owner's,
+                # too, the role is that task's; revoked if the check fails
+                keep = False
+                try:
+                    keep = bool(
+                        self.db_client.count_documents(
+                            {"task.id": task_id, "user_id": owner}, limit=1
+                        )
                     )
+                finally:
+                    if not keep:
+                        remove_task_owner(
+                            collection=collection, task_id=task_id, owner=owner
+                        )
                 continue
             except Exception:
                 remove_task_owner(collection=collection, task_id=task_id, owner=owner)

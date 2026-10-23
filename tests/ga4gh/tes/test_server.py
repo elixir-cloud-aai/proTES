@@ -993,6 +993,52 @@ def test_task_id_taken_concurrently(
     )
 
 
+def test_task_id_taken_check_failed(
+    app: FlaskApp,
+    monkeypatch: pytest.MonkeyPatch,
+    mongo_client: MongoClient[dict[str, Any]],
+) -> None:
+    """The owner role is revoked if the owner of the stored task is unknown."""
+    with app.app.test_request_context():
+        runs = task_runs.TaskRuns()
+        count_documents = runs.db_client.count_documents
+
+        def insert_one(document: dict[str, Any]) -> None:
+            """Fail to insert the document.
+
+            Raises:
+                pymongo.errors.DuplicateKeyError: Always.
+            """
+            raise DuplicateKeyError("taken")
+
+        def count_owned(filter: dict[str, Any], **kwargs: Any) -> int:
+            """Count tasks, but fail to count those of an owner.
+
+            Args:
+                filter: Query of the tasks.
+                **kwargs: Other arguments of `count_documents()`.
+
+            Returns:
+                Number of tasks.
+
+            Raises:
+                pymongo.errors.PyMongoError: The query names an owner.
+            """
+            if "user_id" in filter:
+                raise PyMongoError("unavailable")
+            return count_documents(filter, **kwargs)
+
+        monkeypatch.setattr(runs.db_client, "insert_one", insert_one)
+        monkeypatch.setattr(runs.db_client, "count_documents", count_owned)
+        with pytest.raises(PyMongoError, match="unavailable"):
+            runs._write_doc_to_db(
+                document=DbDocument(user_id=USER),
+                owner=USER,
+                collection=f"{BASE_PATH}/tasks",
+            )
+    assert mongo_client[DB]["policy_rules"].count_documents({"ptype": "g2"}) == 0
+
+
 def test_forward_stored_no_logs(app: FlaskApp) -> None:
     """Forwards of tasks without logs can't be stored."""
     connector = SimpleNamespace(

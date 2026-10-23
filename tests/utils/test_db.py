@@ -1,14 +1,22 @@
-"""Tests of the database connector."""
+"""Tests of the database connector and migrations."""
 
+from copy import deepcopy
+from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
+from foca import Foca
 from pymongo import MongoClient
+from pymongo.errors import DuplicateKeyError, OperationFailure
 import pytest
 
+from pro_tes import celery_worker
 from pro_tes.app import init_app
+from pro_tes.utils import db as db_module
 from pro_tes.utils.db import (
     LEGACY_TASK_INDEX,
     DbDocumentConnector,
+    check_unique_task_ids,
     drop_legacy_task_index,
     find_duplicate_task_ids,
     remove_stored_credentials,
@@ -197,3 +205,148 @@ def test_legacy_task_index_dropped(
     drop_legacy_task_index(collection=collection)
     assert collection.index_information() == indexes
     assert "Dropped index" not in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("max_reported", "reported"),
+    [
+        (10, "tasks per identifier: 'A': 3, 'B': 2, (none): 2)"),
+        (1, "tasks per identifier: 'A': 3, and 2 more)"),
+    ],
+)
+def test_duplicate_task_ids(
+    app_env: None,
+    mongo_client: MongoClient[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+    max_reported: int,
+    reported: str,
+) -> None:
+    """The app refuses to start while stored tasks share identifiers (#248).
+
+    The identifiers are named (up to `MAX_REPORTED_DUPLICATES`), and no task
+    is changed.
+    """
+    monkeypatch.setattr(db_module, "MAX_REPORTED_DUPLICATES", max_reported)
+    collection = mongo_client[DB]["tasks"]
+    documents: list[dict[str, Any]] = [
+        *[{"task": {"id": "A"}, "user_id": f"user-{n}"} for n in range(3)],
+        *[{"task": {"id": "B"}, "user_id": f"user-{n}"} for n in range(2)],
+        {"task": {"id": "C"}},
+        *[{"worker_id": f"worker-{n}"} for n in range(2)],
+    ]
+    collection.insert_many(deepcopy(documents))
+    with pytest.raises(RuntimeError, match="share 3 identifiers") as exc_info:
+        init_app()
+    assert reported in str(exc_info.value)
+    assert "upgrading notes" in str(exc_info.value)
+    assert isinstance(exc_info.value.__cause__, ValueError)
+    stored = list(collection.find({}, projection={"_id": False}))
+    assert sorted(map(str, stored)) == sorted(map(str, documents))
+
+
+@pytest.mark.parametrize(
+    ("collection", "error", "message"),
+    [
+        ("tasks", RuntimeError, "share 1 identifiers"),
+        ("middlewares", ValueError, "conflicts with an existing index"),
+    ],
+)
+def test_duplicate_keys_celery_worker(
+    app_env: None,
+    mongo_client: MongoClient[dict[str, Any]],
+    collection: str,
+    error: type[Exception],
+    message: str,
+) -> None:
+    """Celery workers refuse to start while tasks share identifiers, too.
+
+    Other failing unique indexes fail the start with FOCA's error.
+    """
+    mongo_client[DB][collection].insert_many(
+        [{"task": {"id": "A"}, "name": "a", "class_path": "x.A"} for _ in range(2)]
+    )
+    foca = Foca(
+        config_file=Path(celery_worker.__file__).parent / "config.yaml",
+        custom_config_model="pro_tes.config_models.CustomConfig",
+    )
+    with pytest.raises(error, match=message):
+        celery_worker.create_celery_app(foca=foca)
+
+
+@pytest.mark.parametrize("dropped", [True, False])
+def test_legacy_task_index_dropped_concurrently(
+    mongo_client: MongoClient[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+    dropped: bool,
+) -> None:
+    """Indexes dropped by other instances meanwhile are no error.
+
+    Other errors are raised.
+    """
+    collection = mongo_client[DB]["tasks"]
+    collection.create_index(
+        [("task_id", 1), ("worker_id", 1)], unique=True, sparse=True
+    )
+    drop_index = collection.drop_index
+
+    def drop_index_raced(name: str) -> None:
+        """Fail to drop the index, which another instance may have dropped.
+
+        Args:
+            name: Name of the index.
+
+        Raises:
+            pymongo.errors.OperationFailure: Always.
+        """
+        if dropped:
+            drop_index(name)
+        raise OperationFailure("index not found", code=27)
+
+    monkeypatch.setattr(collection, "drop_index", drop_index_raced)
+    if dropped:
+        drop_legacy_task_index(collection=collection)
+    else:
+        with pytest.raises(OperationFailure):
+            drop_legacy_task_index(collection=collection)
+    assert (LEGACY_TASK_INDEX in collection.index_information()) is not dropped
+
+
+def test_duplicate_middlewares(
+    app_env: None, mongo_client: MongoClient[dict[str, Any]]
+) -> None:
+    """Other unique indexes that fail fail the start with FOCA's error."""
+    mongo_client[DB]["middlewares"].insert_many(
+        [{"name": "a", "class_path": "x.A"}, {"name": "a", "class_path": "x.B"}]
+    )
+    with pytest.raises(ValueError, match="conflicts with an existing index"):
+        init_app()
+
+
+@pytest.mark.parametrize(
+    "db",
+    [
+        None,
+        SimpleNamespace(dbs=None),
+        SimpleNamespace(dbs={}),
+        SimpleNamespace(dbs={"taskStore": SimpleNamespace(collections=None)}),
+        SimpleNamespace(
+            dbs={
+                "taskStore": SimpleNamespace(
+                    collections={"tasks": SimpleNamespace(client=None)}
+                )
+            }
+        ),
+    ],
+)
+def test_check_unique_task_ids_no_collection(db: SimpleNamespace | None) -> None:
+    """Without a registered task collection, nothing is reported."""
+    exc = ValueError("index failed")
+    exc.__cause__ = DuplicateKeyError("duplicate")
+    foca = SimpleNamespace(conf=SimpleNamespace(db=db))
+    check_unique_task_ids(foca=foca, exc=exc)  # type: ignore[arg-type]
+
+
+def test_check_unique_task_ids_other_error() -> None:
+    """Errors other than duplicate keys are not checked."""
+    foca = SimpleNamespace(conf=None)
+    check_unique_task_ids(foca=foca, exc=ValueError("other"))  # type: ignore[arg-type]

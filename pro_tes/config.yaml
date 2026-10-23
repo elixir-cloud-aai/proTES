@@ -103,6 +103,8 @@ db:
             # Celery workers find tasks by worker identifier
             - keys:
                 worker_id: 1
+              options:
+                "unique": True
         middlewares:
           indexes:
             - keys:

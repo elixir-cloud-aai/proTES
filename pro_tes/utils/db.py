@@ -4,7 +4,9 @@ from collections.abc import Mapping
 import logging
 from typing import Any
 
+from foca import Foca
 from pymongo.collection import Collection, ReturnDocument
+from pymongo.errors import DuplicateKeyError, OperationFailure
 
 from pro_tes.ga4gh.tes.models import DbDocument, TesState
 from pro_tes.utils.misc import has_credentials, strip_auth
@@ -20,6 +22,11 @@ FILE_FIELDS = (
 )
 # Field of stored tasks with the outputs logged by backends (in each log)
 LOG_OUTPUTS_FIELD = "task.logs.outputs"
+# Database and collection of the tasks (`db.dbs` of `config.yaml`)
+TASK_DB = "taskStore"
+TASK_COLLECTION = "tasks"
+# Number of shared task identifiers named when proTES refuses to start
+MAX_REPORTED_DUPLICATES = 10
 # Name of the index of the tasks of earlier versions (`task_id`, `worker_id`)
 LEGACY_TASK_INDEX = "task_id_1_worker_id_1"
 
@@ -125,19 +132,69 @@ def drop_legacy_task_index(collection: Collection[dict[str, Any]]) -> None:
 
     The fields of the index didn't identify tasks (task identifiers are
     stored as `task.id`), so it never rejected a duplicate identifier; it is
-    replaced by a unique index on `task.id` and an index on `worker_id`
-    (cf. `db` in `config.yaml`). Run on startup; idempotent.
+    replaced by unique indexes on `task.id` and `worker_id` (cf. `db` in
+    `config.yaml`). Run on startup; idempotent, also if several instances
+    start at the same time.
 
     Args:
         collection: Database collection of the tasks.
     """
-    if LEGACY_TASK_INDEX in collection.index_information():
+    if LEGACY_TASK_INDEX not in collection.index_information():
+        return
+    try:
         collection.drop_index(LEGACY_TASK_INDEX)
-        logger.info(
-            "Dropped index '%s' of collection '%s' of earlier versions",
-            LEGACY_TASK_INDEX,
-            collection.name,
-        )
+    except OperationFailure:
+        # dropped by another instance starting at the same time
+        if LEGACY_TASK_INDEX in collection.index_information():
+            raise
+        return
+    logger.info(
+        "Dropped index '%s' of collection '%s' of earlier versions",
+        LEGACY_TASK_INDEX,
+        collection.name,
+    )
+
+
+def check_unique_task_ids(foca: Foca, exc: ValueError) -> None:
+    """Report stored tasks that share identifiers, if indexes failed.
+
+    FOCA can't create the unique index on task identifiers (`task.id`, cf.
+    `db` in `config.yaml`) while stored tasks share identifiers, e.g.,
+    tasks stored by earlier versions, which didn't have the index. Nothing
+    is changed: operators resolve the duplicates (cf. `docs/upgrading.md`).
+
+    Args:
+        foca: FOCA instance whose app (or Celery app) could not be
+            created.
+        exc: Error of FOCA while creating the app.
+
+    Raises:
+        RuntimeError: The error is a duplicate key error, and stored tasks
+            share identifiers; it names them (up to
+            `MAX_REPORTED_DUPLICATES`), and the number of tasks for each.
+    """
+    if not isinstance(exc.__cause__, DuplicateKeyError):
+        return
+    dbs = foca.conf.db.dbs if foca.conf.db is not None else None
+    db = (dbs or {}).get(TASK_DB)
+    coll = ((db.collections if db is not None else None) or {}).get(TASK_COLLECTION)
+    if coll is None or coll.client is None:
+        return
+    duplicates = find_duplicate_task_ids(collection=coll.client)
+    if not duplicates:
+        return
+    named = ", ".join(
+        f"{'(none)' if task_id is None else repr(task_id)}: {count}"
+        for task_id, count in list(duplicates.items())[:MAX_REPORTED_DUPLICATES]
+    )
+    more = len(duplicates) - MAX_REPORTED_DUPLICATES
+    raise RuntimeError(
+        f"Stored tasks share {len(duplicates)} identifiers (tasks per"
+        f" identifier: {named}{f', and {more} more' if more > 0 else ''}), so"
+        " the unique index on task identifiers (`task.id`) can't be"
+        " created; resolve the duplicates as described in the upgrading"
+        " notes (Task identifiers), and start proTES again"
+    ) from exc
 
 
 class DbDocumentConnector:
