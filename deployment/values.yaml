@@ -101,11 +101,11 @@ protes:
     # Ingress class (`spec.ingressClassName`); the cluster's default class if
     # empty
     className: ""
-    # Annotations of the Ingress, e.g., for the ingress controller; they take
-    # precedence over those set by the chart: for `https`, and
-    # `nginx.ingress.kubernetes.io/proxy-body-size`, the size limit of request
-    # bodies of the app (`config.server.max_content_length`) for
-    # ingress-nginx. `null` removes an annotation set by the chart
+    # Annotations of the Ingress, e.g., for the ingress controller's size
+    # limit of request bodies, TLS redirect or rate limits; the chart sets
+    # none for particular controllers (see deployment/README.md, Exposing the
+    # app, for examples). They take precedence over those set by the chart
+    # for `https`; `null` removes one of these
     annotations: {}
     https:
       # Request a certificate from cert-manager (via `issuer`, a
@@ -138,8 +138,13 @@ protes:
     httpsRedirect:
       enabled: false
       parentRefs: []
-  # OpenShift Route (TLS at the router, which redirects HTTP to HTTPS)
+  # OpenShift Route for all paths (TLS at the router, which redirects HTTP
+  # to HTTPS)
   route:
+    # Create the Route if neither the Ingress nor the HTTPRoute is enabled
+    # and the cluster serves Routes; false, e.g., for a Route or HTTPRoute
+    # of your own
+    enabled: true
     # Annotations of the Route, e.g., for rate limits of the router
     # (`haproxy.router.openshift.io/rate-limit-connections`)
     annotations: {}
@@ -151,13 +156,12 @@ protes:
   networkPolicy:
     enabled: false
     # NetworkPolicy peers (`spec.ingress[].from`) allowed to connect to the
-    # app; by default, the namespace of ingress-nginx. Must not be empty
-    # (which would allow all sources); on OpenShift, use the router's
-    # namespaces (`policy-group.network.openshift.io/ingress: ""`)
-    ingressFrom:
-    - namespaceSelector:
-        matchLabels:
-          kubernetes.io/metadata.name: ingress-nginx
+    # app: none by default, as they depend on the cluster. Set them when
+    # enabling the policy, which fails to render without peers (which would
+    # allow all sources); see deployment/README.md, Network policies, and
+    # https://github.com/elixir-cloud-aai/foca/blob/chart-v0.2.0/docs/helm-chart.md#networkpolicy-peers
+    # for the peers of common ingress controllers and Gateways
+    ingressFrom: []
   # Security contexts of the pod and the container (also of the worker); the
   # image runs as user 1000, and with a read-only root file system, temporary
   # files go to an `emptyDir` at `/tmp`. On OpenShift, `runAsUser`,

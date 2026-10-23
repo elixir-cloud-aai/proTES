@@ -2,10 +2,12 @@
 
 import importlib.util
 from pathlib import Path
+import re
 import subprocess
 import sys
 
 import pytest
+import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 DOCS = "https://protes.readthedocs.io/en"
@@ -118,6 +120,24 @@ def test_chart_readme() -> None:
     assert chart_readme.unversioned_links(versioned) == []
     assert f"{DOCS}/v1.2.3/" in versioned
     assert f"{REPO}/blob/v1.2.3/" in versioned
+
+
+def test_chart_readme_library_links() -> None:
+    """Links of the chart's README to FOCA are those of its library chart.
+
+    They point to the tag of the version of foca-common that the chart
+    depends on (`chart-vX.Y.Z`), not to FOCA's latest docs or branches, which
+    describe other versions (`version_links` doesn't rewrite them).
+    """
+    markdown = (ROOT / "deployment/README.md").read_text(encoding="utf-8")
+    chart = yaml.safe_load((ROOT / "deployment/Chart.yaml").read_text())
+    (library,) = chart["dependencies"]
+    refs = re.findall(
+        r"github\.com/elixir-cloud-aai/foca/(?:blob|tree|raw)/([^/\s)]+)", markdown
+    )
+    assert refs
+    assert set(refs) == {f"chart-v{library['version']}"}
+    assert "foca.readthedocs.io" not in markdown
 
 
 def test_main(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:

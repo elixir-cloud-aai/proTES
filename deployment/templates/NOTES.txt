@@ -29,9 +29,15 @@ check that the route is accepted with
 {{- if not $exposed }}
 
 Neither an Ingress (protes.ingress.enabled is false), an HTTPRoute
+{{- if not (dig "route" "enabled" true .Values.protes) }}
+(protes.httpRoute.enabled is false) nor an OpenShift Route
+(protes.route.enabled is false) was created, so the chart doesn't expose the
+app outside the cluster. To access it from this machine, run:
+{{- else }}
 (protes.httpRoute.enabled is false) nor an OpenShift Route (the cluster does
-not serve route.openshift.io/v1) was created, so the app is only reachable
-within the cluster. To access it from this machine, run:
+not serve route.openshift.io/v1) was created, so the chart doesn't expose the
+app outside the cluster. To access it from this machine, run:
+{{- end }}
 
   kubectl port-forward svc/{{ $fullname }} 8080:8080 -n {{ .Release.Namespace }}
 {{- end }}
