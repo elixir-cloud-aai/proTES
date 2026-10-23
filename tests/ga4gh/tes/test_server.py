@@ -25,7 +25,7 @@ from pro_tes.plugins.middlewares.task_distribution.random import (
 )
 from pro_tes.tasks import track_task_progress
 from pro_tes.utils.misc import get_custom_config
-from tests.conftest import DB
+from tests.conftest import DB, USER
 from tests.ga4gh.tes.conftest import (
     BACKENDS,
     BASE_PATH,
@@ -732,7 +732,7 @@ def test_invalid_view(app: FlaskApp) -> None:
 
 def test_task_id_taken(app: FlaskApp, monkeypatch: pytest.MonkeyPatch) -> None:
     """Task identifiers are generated until one is unused, or attempts run out."""
-    with app.app.app_context():
+    with app.app.test_request_context():
         runs = task_runs.TaskRuns()
         attempts = runs.custom_config.controllers.post_task.db.insert_attempts
         inserted: list[str] = []
@@ -748,12 +748,16 @@ def test_task_id_taken(app: FlaskApp, monkeypatch: pytest.MonkeyPatch) -> None:
             raise DuplicateKeyError("taken")
 
         monkeypatch.setattr(runs.db_client, "insert_one", insert_one)
-        task_id, _ = runs._write_doc_to_db(document=DbDocument())
+        task_id, _ = runs._write_doc_to_db(
+            document=DbDocument(), owner=USER, collection=f"{BASE_PATH}/tasks"
+        )
         assert inserted[-1] == task_id
         assert len(inserted) == attempts
         monkeypatch.setattr(runs.db_client, "insert_one", insert_none)
         with pytest.raises(DuplicateKeyError, match="Could not insert"):
-            runs._write_doc_to_db(document=DbDocument())
+            runs._write_doc_to_db(
+                document=DbDocument(), owner=USER, collection=f"{BASE_PATH}/tasks"
+            )
 
 
 def test_forward_stored_no_logs(app: FlaskApp) -> None:

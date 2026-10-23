@@ -65,9 +65,10 @@ owner:
 db.tasks.deleteMany({ user_id: { $exists: false } })
 ```
 
-Owner roles left by deleted tasks don't give access to anything (owners get
-`404 Not Found`), but are loaded on each request; delete them via the
-permissions API, or in the database
+Owner roles left by deleted tasks don't give access to other tasks (their
+owners get `404 Not Found`, and their identifiers are not used for new
+tasks), but are loaded on each request; delete them together with the
+documents, via the permissions API, or in the database
 (`db.policy_rules.deleteMany({ ptype: "g2", v2: { $in: [...] } })`, with the
 paths of the deleted tasks, and those ending in `:cancel`).
 

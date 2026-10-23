@@ -39,6 +39,7 @@ from pro_tes.ga4gh.tes.ownership import (
     add_task_owner,
     get_owner,
     owned_tasks_filter,
+    task_has_roles,
 )
 from pro_tes.ga4gh.tes.states import States
 from pro_tes.middleware.middleware_handler import MiddlewareHandler
@@ -93,12 +94,12 @@ class TaskRuns:
     def create_task(self, **kwargs: Any) -> dict[str, Any]:
         """Start task.
 
-        Args:
-            **kwargs: Additional keyword arguments passed along with request.
-
         The user of the request becomes the owner of the task (cf.
         :py:mod:`pro_tes.ga4gh.tes.ownership`), also if it can't be
         forwarded.
+
+        Args:
+            **kwargs: Additional keyword arguments passed along with request.
 
         Returns:
             Task identifier.
@@ -341,14 +342,15 @@ class TaskRuns:
     def get_task(self, id: str, **kwargs: Any) -> dict[str, Any]:
         """Return detailed information about a task.
 
+        Only owners of the task may get it (enforced by the policies).
+
         Args:
             id: Task identifier.
             **kwargs: Additional keyword arguments passed along with request.
 
         Returns:
             Response object according to TES API schema . Cf.
-                https://github.com/ga4gh/task-execution-schemas/blob/9e9c5aa2648d683d5574f9dbd63a025b4aea285d/openapi/task_execution_service.openapi.yaml.
-            Only owners of the task may get it (enforced by the policies).
+                https://github.com/ga4gh/task-execution-schemas/blob/9e9c5aa2648d683d5574f9dbd63a025b4aea285d/openapi/task_execution_service.openapi.yaml
 
         Raises:
             pro_tes.exceptions.TaskNotFound: The requested task is not
@@ -366,14 +368,14 @@ class TaskRuns:
     def cancel_task(self, id: str, **kwargs: Any) -> dict[str, Any]:
         """Cancel task.
 
+        Only owners of the task may cancel it (enforced by the policies).
+
         Args:
             id: Task identifier.
             **kwargs: Additional keyword arguments passed along with request.
 
         Returns:
             Task identifier.
-
-        Only owners of the task may cancel it (enforced by the policies).
 
         Raises:
             pro_tes.exceptions.TaskNotFound: The requested task is not
@@ -432,14 +434,30 @@ class TaskRuns:
     def _write_doc_to_db(
         self,
         document: DbDocument,
+        owner: str,
+        collection: str,
     ) -> tuple[str, str]:
-        """Create database entry for task.
+        """Create database entry for task, and make the owner its owner.
+
+        Identifiers of stored tasks, and identifiers that roles are granted
+        on (e.g., left by deleted tasks), are not used again, so that nobody
+        gets access to the task of someone else. The owner is granted the
+        role before the task is stored, so that tasks are never stored
+        without owner, and the identifier is taken right away.
 
         Args:
             document: Document to be written to database.
+            owner: Owner of the task (cf.
+                :py:func:`pro_tes.ga4gh.tes.ownership.get_owner`).
+            collection: Request path of the tasks (e.g.,
+                `/ga4gh/tes/v1/tasks`).
 
         Returns:
             Tuple of task id and worker id.
+
+        Raises:
+            pymongo.errors.DuplicateKeyError: No unused task identifier was
+                found.
         """
         controller_config = self.custom_config.controllers.post_task
         charset = controller_config.task_id.charset
@@ -447,18 +465,24 @@ class TaskRuns:
 
         # try inserting until unused task id found
         for _ in range(controller_config.db.insert_attempts):
-            document.task.id = generate_id(
+            task_id = generate_id(
                 charset=charset,
                 length=length,
             )
+            if self.db_client.count_documents(
+                {"task.id": task_id}, limit=1
+            ) or task_has_roles(collection=collection, task_id=task_id):
+                continue
+            document.task.id = task_id
             document.worker_id = uuid()
+            add_task_owner(collection=collection, task_id=task_id, owner=owner)
             try:
                 self.db_client.insert_one(
                     document.model_dump(mode="json", exclude_none=True)
                 )
             except DuplicateKeyError:
                 continue
-            return document.task.id, document.worker_id
+            return task_id, document.worker_id
         raise DuplicateKeyError("Could not insert document into database.")
 
     def _sanitize_request(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -545,8 +569,9 @@ class TaskRuns:
         db_document.task.state = TesState.UNKNOWN
         db_document.user_id = owner
 
-        (task_id, worker_id) = self._write_doc_to_db(document=db_document)
-        add_task_owner(collection=collection, task_id=task_id, owner=owner)
+        (task_id, worker_id) = self._write_doc_to_db(
+            document=db_document, owner=owner, collection=collection
+        )
         db_document.task.id = task_id
         db_document.worker_id = worker_id
         return db_document

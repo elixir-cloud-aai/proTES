@@ -69,6 +69,11 @@ must be updated. Rules added via the permissions API are kept: check that
 none of them gives users or admins access to all tasks (e.g., `p, user,
 /ga4gh/tes/v1/tasks/:id, GET`).
 
+proTES refuses to start if access control is not enabled and enforced, or
+if service clients are configured (`security.auth.service_clients`,
+`on_behalf_of_header`, `security.access_control.client_mapping`), which it
+doesn't support yet.
+
 Tasks stored by earlier versions have no owner, so nobody can see them
 through the API; operators can give them to their users, or purge them (see
 [Task owners](operations.md#task-owners)). Each new task adds two rules to

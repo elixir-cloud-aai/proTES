@@ -106,9 +106,13 @@ time of each request grows with the number of tasks (see FOCA's notes on
 [scaling](https://foca.readthedocs.io/en/latest/access-control/#scaling)).
 
 Ownership is taken from the caller's own token only: proTES doesn't support
-service clients acting for users (`security.auth.service_clients`,
-`security.auth.on_behalf_of_header`, `security.access_control.client_mapping`)
-yet, so don't configure them.
+service clients, also acting for users, yet, and refuses to start if
+`security.auth.service_clients`, `security.auth.on_behalf_of_header` or
+`security.access_control.client_mapping` is set.
+
+New tasks never get the identifier of a stored task, or of a task that
+owner roles are left on (e.g., of a deleted task), so that nobody gets
+access to the task of someone else with the same identifier.
 
 A list replaces all rules of the base config. The configured rules replace
 the stored ones atomically on each startup; if an overlay leaves no rules,
@@ -160,11 +164,11 @@ security:
 ```
 
 The app logs the groups of each role on startup, and warns if no group has
-the role `user` (nobody can create tasks then), if `group_mapping` is
-set without `claim_groups` (no group gets a role then), and if access control
-is not enabled and enforced (`security.access_control.enabled` and
-`enforce`; anyone with a valid token may do everything then, except listing
-the tasks of others). The Docker Compose setup
+the role `user` (nobody can create tasks then) and if `group_mapping` is
+set without `claim_groups` (no group gets a role then). It refuses to start
+if access control is not enabled and enforced
+(`security.access_control.enabled` and `enforce`), as users could access
+the tasks of others then. The Docker Compose setup
 uses `config.dev.yaml`, which accepts tokens for any audience and requires no
 admins; set your issuer and groups there. For local tests without an
 identity provider, the [smoke test](development.md) brings a fake one.

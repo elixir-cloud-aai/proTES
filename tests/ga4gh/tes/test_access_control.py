@@ -26,8 +26,8 @@ from tests.conftest import (
 from tests.ga4gh.tes.conftest import BACKENDS, BASE_PATH, TASK, FakeBackend, stored
 
 
-def task_operations(task_id: str) -> list[tuple[str, str]]:
-    """Get the operations on tasks, with the path of a task.
+def task_item_operations(task_id: str) -> list[tuple[str, str]]:
+    """Get the operations on a task (reading and canceling it).
 
     Args:
         task_id: Identifier of the task.
@@ -36,10 +36,25 @@ def task_operations(task_id: str) -> list[tuple[str, str]]:
         Method and path of each operation.
     """
     return [
-        ("POST", f"{BASE_PATH}/tasks"),
-        ("GET", f"{BASE_PATH}/tasks"),
         ("GET", f"{BASE_PATH}/tasks/{task_id}"),
         ("POST", f"{BASE_PATH}/tasks/{task_id}:cancel"),
+    ]
+
+
+def task_operations(task_id: str) -> list[tuple[str, str]]:
+    """Get the operations on tasks, with the path of a task.
+
+    Args:
+        task_id: Identifier of the task.
+
+    Returns:
+        Method and path of each operation: creating and listing tasks, and
+        those of :py:func:`task_item_operations`.
+    """
+    return [
+        ("POST", f"{BASE_PATH}/tasks"),
+        ("GET", f"{BASE_PATH}/tasks"),
+        *task_item_operations(task_id),
     ]
 
 
@@ -86,33 +101,116 @@ def list_ids(client: FlaskClient, user: str) -> list[str]:
     return [task["id"] for task in response.get_json()["tasks"]]
 
 
-def test_allowed(client: FlaskClient, task_id: str, backend: type[FakeBackend]) -> None:
+@pytest.mark.usefixtures("backend")
+def test_allowed(client: FlaskClient, task_id: str) -> None:
     """Users may create tasks, and list, read and cancel their own."""
     for method, path in task_operations(task_id):
         response = client.open(path, method=method, json=body(method, path))
         assert response.status_code == 200, (method, path)
 
 
-@pytest.mark.parametrize("user", [OUTSIDER, OTHER_USER, ADMIN, ADMIN_USER])
+@pytest.mark.parametrize("user", [OUTSIDER, ADMIN])
 def test_forbidden(client: FlaskClient, task_id: str, user: str) -> None:
-    """Only owners may read and cancel tasks; others get `403`.
+    """Users without the role `user`, also admins, can't use tasks (`403`).
 
-    Also admins, so that nobody but the owner sees a task's inputs and logs.
-    Users without the role `user` (also admins) can't create or list tasks.
+    They can't create or list tasks, nor read or cancel those of others.
     Errors are problem details.
     """
     for method, path in task_operations(task_id):
         response = client.open(
             path, method=method, json=body(method, path), headers=make_headers(user)
         )
-        if user in (OTHER_USER, ADMIN_USER) and path == f"{BASE_PATH}/tasks":
-            assert response.status_code == 200, (method, path)
-            continue
         assert response.status_code == 403, (method, path)
         assert response.get_json()["status"] == 403
 
 
-def test_own_tasks(client: FlaskClient, backend: type[FakeBackend]) -> None:
+@pytest.mark.parametrize("user", [OTHER_USER, ADMIN_USER])
+def test_forbidden_others(client: FlaskClient, task_id: str, user: str) -> None:
+    """Only owners may read and cancel tasks; other users get `403`.
+
+    Also admins, so that nobody but the owner sees a task's inputs and logs.
+    """
+    assert task_id not in list_ids(client, user)
+    for method, path in task_item_operations(task_id):
+        response = client.open(path, method=method, headers=make_headers(user))
+        assert response.status_code == 403, (method, path)
+        assert response.get_json()["status"] == 403
+
+
+def test_owner_without_role(
+    client: FlaskClient, task_id: str, mongo_client: MongoClient[dict[str, Any]]
+) -> None:
+    """Owners keep access to their tasks without the role `user`.
+
+    But they can't create or list tasks.
+    """
+    rules = mongo_client[DB]["policy_rules"]
+    rules.update_many({"ptype": "g2"}, {"$set": {"v0": f"user:{OUTSIDER}"}})
+    headers = make_headers(OUTSIDER)
+    for method, path in task_item_operations(task_id):
+        response = client.open(path, method=method, headers=headers)
+        assert response.status_code == 200, (method, path)
+    for method, path in task_operations(task_id)[:2]:
+        response = client.open(
+            path, method=method, json=body(method, path), headers=headers
+        )
+        assert response.status_code == 403, (method, path)
+
+
+def test_admin_grants_owner(client: FlaskClient, task_id: str) -> None:
+    """Admins can make users owners via the permissions API, and revoke it.
+
+    As described in the docs for tasks without owner.
+    """
+    headers = make_headers(ADMIN)
+    ids = []
+    for resource in (
+        f"{BASE_PATH}/tasks/{task_id}",
+        f"{BASE_PATH}/tasks/{task_id}:cancel",
+    ):
+        response = client.post(
+            PERMISSIONS,
+            json={
+                "policy_type": "g2",
+                "rule": {"v0": f"user:{OTHER_USER}", "v1": "owner", "v2": resource},
+            },
+            headers=headers,
+        )
+        assert response.status_code == 200
+        ids.append(response.get_json())
+    assert list_ids(client, OTHER_USER) == [task_id]
+    for method, path in task_item_operations(task_id):
+        response = client.open(path, method=method, headers=make_headers(OTHER_USER))
+        assert response.status_code == 200, (method, path)
+    for rule_id in ids:
+        response = client.delete(f"{PERMISSIONS}/{rule_id}", headers=headers)
+        assert response.status_code == 200
+    assert list_ids(client, OTHER_USER) == []
+
+
+@pytest.mark.usefixtures("backend")
+def test_task_id_reused(
+    client: FlaskClient,
+    monkeypatch: pytest.MonkeyPatch,
+    mongo_client: MongoClient[dict[str, Any]],
+) -> None:
+    """Identifiers of stored tasks, or with owners left, are not used again.
+
+    So that users don't get access to the tasks of others with the same
+    identifier.
+    """
+    ids = iter(["SAMEID", "SAMEID", "OTHER1", "SAMEID", "OTHER2"])
+    monkeypatch.setattr(task_runs, "generate_id", lambda **kwargs: next(ids))
+    assert create_task(client, USER) == "SAMEID"
+    assert create_task(client, OTHER_USER) == "OTHER1"
+    # owners are left after deleting the task
+    mongo_client[DB]["tasks"].delete_one({"task.id": "SAMEID"})
+    assert create_task(client, OTHER_USER) == "OTHER2"
+    assert list_ids(client, OTHER_USER) == ["OTHER2", "OTHER1"]
+
+
+@pytest.mark.usefixtures("backend")
+def test_own_tasks(client: FlaskClient) -> None:
     """Users, also admins, list only their own tasks."""
     alice = [create_task(client, USER) for _ in range(2)]
     bob = create_task(client, OTHER_USER)
@@ -124,7 +222,8 @@ def test_own_tasks(client: FlaskClient, backend: type[FakeBackend]) -> None:
     assert response.status_code == 403
 
 
-def test_own_tasks_pages(client: FlaskClient, backend: type[FakeBackend]) -> None:
+@pytest.mark.usefixtures("backend")
+def test_own_tasks_pages(client: FlaskClient) -> None:
     """Pages hold only the tasks of the user."""
     alice = [create_task(client, USER) for _ in range(3)]
     create_task(client, OTHER_USER)
@@ -188,11 +287,14 @@ def test_tasks_without_owner(
     Also not to admins.
     """
     mongo_client[DB]["policy_rules"].delete_many({"ptype": "g2"})
-    mongo_client[DB]["tasks"].update_one(
-        {"task.id": task_id}, {"$unset": {"user_id": ""}}
-    )
+    tasks = mongo_client[DB]["tasks"]
+    tasks.update_one({"task.id": task_id}, {"$unset": {"user_id": ""}})
+    # as in the docs for operators
+    assert [
+        doc["task"]["id"] for doc in tasks.find({"user_id": {"$exists": False}})
+    ] == [task_id]
     assert list_ids(client, user) == []
-    for method, path in task_operations(task_id)[2:]:
+    for method, path in task_item_operations(task_id):
         response = client.open(path, method=method, headers=make_headers(user))
         assert response.status_code == 403, (method, path)
 
@@ -203,7 +305,7 @@ def test_purged_task(
     """Owners get `404` for tasks deleted from the database."""
     mongo_client[DB]["tasks"].delete_one({"task.id": task_id})
     assert list_ids(client, USER) == []
-    for method, path in task_operations(task_id)[2:]:
+    for method, path in task_item_operations(task_id):
         response = client.open(path, method=method)
         assert response.status_code == 404, (method, path)
         assert response.get_json() == {

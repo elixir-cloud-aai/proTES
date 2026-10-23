@@ -16,6 +16,7 @@ so that roles on the task don't apply to it.
 from foca.security.access_control import (
     add_owner,
     get_current_subject,
+    list_roles,
     list_subject_roles,
 )
 from foca.security.access_control.constants import OWNER_ROLE
@@ -55,6 +56,26 @@ def task_resources(collection: str, task_id: str) -> list[str]:
     """
     task = f"{collection.rstrip('/')}/{task_id}"
     return [task, f"{task}{CANCEL_SUFFIX}"]
+
+
+def task_has_roles(collection: str, task_id: str) -> bool:
+    """Check whether roles are granted on a task (or its cancellation).
+
+    Roles may be left by deleted tasks, or granted to a task being created
+    concurrently; their identifiers must not be used for new tasks, so
+    that their owners don't get access to them.
+
+    Args:
+        collection: Request path of the tasks (e.g., `/ga4gh/tes/v1/tasks`).
+        task_id: Identifier of the task.
+
+    Returns:
+        Whether any subject has a role on the task or its cancellation.
+    """
+    return any(
+        list_roles(resource=resource)
+        for resource in task_resources(collection=collection, task_id=task_id)
+    )
 
 
 def add_task_owner(collection: str, task_id: str, owner: str) -> None:

@@ -19,7 +19,8 @@ control](access-control.md)).
 
 Only the owner of a task, the user who created it, can read and cancel it
 (see [Task ownership](access-control.md#task-ownership)). Admins can manage
-the access control rules at runtime through FOCA's permissions API at `/admin/access-control/permissions` (see [Access
+the access control rules at runtime through FOCA's permissions API at
+`/admin/access-control/permissions` (see [Access
 control](access-control.md#permissions-api)).
 
 `GET /tasks` and `GET /tasks/{id}` return the views `MINIMAL` (the default;
