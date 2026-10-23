@@ -1,9 +1,12 @@
-"""Fake TES backend for the Compose smoke test.
+"""Fake TES backend and identity provider for the Compose smoke test.
 
 Serves the parts of the TES API that proTES uses (service info, task
 creation, retrieval and cancellation) from memory: created tasks are
-complete right away. Run it with `python fake_tes.py [port]` (default 8080);
-it only depends on the standard library.
+complete right away. Also serves an OpenID Connect identity provider for
+proTES (issuer `ISSUER`; discovery, keys and user info), which issues access
+tokens of the users of `GROUPS` at `GET /oidc/token?sub=<user>` (no login).
+Run it with `python fake_tes.py [port]` (default 8080); it depends on the
+standard library, PyJWT and cryptography (dependencies of FOCA).
 """
 
 from http import HTTPStatus
@@ -11,9 +14,25 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import sys
 import threading
+import time
 from typing import Any
+from urllib.parse import parse_qs, urlsplit
+
+from cryptography.hazmat.primitives.asymmetric import rsa
+import jwt
 
 BASE_PATH = "/ga4gh/tes/v1"
+# Issuer of the fake identity provider, as proTES reaches it (`config.yaml` of
+# this directory)
+ISSUER = "http://fake-tes:8080/oidc/"
+AUDIENCE = "smoke-client"
+# Groups of the users (user info), as mapped to roles in `config.yaml`
+GROUPS = {
+    "alice": ["smoke-users"],
+    "admin": ["smoke-admins"],
+    "eve": ["other-group"],
+}
+KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 SERVICE_INFO = {
     "id": "org.example.fake-tes",
     "name": "Fake TES",
@@ -42,9 +61,63 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    def _serve_idp(self, path: str) -> bool:
+        """Serve the endpoints of the identity provider.
+
+        Args:
+            path: Request path.
+
+        Returns:
+            Whether the path is one of the identity provider.
+        """
+        if path == "/oidc/.well-known/openid-configuration":
+            self._send(
+                HTTPStatus.OK,
+                {
+                    "issuer": ISSUER,
+                    "jwks_uri": f"{ISSUER}jwk",
+                    "userinfo_endpoint": f"{ISSUER}userinfo",
+                },
+            )
+        elif path == "/oidc/jwk":
+            key = jwt.algorithms.RSAAlgorithm.to_jwk(KEY.public_key(), as_dict=True)
+            self._send(HTTPStatus.OK, {"keys": [{**key, "kid": "smoke", "use": "sig"}]})
+        elif path == "/oidc/userinfo":
+            token = (self.headers.get("Authorization") or "").removeprefix("Bearer ")
+            try:
+                claims = jwt.decode(
+                    token, KEY.public_key(), algorithms=["RS256"], audience=AUDIENCE
+                )
+            except jwt.InvalidTokenError:
+                self._send(HTTPStatus.UNAUTHORIZED, {"error": "invalid_token"})
+                return True
+            sub = claims["sub"]
+            self._send(HTTPStatus.OK, {"sub": sub, "groups": GROUPS.get(sub, [])})
+        elif path == "/oidc/token":
+            sub = parse_qs(urlsplit(self.path).query).get("sub", ["alice"])[0]
+            now = int(time.time())
+            token = jwt.encode(
+                {
+                    "iss": ISSUER,
+                    "aud": AUDIENCE,
+                    "sub": sub,
+                    "iat": now,
+                    "exp": now + 600,
+                },
+                KEY,
+                algorithm="RS256",
+                headers={"kid": "smoke", "typ": "at+jwt"},
+            )
+            self._send(HTTPStatus.OK, {"access_token": token})
+        else:
+            return False
+        return True
+
     def do_GET(self) -> None:
-        """Serve the service info, tasks, and the list of tasks."""
+        """Serve the service info, tasks, the list of tasks, and the IdP."""
         path = self.path.split("?", 1)[0]
+        if self._serve_idp(path):
+            return
         if path == f"{BASE_PATH}/service-info":
             self._send(HTTPStatus.OK, SERVICE_INFO)
             return

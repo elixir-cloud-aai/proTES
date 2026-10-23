@@ -5,6 +5,8 @@ paths:
   /service-info:
     get:
       x-openapi-router-controller: foca.api.service_info
+      # public
+      security: []
 components:
   schemas:
     # GA4GH service info schemas (version 1.0.0), as in

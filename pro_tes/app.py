@@ -6,6 +6,8 @@ from pathlib import Path
 from connexion import FlaskApp
 from foca import Foca, get_config
 
+from pro_tes.security import add_bearer_challenge, check_role_groups
+
 logger = logging.getLogger(__name__)
 # Placeholders of the service info in `config.yaml`, with reserved example
 # domains (RFC 2606), which deployments replace
@@ -46,17 +48,27 @@ def warn_placeholder_service_info() -> None:
 def init_app() -> FlaskApp:
     """Initialize FOCA application.
 
-    Warns of placeholders in the service info.
+    Checks the groups of the roles, and warns of placeholders in the service
+    info.
 
     Returns:
         FOCA application.
+
+    Raises:
+        RuntimeError: No group is mapped to the role `admin` (unless admins
+            are optional).
+        pydantic.ValidationError: The config is invalid, e.g., access control
+            is enabled without trusted token issuers, or issuers are trusted
+            without audience.
     """
     foca = Foca(
         config_file=Path(__file__).resolve().parent / "config.yaml",
         custom_config_model="pro_tes.config_models.CustomConfig",
     )
     app = foca.create_app()
+    app.app.after_request(add_bearer_challenge)
     with app.app.app_context():
+        check_role_groups()
         warn_placeholder_service_info()
     return app
 

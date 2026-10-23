@@ -13,6 +13,7 @@ import yaml
 
 from pro_tes.app import init_app, run_app
 from pro_tes.utils.misc import get_custom_config
+from tests.conftest import set_overlays
 
 BASE_PATH = "/ga4gh/tes/v1"
 # Config overlay of the Compose smoke test
@@ -20,12 +21,14 @@ SMOKE_CONFIG = Path(__file__).parent / "smoke" / "config.yaml"
 
 
 def test_config(app: FlaskApp) -> None:
-    """Debug mode is off, request bodies are limited, no issuer is trusted."""
+    """Debug mode is off, request bodies are limited, the API needs tokens."""
     with app.app.app_context():
         conf = get_config()
     assert conf.server.debug is False
     assert conf.server.max_content_length == 1048576
-    assert not conf.security.auth.issuers
+    assert not any(spec.disable_auth for spec in conf.api.specs)
+    assert conf.security.access_control.enabled
+    assert conf.security.access_control.enforce
 
 
 def test_service_info(client: FlaskClient) -> None:
@@ -106,7 +109,7 @@ def test_request_body_size_limit(client: FlaskClient) -> None:
 def test_placeholder_service_info(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
-    mongo_client: MongoClient[dict[str, Any]],
+    app_env: None,
     capsys: pytest.CaptureFixture[str],
     service: dict[str, Any],
     fields: str | None,
@@ -120,7 +123,7 @@ def test_placeholder_service_info(
     overlay.write_text(
         yaml.safe_dump({"service_info": {"service": service}}), encoding="utf-8"
     )
-    monkeypatch.setenv("FOCA_CONFIG_OVERLAY", str(overlay))
+    set_overlays(monkeypatch, overlay)
     init_app()
     # FOCA configures logging to stderr
     err = capsys.readouterr().err

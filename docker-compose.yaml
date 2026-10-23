@@ -17,6 +17,9 @@ x-protes: &protes
         args:
             SETUPTOOLS_SCM_PRETEND_VERSION: ${SETUPTOOLS_SCM_PRETEND_VERSION:-}
     restart: unless-stopped
+    # Development settings (`config.dev.yaml`, see `FOCA_CONFIG_OVERLAY`)
+    volumes:
+        - ./config.dev.yaml:/etc/protes/config.dev.yaml:ro
     depends_on:
         mongodb:
             condition: service_healthy
@@ -46,6 +49,7 @@ services:
         # (not `--bind`, which would break the published port and health check)
         environment:
             CELERY_BROKER_URL: *broker-url
+            FOCA_CONFIG_OVERLAY: /etc/protes/config.dev.yaml
             GUNICORN_CMD_ARGS: ${GUNICORN_CMD_ARGS:-}
 
     protes-worker:
@@ -53,6 +57,7 @@ services:
         command: ["celery", "--app", "pro_tes.celery_worker", "worker", "--task-events", "--loglevel=info"]
         environment:
             CELERY_BROKER_URL: *broker-url
+            FOCA_CONFIG_OVERLAY: /etc/protes/config.dev.yaml
         # Replaces the image's health check, which probes the app
         healthcheck:
             test: ["CMD-SHELL", "celery --app pro_tes.celery_worker inspect ping --destination celery@$$HOSTNAME --timeout 10"]

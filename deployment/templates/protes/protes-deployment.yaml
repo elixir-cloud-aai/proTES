@@ -9,6 +9,8 @@ spec:
       app: {{ .Values.protes.appName }}
   template:
     metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/protes/protes-config.yaml") . | sha256sum }}
       labels:
         app: {{ .Values.protes.appName }}
     spec:
@@ -63,6 +65,8 @@ spec:
           value: {{ .Values.rabbitmq.appName }}
         - name: RABBIT_PORT
           value: "5672"
+        - name: FOCA_CONFIG_OVERLAY
+          value: /etc/protes/config.yaml
         resources: {{- toYaml .Values.protes.resources | nindent 10 }}
         livenessProbe:
           tcpSocket:
@@ -81,7 +85,13 @@ spec:
         volumeMounts:
         - mountPath: /data
           name: protes-volume
+        - mountPath: /etc/protes
+          name: protes-config
+          readOnly: true
       volumes:
       - name: protes-volume
         persistentVolumeClaim:
           claimName: {{ .Values.protes.appName }}-volume
+      - name: protes-config
+        configMap:
+          name: {{ .Values.protes.appName }}-config

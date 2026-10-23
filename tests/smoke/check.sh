@@ -2,7 +2,8 @@
 # Smoke test of proTES started with the Compose override of this directory
 # (`compose.yaml`): relays a task to the fake TES backend, which completes it
 # right away, waits until the Celery worker has tracked it (via RabbitMQ) to
-# the end, and checks the other endpoints. Run it from the repository root,
+# the end, and checks the other endpoints and access control, with access
+# tokens of the fake identity provider. Run it from the repository root,
 # with the base URL of the TES API as argument (default
 # `http://localhost:8080/ga4gh/tes/v1`); needs curl, jq and docker compose
 # (with `COMPOSE_FILE` set as for `up`, to query the fake backend).
@@ -12,6 +13,16 @@ api="${1:-http://localhost:8080/ga4gh/tes/v1}"
 body="$(mktemp)"
 trap 'rm -f "${body}"' EXIT
 
+# Get an access token of a user from the fake identity provider
+token() {
+  docker compose exec -T fake-tes python -c \
+    "import json, urllib.request; \
+    print(json.load(urllib.request.urlopen( \
+    'http://localhost:8080/oidc/token?sub=$1'))['access_token'])"
+}
+# Access token of the requests of `check` (none if empty)
+auth="$(token alice)"
+
 # Request a path, with an optional JSON body; check the status and that the
 # JSON response matches a jq filter
 check() {
@@ -19,6 +30,9 @@ check() {
   local args=(--silent --show-error --output "${body}"
     --write-out '%{http_code}' -X "${method}"
     --header 'Accept: application/json')
+  if [ -n "${auth}" ]; then
+    args+=(--header "Authorization: Bearer ${auth}")
+  fi
   if [ -n "${data}" ]; then
     args+=(--header 'Content-Type: application/json' --data "${data}")
   fi
@@ -51,6 +65,14 @@ check GET "/tasks/${id}?view=FULL" 200 \
 check GET '/tasks?view=MINIMAL' 200 "any(.tasks[]; .id == \"${id}\")"
 check POST "/tasks/${id}:cancel" 200 '. == {}'
 check GET /tasks/UNKNWN 404 '.status == 404'
+# Access control: no token (but the service info is public), no role, admin
+auth=""
+check GET /service-info 200 '.type.artifact == "tes"'
+check GET /tasks 401 '.status == 401'
+auth="$(token eve)"
+check GET /tasks 403 '.status == 403'
+auth="$(token admin)"
+check GET "/tasks/${id}" 200 ".id == \"${id}\""
 # The fake backend got the task (and those of earlier runs, if not restarted)
 docker compose exec -T fake-tes python -c \
   "import json, urllib.request; \

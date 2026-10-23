@@ -5,7 +5,9 @@ API](https://github.com/ga4gh/task-execution-schemas), version 1.0
 ([specification](https://github.com/elixir-cloud-aai/proTES/blob/dev/pro_tes/api/9e9c5aa.task_execution_service.openapi.yaml)),
 at `/ga4gh/tes/v1/`. A deployment's Swagger UI (`/ga4gh/tes/v1/ui/`) shows
 the endpoints and lets you try them; the specification is served at
-`/ga4gh/tes/v1/openapi.json`.
+`/ga4gh/tes/v1/openapi.json`. All endpoints except `GET /service-info`, the
+specification and the Swagger UI require an access token (see [Access
+control](access-control.md)).
 
 | Endpoint | Description |
 | --- | --- |
@@ -14,6 +16,10 @@ the endpoints and lets you try them; the specification is served at
 | `GET /tasks` | List the tasks, newest first, one page at a time (`page_size`, at most `max_page_size` of the [config](configuration.md#tasks); `page_token` from `next_page_token` of the previous page, which is empty on the last page), optionally only those whose name starts with `name_prefix` (taken literally). |
 | `GET /tasks/{id}` | Get a task, with its state as last tracked from the TES instance. |
 | `POST /tasks/{id}:cancel` | Cancel a task that has not finished yet, at the TES instance that runs it. |
+
+Admins can also manage the access control rules at runtime through FOCA's
+permissions API at `/admin/access-control/permissions` (see [Access
+control](access-control.md#permissions-api)).
 
 `GET /tasks` and `GET /tasks/{id}` return the views `MINIMAL` (the default;
 identifier and state), `BASIC` (without the contents of inputs, the system
@@ -51,7 +57,10 @@ instance and the remote identifier of the task in its logs
 Errors are [problem details](https://www.rfc-editor.org/rfc/rfc9457) (with
 `title`, `status` and `detail`), sent as `application/json`, as the GA4GH
 specification declares: `400 Bad Request` for invalid requests (e.g.,
-invalid tasks or query parameters), `404 Not Found` for unknown tasks,
+invalid tasks or query parameters), `401 Unauthorized` for requests
+without a valid access token (with a Bearer challenge), `403 Forbidden` for
+users without the required role (see [Access control](access-control.md)),
+`404 Not Found` for unknown tasks,
 `413 Content Too Large` for request bodies over the [size
 limit](configuration.md#request-size-limit), and `500 Internal Server Error`
 if a task could not be forwarded or no middleware could be applied. The

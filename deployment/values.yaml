@@ -4,6 +4,25 @@
 
 applicationDomain: ""
 
+# App config overriding the base config in the image (`pro_tes/config.yaml`
+# of the image's version); mappings are merged recursively, other values
+# (including lists) are replaced. Stored in a ConfigMap, so must not contain
+# secrets. Deployments must set the trusted token issuers, the audience and
+# the groups of the roles; the app refuses to start without them (see
+# https://protes.readthedocs.io/en/latest/access-control/), e.g.:
+config: {}
+#   security:
+#     auth:
+#       issuers: ["https://login.example.org/oidc/"]
+#       # Client IDs of the apps calling proTES
+#       audience: ["my-portal-client-id"]
+#       userinfo_claims: ["groups"]
+#     access_control:
+#       claim_groups: groups
+#       group_mapping:
+#         compute-users: user
+#         compute-admins: admin
+
 # which cluster type proTES is going to be deployed on
 # it can be either 'kubernetes' or 'openshift'
 clusterType: kubernetes
