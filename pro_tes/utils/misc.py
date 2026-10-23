@@ -29,6 +29,23 @@ def get_custom_config() -> CustomConfig:
     return custom
 
 
+def has_credentials(url: str) -> bool:
+    """Check whether a URL has credentials (user information).
+
+    Args:
+        url: URL.
+
+    Returns:
+        Whether the URL has a user name or password (also empty ones, as in
+        `https://@host/path`).
+
+    Raises:
+        ValueError: The URL is malformed.
+    """
+    parts = urlsplit(url)
+    return parts.username is not None or parts.password is not None
+
+
 def strip_auth(url: str) -> str:
     """Remove basic authentication information from URI, if present.
 

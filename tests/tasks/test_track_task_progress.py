@@ -12,6 +12,9 @@ import requests
 import tes
 
 from pro_tes.app import init_app
+from pro_tes.config_models import TesBackend
+from pro_tes.exceptions import BackendNotConfigured
+from pro_tes.ga4gh.tes import backends
 from pro_tes.tasks import track_task_progress
 from pro_tes.utils.db import DbDocumentConnector
 from pro_tes.utils.misc import get_custom_config
@@ -23,8 +26,6 @@ ARGS: dict[str, Any] = {
     "remote_host": "https://tes.example.org/",
     "remote_base_path": "/api/",
     "remote_task_id": "remote-1",
-    "user": "user",
-    "password": "secret",
 }
 OUTPUT = tes.OutputFileLog(url="s3://bucket/out", path="/out", size_bytes=10)
 
@@ -37,7 +38,7 @@ class FakeClient:
 
     Attributes:
         url: URL of the backend.
-        kwargs: Other arguments of the client.
+        backend: Configuration of the backend.
     """
 
     states: ClassVar[list[str | None]] = ["COMPLETE"]
@@ -45,10 +46,10 @@ class FakeClient:
     clients: ClassVar[list["FakeClient"]] = []
     requested: ClassVar[list[str]] = []
 
-    def __init__(self, url: str, **kwargs: Any) -> None:
+    def __init__(self, url: str, backend: TesBackend) -> None:
         """Create the client."""
         self.url = url
-        self.kwargs = kwargs
+        self.backend = backend
         self.clients.append(self)
 
     def get_task(self, task_id: str, **kwargs: Any) -> tes.Task:
@@ -76,7 +77,7 @@ def client_class(monkeypatch: pytest.MonkeyPatch) -> type[FakeClient]:
     monkeypatch.setattr(FakeClient, "states", ["COMPLETE"])
     monkeypatch.setattr(FakeClient, "clients", [])
     monkeypatch.setattr(FakeClient, "requested", [])
-    monkeypatch.setattr(track_task_progress.tes, "HTTPClient", FakeClient)
+    monkeypatch.setattr(backends, "TesClient", FakeClient)
     return FakeClient
 
 
@@ -166,12 +167,26 @@ def test_backend_client(
     client_class: type[FakeClient],
     sleeps: list[float],
 ) -> None:
-    """The backend is called at its URL, with the credentials of the task."""
+    """The backend is called at its URL, with its configuration (credentials)."""
     run()
     (cli,) = client_class.clients
     assert cli.url == "https://tes.example.org/api"
-    assert cli.kwargs == {"timeout": 5, "user": "user", "password": "secret"}
+    assert cli.backend == TesBackend(url="https://tes.example.org/", auth="none")
     assert set(client_class.requested) == {"remote-1"}
+
+
+def test_backend_not_configured(
+    tasks: Collection[dict[str, Any]],
+    client_class: type[FakeClient],
+    sleeps: list[float],
+    stored_states: list[str],
+) -> None:
+    """Tasks fail (`SYSTEM_ERROR`) if their backend is no longer configured."""
+    get_custom_config().tes.service_list = []
+    with pytest.raises(BackendNotConfigured):
+        run()
+    assert stored_states == ["INITIALIZING", "SYSTEM_ERROR"]
+    assert not client_class.clients
 
 
 def test_states_tracked(

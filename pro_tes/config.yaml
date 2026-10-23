@@ -215,6 +215,10 @@ custom:
       polling:
         wait: 3
         attempts: 100
+      # Tasks with credentials in the URLs of inputs or outputs
+      # (`https://user:password@host/...`) are rejected (`reject`), or the
+      # credentials are removed (`strip`); they are never stored or forwarded
+      url_credentials: reject
     # Tasks per page of `GET /tasks` if the request sets no `page_size`, and
     # at most (the TES specification requires fewer than 2048)
     list_tasks:
@@ -225,13 +229,40 @@ custom:
       timeout: 0.1
     message_maxsize: 16777216
 
+  # TES backends that tasks may be forwarded to, and how proTES authenticates
+  # at them: with its own access token (`auth: client_credentials`, the
+  # default), with HTTP Basic credentials from environment variables
+  # (`auth: basic`; transitional, for backends that don't accept tokens yet)
+  # or not at all (`auth: none`). Credentials of callers are never forwarded.
+  # Deployments set their backends, e.g.:
+  # service_list:
+  #   - url: https://tes.example.org
+  #   - url: https://tes.example.com
+  #     auth: basic
+  #     basic:
+  #       username_env: TES_EXAMPLE_COM_USERNAME
+  #       password_env: TES_EXAMPLE_COM_PASSWORD
+  # client_credentials:
+  #   issuer: https://login.example.org/oidc/
+  # See `docs/access-control.md`
   tes:
-    service_list:
-      - "https://csc-tesk-noauth.rahtiapp.fi"
-      - "https://funnel.cloud.e-infra.cz/"
-      - "https://tesk-eu.hypatia-comp.athenarc.gr"
-      - "https://tesk-na.cloud.e-infra.cz"
-      - "https://vm4816.kaj.pouta.csc.fi/"
+    service_list: []
+    # URL schemes of backends and of the identity provider; add `http` for
+    # local tests only (credentials are sent unencrypted)
+    url_schemes:
+      - https
+    # Client of proTES (OAuth 2.0 client credentials grant) for backends with
+    # `auth: client_credentials`; the client ID and secret are read from the
+    # environment variables `PROTES_CLIENT_ID` and `PROTES_CLIENT_SECRET`.
+    # The token endpoint is that of the issuer's OpenID Connect discovery
+    # document, unless `token_endpoint` is set
+    client_credentials:
+      issuer: null
+      token_endpoint: null
+      scope: null
+      auth_method: client_secret_basic
+      refresh_before: 60
+      timeout: 10
 
   storeLogs:
     execution_trace: True

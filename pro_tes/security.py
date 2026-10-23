@@ -1,9 +1,11 @@
 """Security checks on startup."""
 
 import logging
+import os
 
 from foca import get_config
 
+from pro_tes.ga4gh.tes.backends import CLIENT_ID_ENV, CLIENT_SECRET_ENV
 from pro_tes.utils.misc import get_custom_config
 
 logger = logging.getLogger(__name__)
@@ -73,3 +75,71 @@ def check_role_groups() -> None:
         )
     else:
         logger.warning("No group is mapped to the role 'admin'")
+
+
+def _missing_env(*names: str) -> list[str]:
+    """Get the environment variables that are not set (or empty).
+
+    Args:
+        *names: Names of environment variables.
+
+    Returns:
+        The names of the variables that are not set, or empty.
+    """
+    return [name for name in names if not os.environ.get(name)]
+
+
+def check_backends() -> None:
+    """Check the credentials of the TES backends, and log how they are used.
+
+    A warning is logged if no backend is configured, for each backend
+    without token authentication (`auth: basic` or `none`), and if URLs
+    with scheme `http` are allowed. Must be called in an app context.
+
+    Raises:
+        RuntimeError: Environment variables with credentials are not set:
+            the client ID and secret of proTES if a backend has `auth:
+            client_credentials`, or the HTTP Basic credentials of a backend
+            with `auth: basic`.
+    """
+    conf = get_custom_config().tes
+    if not conf.service_list:
+        logger.warning(
+            "No TES backends are configured (`custom.tes.service_list`), so"
+            " tasks can't be forwarded"
+        )
+    if "http" in conf.url_schemes:
+        logger.warning(
+            "URLs with scheme 'http' are allowed (`custom.tes.url_schemes`):"
+            " credentials are sent unencrypted to such backends and identity"
+            " providers; for local tests only"
+        )
+    missing: list[str] = []
+    token_backends: list[str] = []
+    for backend in conf.service_list:
+        if backend.auth == "client_credentials":
+            token_backends.append(backend.url)
+        elif backend.basic is not None:
+            # `auth: basic` (validated)
+            logger.warning(
+                "TES backend %s: HTTP Basic credentials (`auth: basic`), a"
+                " transitional mode for backends that don't accept tokens",
+                backend.url,
+            )
+            missing.extend(
+                _missing_env(backend.basic.username_env, backend.basic.password_env)
+            )
+        else:
+            logger.warning(
+                "TES backend %s: no authentication (`auth: none`)", backend.url
+            )
+    if token_backends:
+        logger.info(
+            "TES backends with access tokens of proTES: %s", ", ".join(token_backends)
+        )
+        missing.extend(_missing_env(CLIENT_ID_ENV, CLIENT_SECRET_ENV))
+    if missing:
+        raise RuntimeError(
+            "Credentials of TES backends missing: set the environment variables"
+            f" {', '.join(sorted(set(missing)))}"
+        )

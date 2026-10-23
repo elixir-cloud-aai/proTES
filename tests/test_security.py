@@ -9,6 +9,7 @@ import pytest
 import yaml
 
 from pro_tes.app import init_app
+from pro_tes.ga4gh.tes.backends import CLIENT_ID_ENV, CLIENT_SECRET_ENV
 from tests.conftest import ADMIN_GROUP, USER_GROUP, set_overlays
 
 ROOT = Path(__file__).parents[1]
@@ -185,3 +186,129 @@ def test_no_claim_groups(
     with pytest.raises(RuntimeError, match="No group is mapped to the role 'admin'"):
         init_app()
     assert "but not `claim_groups`" in capsys.readouterr().err
+
+
+def test_default_backends() -> None:
+    """The default config has no TES backends, and allows `https` only.
+
+    Tasks with credentials in URLs are rejected.
+    """
+    custom = yaml.safe_load(CONFIG.read_text(encoding="utf-8"))["custom"]
+    assert custom["tes"]["service_list"] == []
+    assert custom["tes"]["url_schemes"] == ["https"]
+    assert custom["tes"]["client_credentials"]["issuer"] is None
+    assert custom["controllers"]["post_task"]["url_credentials"] == "reject"
+
+
+def backends_overlay(path: Path, *backends: dict[str, Any]) -> Path:
+    """Write a config overlay with TES backends.
+
+    Args:
+        path: Path of the overlay.
+        *backends: TES backends (`custom.tes.service_list`).
+
+    Returns:
+        Path of the overlay.
+    """
+    return write_overlay(
+        path,
+        {
+            "custom": {
+                "tes": {
+                    "service_list": list(backends),
+                    "client_credentials": {"issuer": "https://idp.example.org/"},
+                }
+            }
+        },
+    )
+
+
+TOKEN_BACKEND = {"url": "https://tes1.example.org"}
+BASIC_BACKEND = {
+    "url": "https://tes2.example.org",
+    "auth": "basic",
+    "basic": {"username_env": "TES2_USERNAME", "password_env": "TES2_PASSWORD"},
+}
+
+
+def test_backends_credentials_missing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, app_env: None
+) -> None:
+    """The app refuses to start without the credentials of its backends.
+
+    That is, the client of proTES for backends with tokens, and the Basic
+    credentials of backends with `auth: basic`.
+    """
+    for name in (CLIENT_ID_ENV, CLIENT_SECRET_ENV, "TES2_USERNAME", "TES2_PASSWORD"):
+        monkeypatch.delenv(name, raising=False)
+    overlay = backends_overlay(tmp_path / "overlay.yaml", TOKEN_BACKEND, BASIC_BACKEND)
+    set_overlays(monkeypatch, overlay)
+    with pytest.raises(RuntimeError) as exc_info:
+        init_app()
+    assert str(exc_info.value).endswith(
+        f"{CLIENT_ID_ENV}, {CLIENT_SECRET_ENV}, TES2_PASSWORD, TES2_USERNAME"
+    )
+
+
+def test_backends_logged(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    app_env: None,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """How the app authenticates at its backends is logged.
+
+    With warnings for backends without tokens; the credentials are not.
+    """
+    monkeypatch.setenv(CLIENT_ID_ENV, "protes")
+    monkeypatch.setenv(CLIENT_SECRET_ENV, "client-secret")
+    monkeypatch.setenv("TES2_USERNAME", "protes")
+    monkeypatch.setenv("TES2_PASSWORD", "basic-secret")
+    overlay = backends_overlay(
+        tmp_path / "overlay.yaml",
+        TOKEN_BACKEND,
+        BASIC_BACKEND,
+        {"url": "https://tes3.example.org", "auth": "none"},
+    )
+    set_overlays(monkeypatch, overlay)
+    init_app()
+    err = capsys.readouterr().err
+    assert "access tokens of proTES: https://tes1.example.org" in err
+    assert "TES backend https://tes2.example.org: HTTP Basic" in err
+    assert "TES backend https://tes3.example.org: no authentication" in err
+    assert "client-secret" not in err
+    assert "basic-secret" not in err
+    assert "No TES backends are configured" not in err
+    assert "scheme 'http' are allowed" not in err
+
+
+def test_no_backends(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    app_env: None,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Without backends, and with `http` allowed, the app warns."""
+    overlay = write_overlay(
+        tmp_path / "overlay.yaml",
+        {"custom": {"tes": {"service_list": [], "url_schemes": ["https", "http"]}}},
+    )
+    set_overlays(monkeypatch, overlay)
+    init_app()
+    err = capsys.readouterr().err
+    assert "No TES backends are configured" in err
+    assert "scheme 'http' are allowed" in err
+
+
+def test_backends_invalid(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, app_env: None
+) -> None:
+    """The app refuses to start with backends with tokens, but no issuer."""
+    overlay = write_overlay(
+        tmp_path / "overlay.yaml",
+        {"custom": {"tes": {"service_list": [TOKEN_BACKEND]}}},
+    )
+    set_overlays(monkeypatch, overlay)
+    with pytest.raises(ValueError, match="custom configuration") as exc_info:
+        init_app()
+    assert "need `client_credentials" in str(exc_info.value.__cause__)

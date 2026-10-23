@@ -584,22 +584,6 @@ class TesListTasksResponse(CustomBaseModel):
     )
 
 
-class BasicAuth(CustomBaseModel):
-    """Model instance for basic authorization credentials.
-
-    Args:
-        username: Username for basic authorization.
-        password: Password for basic authorization.
-
-    Attributes:
-        username: Username for basic authorization.
-        password: Password for basic authorization.
-    """
-
-    username: str | None = None
-    password: str | None = None
-
-
 class TesEndpoint(CustomBaseModel):
     """Create model instance for external TES endpoint.
 
@@ -639,7 +623,6 @@ class DbDocument(CustomBaseModel):
         task_original: Information about original task.
         user_id: Identifier of resource owner.
         worker_id: Identifier of worker task.
-        basic_auth: Basic authentication credentials.
         tes_endpoint: External TES endpoint.
 
     Attributes:
@@ -647,7 +630,6 @@ class DbDocument(CustomBaseModel):
         task_original: Information about original task.
         user_id: Identifier of resource owner.
         worker_id: Identifier of worker task.
-        basic_auth: Basic authentication credentials.
         tes_endpoint: External TES endpoint.
     """
 
@@ -655,5 +637,4 @@ class DbDocument(CustomBaseModel):
     task_original: TesTask = TesTask()
     user_id: str | None = None
     worker_id: str = ""
-    basic_auth: BasicAuth = BasicAuth()
     tes_endpoint: TesEndpoint = TesEndpoint()

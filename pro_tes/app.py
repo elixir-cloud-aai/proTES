@@ -4,9 +4,10 @@ import logging
 from pathlib import Path
 
 from connexion import FlaskApp
-from foca import Foca, get_config
+from foca import Foca, get_collection, get_config
 
-from pro_tes.security import check_role_groups
+from pro_tes.security import check_backends, check_role_groups
+from pro_tes.utils.db import remove_stored_credentials
 
 logger = logging.getLogger(__name__)
 # Placeholders of the service info in `config.yaml`, with reserved example
@@ -48,15 +49,16 @@ def warn_placeholder_service_info() -> None:
 def init_app() -> FlaskApp:
     """Initialize FOCA application.
 
-    Checks the groups of the roles, and warns of placeholders in the service
-    info.
+    Checks the groups of the roles and the credentials of the TES backends,
+    warns of placeholders in the service info, and removes credentials of
+    callers from tasks stored by earlier versions.
 
     Returns:
         FOCA application.
 
     Raises:
         RuntimeError: No group is mapped to the role `admin` (unless admins
-            are optional).
+            are optional), or credentials of TES backends are missing.
         pydantic.ValidationError: The config is invalid, e.g., access control
             is enabled without trusted token issuers, or issuers are trusted
             without audience.
@@ -68,7 +70,9 @@ def init_app() -> FlaskApp:
     app = foca.create_app()
     with app.app.app_context():
         check_role_groups()
+        check_backends()
         warn_placeholder_service_info()
+        remove_stored_credentials(collection=get_collection("taskStore", "tasks"))
     return app
 
 

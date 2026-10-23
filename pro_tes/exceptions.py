@@ -17,6 +17,17 @@ from werkzeug.exceptions import (
 )
 
 
+class BackendAuthError(RuntimeError):
+    """Raised when proTES has no credentials for a TES backend.
+
+    E.g., because its identity provider issued no access token.
+    """
+
+
+class BackendNotConfigured(ValueError):
+    """Raised when a TES backend is not configured (`custom.tes.service_list`)."""
+
+
 class IdsUnavailableProblem(PyMongoError):
     """Raised when task identifier is unavailable."""
 

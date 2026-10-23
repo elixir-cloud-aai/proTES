@@ -8,9 +8,13 @@
 
 services:
 
+    # The client of proTES at the fake identity provider (fictitious values,
+    # as in `fake_tes.py`); deployments set them from a Secret
     protes:
         environment:
             FOCA_CONFIG_OVERLAY: /smoke/config.yaml
+            PROTES_CLIENT_ID: smoke-protes
+            PROTES_CLIENT_SECRET: smoke-protes-secret
         volumes:
             - ./tests/smoke:/smoke:ro
         depends_on:
@@ -20,6 +24,8 @@ services:
     protes-worker:
         environment:
             FOCA_CONFIG_OVERLAY: /smoke/config.yaml
+            PROTES_CLIENT_ID: smoke-protes
+            PROTES_CLIENT_SECRET: smoke-protes-secret
         volumes:
             - ./tests/smoke:/smoke:ro
         depends_on:

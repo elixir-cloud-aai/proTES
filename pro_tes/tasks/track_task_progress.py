@@ -5,9 +5,9 @@ from time import sleep
 from typing import Any
 
 from foca import get_collection
-import tes
 
 from pro_tes.celery_worker import celery
+from pro_tes.ga4gh.tes.backends import create_client
 from pro_tes.ga4gh.tes.models import TesState, TesTask
 from pro_tes.ga4gh.tes.states import States
 from pro_tes.utils.db import DbDocumentConnector
@@ -29,10 +29,12 @@ def task__track_task_progress(
     remote_host: str,
     remote_base_path: str,
     remote_task_id: str,
-    user: str,
-    password: str,
 ) -> None:
     """Relay task run request to remote TES and track run progress.
+
+    proTES authenticates at the TES service as configured for it (see
+    :py:mod:`pro_tes.ga4gh.tes.backends`), with fresh credentials for each
+    request.
 
     Args:
         self: Celery task instance (bound task).
@@ -45,8 +47,6 @@ def task__track_task_progress(
         remote_base_path: Override the default path suffix defined in the TES
             API specification, i.e., `/ga4gh/tes/v1`.
         remote_task_id: task run identifier on remote TES service.
-        user: User-name for basic authentication.
-        password: Password for basic authentication.
     """
     polling = get_custom_config().controllers.post_task.polling
 
@@ -59,16 +59,9 @@ def task__track_task_progress(
     # update state: INITIALIZING
     db_client.update_task_state(state=TesState.INITIALIZING.value)
 
-    url = f"{remote_host.strip('/')}/{remote_base_path.strip('/')}"
-
     # fetch task log and upsert database document
     try:
-        cli = tes.HTTPClient(
-            url,
-            timeout=5,
-            user=user,
-            password=password,
-        )
+        cli = create_client(host=remote_host, base_path=remote_base_path)
         response = cli.get_task(task_id=remote_task_id)
     except Exception:
         db_client.update_task_state(state=TesState.SYSTEM_ERROR.value)
