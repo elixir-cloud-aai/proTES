@@ -13,12 +13,13 @@ control](access-control.md)).
 | --- | --- |
 | `GET /service-info` | The service info of the deployment (see [Service info](configuration.md#service-info)). |
 | `POST /tasks` | Create a task: proTES forwards it to a TES instance (see [Tasks](#tasks)) and returns its own identifier of the task. |
-| `GET /tasks` | List the tasks, newest first, one page at a time (`page_size`, at most `max_page_size` of the [config](configuration.md#tasks); `page_token` from `next_page_token` of the previous page, which is empty on the last page), optionally only those whose name starts with `name_prefix` (taken literally). |
-| `GET /tasks/{id}` | Get a task, with its state as last tracked from the TES instance. |
-| `POST /tasks/{id}:cancel` | Cancel a task that has not finished yet, at the TES instance that runs it. |
+| `GET /tasks` | List the caller's tasks, newest first, one page at a time (`page_size`, at most `max_page_size` of the [config](configuration.md#tasks); `page_token` from `next_page_token` of the previous page, which is empty on the last page), optionally only those whose name starts with `name_prefix` (taken literally). |
+| `GET /tasks/{id}` | Get a task of the caller, with its state as last tracked from the TES instance. |
+| `POST /tasks/{id}:cancel` | Cancel a task of the caller that has not finished yet, at the TES instance that runs it. |
 
-Admins can also manage the access control rules at runtime through FOCA's
-permissions API at `/admin/access-control/permissions` (see [Access
+Only the owner of a task, the user who created it, can read and cancel it
+(see [Task ownership](access-control.md#task-ownership)). Admins can manage
+the access control rules at runtime through FOCA's permissions API at `/admin/access-control/permissions` (see [Access
 control](access-control.md#permissions-api)).
 
 `GET /tasks` and `GET /tasks/{id}` return the views `MINIMAL` (the default;
@@ -59,8 +60,9 @@ Errors are [problem details](https://www.rfc-editor.org/rfc/rfc9457) (with
 specification declares: `400 Bad Request` for invalid requests (e.g.,
 invalid tasks or query parameters), `401 Unauthorized` for requests
 without a valid access token (with a Bearer challenge), `403 Forbidden` for
-users without the required role (see [Access control](access-control.md)),
-`404 Not Found` for unknown tasks,
+users without the required role and for tasks of others or unknown tasks
+(see [Access control](access-control.md)), `404 Not Found` for tasks of the
+caller deleted from the database,
 `413 Content Too Large` for request bodies over the [size
 limit](configuration.md#request-size-limit), and `500 Internal Server Error`
 if a task could not be forwarded or no middleware could be applied. The

@@ -18,10 +18,11 @@
 - [API](api.md): the endpoints, how tasks are forwarded, and errors.
 - [Middlewares](middlewares.md): the built-in middlewares, how to write your
   own, and the middleware management API.
-- [Access control](access-control.md): authentication, roles, the
-  permissions API and credentials of TES instances.
+- [Access control](access-control.md): authentication, roles, task
+  ownership, the permissions API and credentials of TES instances.
 - [Deployment](deployment.md): the Helm chart for Kubernetes.
-- [Operations](operations.md): the Celery workers, Flower and logs.
+- [Operations](operations.md): the Celery workers, Flower, logs, and the
+  owners of tasks.
 - [Upgrading](upgrading.md): changes to existing deployments and data.
 - [Development](development.md): development setup, checks, documentation,
   versioning and releases.
