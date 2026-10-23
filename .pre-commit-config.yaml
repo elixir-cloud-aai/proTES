@@ -13,9 +13,9 @@ repos:
         exclude: ^(deployment/templates/|mkdocs\.yml$)
       # Vendored GA4GH specifications are kept as published
       - id: end-of-file-fixer
-        exclude: ^pro_tes/api/(9e9c5aa|20181113|20190903)\.
+        exclude: ^pro_tes/api/9e9c5aa\.
       - id: trailing-whitespace
-        exclude: ^pro_tes/api/(9e9c5aa|20181113|20190903)\.
+        exclude: ^pro_tes/api/9e9c5aa\.
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: 38bfb07c0c64c304f47eb52090f8288150c77730  # frozen: v0.17.1
     hooks:

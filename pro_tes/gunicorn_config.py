@@ -39,10 +39,11 @@ timeout = 30
 graceful_timeout = 20
 # Idle keep-alive connections are closed after this many seconds; longer than
 # the keep-alive timeout of proxies in front of the app (60 seconds for
-# ingress-nginx), so that a proxy does not reuse a connection just as it is
-# closed (failing the request with `502`). Idle connections wait in the
-# worker's poller, not in its threads (up to `worker_connections`, 1000)
-keepalive = 75
+# ingress-nginx, 90 seconds for Traefik), so that a proxy does not reuse a
+# connection just as it is closed (failing the request with `502`). Idle
+# connections wait in the worker's poller, not in its threads (up to
+# `worker_connections`, 1000)
+keepalive = 100
 
 # Size limits of the request line and headers (Gunicorn's defaults, set
 # explicitly); larger requests are rejected (`400`). The size limit of request

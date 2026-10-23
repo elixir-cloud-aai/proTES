@@ -52,13 +52,13 @@ def test_keepalive() -> None:
     """Idle keep-alive connections are kept longer than by proxies.
 
     That is, longer than by proxies in front of the app (60 seconds for
-    ingress-nginx), so that proxies don't reuse connections that Gunicorn
-    closes; they wait in the worker's poller, not in its threads, up to
-    Gunicorn's limit of connections.
+    ingress-nginx, 90 seconds for Traefik), so that proxies don't reuse
+    connections that Gunicorn closes; they wait in the worker's poller, not
+    in its threads, up to Gunicorn's limit of connections.
     """
     cfg = load_settings().cfg
-    assert cfg.keepalive == 75
-    assert cfg.keepalive > 60
+    assert cfg.keepalive == 100
+    assert cfg.keepalive > 90
     assert cfg.worker_connections - cfg.threads >= 100
 
 

@@ -59,9 +59,11 @@ releases](development.md#versioning-and-releases)).
 2. Commit your changes, push the branch and open a pull request against `dev`
    (not `main`) that closes the issue (`Closes #<issue>`) and says what
    changes, why, and how you tested it.
-3. Request a review: every change is reviewed by at least one other person.
-   Address the comments by pushing further commits (there may be several
-   rounds).
+3. Get your pull request reviewed: once it is ready for review, automated
+   reviewers (Sourcery, GitHub Copilot) review every pull request, and a
+   maintainer also reviews external contributions. Address the comments by
+   pushing further commits or by replying why you disagree (there may be
+   several rounds).
 4. Once the checks pass and all conversations are resolved, the maintainers
    squash-merge the pull request into `dev`.
 

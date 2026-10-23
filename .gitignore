@@ -229,6 +229,11 @@ tests/output/*
 *.modified.yaml
 .netrc
 .idea/*
+
+# Local config overrides
+config.local.yaml
+docker-compose.override.yaml
+
 # Dependencies of the Helm chart (`helm dependency build deployment`)
 deployment/charts/
 # TEMPORARY: checkout of the library chart (`scripts/foca_common.sh`, #246)

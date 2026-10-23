@@ -19,6 +19,14 @@ updates:
       - dependency-name: foca
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
     groups:
+      # Dependencies of the documentation (the `docs` extra), in pull
+      # requests of their own
+      docs-dependencies:
+        patterns: [
+          "griffelib", "mkdocs", "mkdocs-*", "mkdocstrings",
+          "mkdocstrings-*", "pymdown-extensions",
+        ]
+      # Dependencies match the first group listed
       python-dependencies:
         patterns: ["*"]
         exclude-patterns: ["connexion", "foca"]
@@ -50,4 +58,13 @@ updates:
       - dependency-name: elixircloud/foca
     groups:
       docker:
+        patterns: ["*"]
+  # Hook revisions in `.pre-commit-config.yaml`
+  - package-ecosystem: pre-commit
+    directory: /
+    schedule:
+      interval: monthly
+    target-branch: dev
+    groups:
+      pre-commit:
         patterns: ["*"]
