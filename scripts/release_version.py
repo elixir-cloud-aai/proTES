@@ -182,11 +182,13 @@ def read_lines(data: bytes) -> list[str]:
         data: Tags, one per line, as UTF-8.
 
     Returns:
-        The lines, without line breaks; undecodable bytes are replaced, so
-        that tags with them are ignored as invalid tags (instead of failing
-        with a `UnicodeDecodeError`).
+        The lines, split at line feeds only (as `git tag` and `gh` write
+        them), so that other line breaks (e.g., U+2028) stay in a tag and
+        make it invalid instead of yielding a valid-looking part of it;
+        undecodable bytes are replaced, so that tags with them are ignored
+        as invalid tags (instead of failing with a `UnicodeDecodeError`).
     """
-    return data.decode("utf-8", "replace").splitlines()
+    return data.decode("utf-8", "replace").split("\n")
 
 
 def main(argv: Sequence[str] | None = None) -> int:

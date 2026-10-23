@@ -193,6 +193,10 @@ def test_order() -> None:
         ("v0.2.0\nv0.2.1\n", "v0.2.10\nv0.2.0 \n", "previous_tag=\n"),
         # Undecodable bytes don't match
         ("v0.2.0\nv0.2.1\n", b"v0.2.0\xff\nv0.2.1\n", "previous_tag=v0.2.1\n"),
+        # Lines end at line feeds only: other line breaks stay in the tag
+        ("v0.2.0\nv0.2.1\u2028x\n", "v0.2.0\nv0.2.1\n", "previous_tag=v0.2.0\n"),
+        ("v0.2.0\nv0.2.1\n", "v0.2.0\nv0.2.1\u2028x\n", "previous_tag=v0.2.0\n"),
+        ("v0.2.0\nv0.2.1\r\n", "v0.2.0\nv0.2.1\n", "previous_tag=v0.2.0\n"),
     ],
 )
 def test_main_previous(
@@ -275,6 +279,8 @@ def test_main_outputs(capsys: pytest.CaptureFixture[str]) -> None:
         ("", "latest=false\n"),
         # Tags that aren't UTF-8 are ignored
         (b"v0.3.0\nv\xff9.0.0\nv9.0.0\xff\n", "latest=true\n"),
+        # Lines end at line feeds only: other line breaks stay in the tag
+        ("v0.3.0\nv9.0.0\u2028x\nv9.0.0\x85\nv9.0.0\r\n", "latest=true\n"),
     ],
 )
 def test_main_latest(
