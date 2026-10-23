@@ -49,16 +49,16 @@ is in vain.
 ## Branches and pull requests
 
 The project follows a variant of the GitHub flow: all changes reach the
-development branch `dev` (the default branch before version 1.0.0) through
-pull requests, which are reviewed and tested; `main` only moves forward to
-released commits (see [Versioning and
+development branch `dev` through pull requests, which are reviewed and
+tested; `main` only holds releases: it only moves forward to released
+commits (see [Versioning and
 releases](development.md#versioning-and-releases)).
 
 1. Create a feature branch from an up-to-date `dev`, named after the type and
    topic of the change, e.g., `fix/<topic>` or `docs/<topic>`.
 2. Commit your changes, push the branch and open a pull request against `dev`
-   that closes the issue (`Closes #<issue>`) and says what changes, why, and
-   how you tested it.
+   (not `main`) that closes the issue (`Closes #<issue>`) and says what
+   changes, why, and how you tested it.
 3. Request a review: every change is reviewed by at least one other person.
    Address the comments by pushing further commits (there may be several
    rounds).

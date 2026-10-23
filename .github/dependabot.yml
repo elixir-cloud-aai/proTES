@@ -1,10 +1,14 @@
 version: 2
+# Every entry targets `dev` (`target-branch`), which takes all pull
+# requests whatever the default branch is (`main` only moves forward to
+# releases); security updates always target the default branch, though
 updates:
   # Dependencies in `pyproject.toml`
   - package-ecosystem: pip
     directory: /
     schedule:
       interval: monthly
+    target-branch: dev
     versioning-strategy: increase-if-necessary
     ignore:
       # connexion 3 needs a FOCA upgrade
@@ -23,6 +27,7 @@ updates:
     directories: ["/", "/.github/actions/scan-image"]
     schedule:
       interval: monthly
+    target-branch: dev
     groups:
       github-actions:
         patterns: ["*"]
@@ -31,6 +36,7 @@ updates:
     directory: /
     schedule:
       interval: monthly
+    target-branch: dev
     ignore:
       # FOCA minors are bumped by hand, in the base image and the `foca`
       # requirement in `pyproject.toml` together (a new base image alone would

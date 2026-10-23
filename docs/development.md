@@ -278,8 +278,10 @@ organization is the repository variable `DOCKERHUB_ORG` (by default
 `elixircloud`; forks set it to the organization they publish to, and change
 the chart's default image, `protes.image` in `deployment/values.yaml`, to
 match), so that the scan jobs, which have no secrets, know the image name
-too. On Read the Docs, an automation rule activates the versions of tags
-(`v*`), so that the docs linked from packaged charts exist.
+too. On Read the Docs, the default branch is set to `dev` explicitly, so that
+`latest` shows `dev` whatever the repository's default branch is, and an
+automation rule activates the versions of tags (`v*`), so that the docs
+linked from packaged charts exist.
 
 The CI workflow builds the image of every pull request and scans it with
 [Trivy](https://trivy.dev/) (`.github/actions/scan-image`), and a weekly
