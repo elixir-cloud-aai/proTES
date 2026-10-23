@@ -187,10 +187,11 @@ false
 
 {{/*
 Environment variables that the chart sets in the app's and the worker's
-containers, which `protes.extraEnv` must not set again.
+containers, which `protes.extraEnv` must not set again, and `MONGO_DBNAME`,
+which would move the app to a database that the chart does not provision.
 */}}
 {{- define "protes.reservedEnv" -}}
-{{- list "FOCA_CONFIG_OVERLAY" "GUNICORN_CMD_ARGS" "MONGO_USERNAME" "MONGO_PASSWORD" "CELERY_BROKER_URL" "CELERY_RESULT_BACKEND" | toJson -}}
+{{- list "FOCA_CONFIG_OVERLAY" "GUNICORN_CMD_ARGS" "MONGO_USERNAME" "MONGO_PASSWORD" "CELERY_BROKER_URL" "CELERY_RESULT_BACKEND" "MONGO_DBNAME" | toJson -}}
 {{- end -}}
 
 {{/*
@@ -274,30 +275,32 @@ nothing.
 Fails on upgrades of releases of the legacy chart (versions 2 and 3, before
 the library chart), which would delete their volumes with the MongoDB data,
 as their names changed; renders nothing. Releases are recognized by their
-Deployments (`protes.failIfLegacy`), which, unlike claims of volumes, do not
-outlast an uninstallation. Included once (in the app's ConfigMap template),
-as it looks up resources in the cluster. `lookup` finds nothing in
-`helm template` and client-side dry runs.
+Deployments and claims of volumes (`protes.failIfLegacy`; the legacy chart
+does not keep its claims on uninstallation). Included once (in the app's
+ConfigMap template), as it looks up resources in the cluster. `lookup` finds
+nothing in `helm template` and client-side dry runs.
 */}}
 {{- define "protes.checkUpgrade" -}}
 {{- if .Release.IsUpgrade -}}
-{{- $deployments := lookup "apps/v1" "Deployment" .Release.Namespace "" | default dict -}}
-{{- range $deployment := (get $deployments "items" | default list) -}}
-{{- include "protes.failIfLegacy" (dict "root" $ "resource" $deployment) -}}
+{{- range $old := list (list "apps/v1" "Deployment") (list "v1" "PersistentVolumeClaim") -}}
+{{- $resources := lookup (index $old 0) (index $old 1) $.Release.Namespace "" | default dict -}}
+{{- range $resource := (get $resources "items" | default list) -}}
+{{- include "protes.failIfLegacy" (dict "root" $ "kind" (index $old 1) "resource" $resource) -}}
+{{- end -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}
 
 {{/*
-Fails if a Deployment (looked up in the cluster) belongs to this release, but
+Fails if a resource (looked up in the cluster) belongs to this release, but
 was created by the legacy chart (version 2 or 3): without the label
-`app.kubernetes.io/instance`. Call with a dict of the root context (`root`)
-and the Deployment (`resource`).
+`app.kubernetes.io/instance`. Call with a dict of the root context (`root`),
+the resource's kind (`kind`) and the resource (`resource`).
 */}}
 {{- define "protes.failIfLegacy" -}}
 {{- $owner := dig "metadata" "annotations" "meta.helm.sh/release-name" "" .resource -}}
 {{- $labels := dig "metadata" "labels" dict .resource -}}
 {{- if and (eq $owner .root.Release.Name) (not (hasKey $labels "app.kubernetes.io/instance")) -}}
-{{- fail (printf "release %s was installed with the legacy chart (version 2 or 3), and upgrading it would delete its volume with the MongoDB data (Deployment %s): uninstall it and install the current chart instead, keeping the data as described in deployment/README.md (From the legacy chart)" .root.Release.Name (dig "metadata" "name" "" .resource)) -}}
+{{- fail (printf "release %s was installed with the legacy chart (version 2 or 3), and upgrading it would delete its volume with the MongoDB data (%s %s): uninstall it and install the current chart instead, keeping the data as described in deployment/README.md (From the legacy chart)" .root.Release.Name .kind (dig "metadata" "name" "" .resource)) -}}
 {{- end -}}
 {{- end -}}

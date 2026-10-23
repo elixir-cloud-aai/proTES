@@ -432,8 +432,9 @@ def test_extra_env() -> None:
 def test_reserved_env() -> None:
     """The variables reserved for the chart are those it sets.
 
-    In the app's and the worker's containers, also with the worker's
-    settings, so that `protes.extraEnv` can't set any of them again.
+    In the app's and the worker's containers, so that `protes.extraEnv`
+    can't set any of them again; and `MONGO_DBNAME`, which would move the
+    app to a database that the chart does not provision.
     """
     template = (
         "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: reserved-test\n"
@@ -448,7 +449,7 @@ def test_reserved_env() -> None:
         for container in (APP, WORKER)
         for name in _env(_container(indexed, container))
     }
-    assert names == reserved
+    assert names | {"MONGO_DBNAME"} == reserved
 
 
 def test_extra_env_worker_disabled() -> None:
@@ -468,6 +469,10 @@ def test_extra_env_worker_disabled() -> None:
         (
             [{"name": "MONGO_PASSWORD", "value": "x"}],
             "protes.extraEnv must not set MONGO_PASSWORD",
+        ),
+        (
+            [{"name": "MONGO_DBNAME", "value": "x"}],
+            "protes.extraEnv must not set MONGO_DBNAME",
         ),
         (
             [{"name": "A", "value": "1"}, {"name": "A", "value": "2"}],
@@ -791,21 +796,24 @@ def test_upgrade() -> None:
 
 
 @pytest.mark.parametrize(
-    ("owner", "labels", "fails"),
+    ("kind", "owner", "labels", "fails"),
     [
-        ("protes", {"app": "protes"}, True),
-        ("protes", {"app.kubernetes.io/instance": "protes"}, False),
-        ("other", {"app": "protes"}, False),
-        ("", {"app": "protes"}, False),
+        ("Deployment", "protes", {"app": "protes"}, True),
+        ("PersistentVolumeClaim", "protes", {}, True),
+        ("Deployment", "protes", {"app.kubernetes.io/instance": "protes"}, False),
+        ("Deployment", "other", {"app": "protes"}, False),
+        ("Deployment", "", {"app": "protes"}, False),
     ],
-    ids=["legacy", "current", "other-release", "unmanaged"],
+    ids=["legacy", "legacy-claim", "current", "other-release", "unmanaged"],
 )
-def test_upgrade_legacy(owner: str, labels: dict[str, str], fails: bool) -> None:
-    """Upgrades fail if the release has Deployments of the legacy chart.
+def test_upgrade_legacy(
+    kind: str, owner: str, labels: dict[str, str], fails: bool
+) -> None:
+    """Upgrades fail if the release has resources of the legacy chart.
 
     The legacy chart is versions 2 and 3, whose volume with the MongoDB data
-    the upgrade would delete; checked with a Deployment as returned by
-    `lookup`, which finds nothing in `helm template`.
+    the upgrade would delete; checked with a Deployment or claim as returned
+    by `lookup`, which finds nothing in `helm template`.
     """
     resource = {
         "metadata": {
@@ -817,7 +825,7 @@ def test_upgrade_legacy(owner: str, labels: dict[str, str], fails: bool) -> None
     # A template string literal (JSON-quoted) with the resource as JSON
     literal = json.dumps(json.dumps(resource))
     template = (
-        '{{- include "protes.failIfLegacy" (dict "root" .'
+        f'{{{{- include "protes.failIfLegacy" (dict "root" . "kind" "{kind}"'
         f' "resource" (fromJson {literal})) }}}}'
     )
     args = ({"legacy-test.yaml": template}, "--set", "hostName=x")
@@ -825,7 +833,7 @@ def test_upgrade_legacy(owner: str, labels: dict[str, str], fails: bool) -> None
         with pytest.raises(subprocess.CalledProcessError) as exc:
             render_with(*args)
         assert "legacy chart (version 2 or 3)" in exc.value.stderr
-        assert "(Deployment protes)" in exc.value.stderr
+        assert f"({kind} protes)" in exc.value.stderr
     else:
         render_with(*args)
 

@@ -82,7 +82,8 @@ protes:
   # deployment/README.md, Secrets. Rendering fails for the variables that
   # the chart sets (`FOCA_CONFIG_OVERLAY`, `GUNICORN_CMD_ARGS`,
   # `MONGO_USERNAME`, `MONGO_PASSWORD`, `CELERY_BROKER_URL`,
-  # `CELERY_RESULT_BACKEND`)
+  # `CELERY_RESULT_BACKEND`), and for `MONGO_DBNAME`, as the chart
+  # provisions the database `taskStore`
   extraEnv: []
   # The app is exposed for `hostName` via one of: an Ingress (`ingress`), a
   # Gateway API HTTPRoute (`httpRoute`; disable the Ingress to enable it) or,

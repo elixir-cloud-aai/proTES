@@ -553,9 +553,9 @@ becomes `protes-mongodb`) and changes the selectors of the Deployments,
 which cannot be changed in place, so **releases of the legacy chart cannot be
 upgraded: uninstall them and install the current chart.** An upgrade would
 delete the volume with the MongoDB data (`mongodb-volume`), so `helm upgrade`
-fails for releases with Deployments of the legacy chart (only when Helm can
-query the cluster: not in `helm template` or client-side dry runs).
-Uninstalling also deletes the claim and, usually, the data with it.
+fails for releases with Deployments or claims of the legacy chart (only
+when Helm can query the cluster: not in `helm template` or client-side dry
+runs). Uninstalling also deletes the claim and, usually, the data with it.
 
 Rendering fails for the values of the legacy chart, which the current chart
 would ignore:
