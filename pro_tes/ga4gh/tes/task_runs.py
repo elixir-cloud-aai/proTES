@@ -24,6 +24,7 @@ from pro_tes.exceptions import (
     BadRequest,
     MiddlewareException,
     NoTesInstancesAvailable,
+    TaskNotCancelable,
     TaskNotFound,
 )
 from pro_tes.ga4gh.tes.backends import create_client
@@ -267,14 +268,26 @@ class TaskRuns:
                 url,
                 remote_task_id,
             )
+            # the task is stored with its backend first, so that it is
+            # cancelable even if the rest fails (e.g., the instance stops)
+            db_document = self._update_doc_in_db(
+                db_connector=db_connector,
+                tes_url=tes_url,
+                remote_task_id=remote_task_id,
+            )
             try:
                 task: Task = cli.get_task(remote_task_id)
                 task_model_converter = TaskModelConverter(task=task)
                 task_converted: TesTask = task_model_converter.convert_task()
-                db_document.task.state = task_converted.state
+                state = TesState(task_converted.state)
+                # unless a request to cancel the task changed it meanwhile
+                if db_connector.update_task_state(
+                    state=state.value, if_state=TesState.UNKNOWN.value
+                ):
+                    db_document.task.state = state
             except Exception as exc:
-                # the task is stored with its backend and tracked anyway, also
-                # if its backend serves it invalid (e.g., with an unknown state)
+                # the task is tracked anyway, also if its backend serves it
+                # invalid (e.g., with an unknown state)
                 logger.error(
                     "Task '%s' info could not be retrieved from TES endpoint"
                     " hosted at: %s. Original error message: '%s: %s'",
@@ -283,12 +296,6 @@ class TaskRuns:
                     type(exc).__name__,
                     exc,
                 )
-            # update task_logs, tes_endpoint and task in db
-            db_document = self._update_doc_in_db(
-                db_connector=db_connector,
-                tes_url=tes_url,
-                remote_task_id=remote_task_id,
-            )
             task__track_task_progress.apply_async(
                 None,
                 {
@@ -399,6 +406,9 @@ class TaskRuns:
         """Cancel task.
 
         Only owners of the task may cancel it (enforced by the policies).
+        Tasks that have not finished (also those in state `UNKNOWN`, e.g.,
+        not tracked yet) are canceled at their TES instance; finished tasks
+        and tasks being canceled are left as they are.
 
         Args:
             id: Task identifier.
@@ -414,23 +424,22 @@ class TaskRuns:
                 task is no longer configured.
             pro_tes.exceptions.BackendOutcomeUnknown: The TES instance may
                 have canceled the task, but did not confirm it.
+            pro_tes.exceptions.TaskNotCancelable: The task has not
+                finished, but its identifier at its TES instance is unknown
+                (e.g., it was not forwarded yet).
             pro_tes.exceptions.TaskNotFound: The requested task is not
                 available.
             requests.RequestException: The TES instance was not reached, or
                 rejected the request.
-            ValueError: The task is cancelable, but its identifier at its
-                TES instance is unknown.
         """
-        document = self.db_client.find_one(
-            filter={"task.id": id},
-            projection={"_id": False},
-        )
-        if document is None:
-            logger.error("Task '%s' not found.", id)
-            raise TaskNotFound
-        db_document: DbDocument = DbDocument(**document)
+        document, db_document = self._find_task(id=id)
+        task_id = self._remote_task_id(document=document, db_document=db_document)
+        if db_document.task.state in States.TO_CANCEL and task_id is None:
+            # forwarding may have stored it since
+            document, db_document = self._find_task(id=id)
+            task_id = self._remote_task_id(document=document, db_document=db_document)
 
-        if db_document.task.state in States.CANCELABLE:
+        if db_document.task.state in States.TO_CANCEL:
             db_connector = DbDocumentConnector(
                 collection=self.db_client,
                 worker_id=db_document.worker_id,
@@ -440,11 +449,13 @@ class TaskRuns:
                 f"{db_document.tes_endpoint.base_path.strip('/')}"
             )
 
-            task_id = self._remote_task_id(document=document, db_document=db_document)
             if task_id is None:
-                # tasks get cancelable states only from the TES instance they
-                # were forwarded to, which proTES records
-                raise ValueError(f"No remote identifier of task '{id}'")
+                # e.g., tasks that are being forwarded, or that a TES
+                # instance may have accepted without confirming it
+                raise TaskNotCancelable(
+                    f"Task '{id}' can't be canceled: its identifier at its TES"
+                    " instance is unknown"
+                )
 
             logger.info(
                 "Trying to cancel task with task identifier '%s' and worker job"
@@ -465,6 +476,27 @@ class TaskRuns:
                 "Task '%s' with worker ID '%s' canceled.", id, db_document.worker_id
             )
         return {}
+
+    def _find_task(self, id: str) -> tuple[dict[str, Any], DbDocument]:
+        """Get a stored task.
+
+        Args:
+            id: Task identifier.
+
+        Returns:
+            The task as stored, and as model.
+
+        Raises:
+            pro_tes.exceptions.TaskNotFound: The task is not available.
+        """
+        document = self.db_client.find_one(
+            filter={"task.id": id},
+            projection={"_id": False},
+        )
+        if document is None:
+            logger.error("Task '%s' not found.", id)
+            raise TaskNotFound
+        return document, DbDocument(**document)
 
     def _write_doc_to_db(
         self,
@@ -688,10 +720,11 @@ class TaskRuns:
                 remote_task_id=remote_task_id,
             )
 
-        db_document = db_connector.upsert_fields_in_root_object(
-            root="task",
-            **db_document.model_dump(mode="json", exclude_none=True)["task"],
-        )
+        # without the state, which a request to cancel the task may have
+        # changed in the meantime
+        task = db_document.model_dump(mode="json", exclude_none=True)["task"]
+        task.pop("state", None)
+        db_document = db_connector.upsert_fields_in_root_object(root="task", **task)
         logger.debug("Task '%s' inserted to database", db_document.task)
         return db_document
 

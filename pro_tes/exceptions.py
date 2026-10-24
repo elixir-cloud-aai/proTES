@@ -12,6 +12,7 @@ from pymongo.errors import PyMongoError
 import requests
 from werkzeug.exceptions import (
     BadRequest,
+    Conflict,
     InternalServerError,
     NotFound,
     RequestEntityTooLarge,
@@ -83,6 +84,14 @@ class TaskNotFound(NotFound):
     """Raised when task with given task identifier was not found."""
 
 
+class TaskNotCancelable(Conflict):
+    """Raised when a task has not finished, but can't be canceled.
+
+    E.g., because it was not forwarded yet, so that its identifier at its
+    TES instance is unknown.
+    """
+
+
 class TesUriError(ValueError):
     """Raised when TES URI cannot be parsed."""
 
@@ -148,6 +157,13 @@ exceptions = {
         "title": "Not found",
         "detail": "The requested task wasn't found.",
         "status": 404,
+    },
+    TaskNotCancelable: {
+        "title": "Conflict",
+        "detail": (
+            "The task can't be canceled: its identifier at its TES instance is unknown."
+        ),
+        "status": 409,
     },
     RequestEntityTooLarge: {
         "title": "Content Too Large",

@@ -261,6 +261,14 @@ task at its TES instance is also stored in `tes_endpoint.task_id` (not
 served), so that tasks can be canceled with
 `custom.storeLogs.execution_trace: False` too.
 
+New tasks are stored with the state that their TES instance reports when
+they are forwarded (e.g., `QUEUED`), instead of `UNKNOWN` until the Celery
+worker tracks them. Tasks in state `UNKNOWN` are canceled at their TES
+instance too (canceling them returned `200` without effect); tasks that
+have not finished, but whose identifier at their TES instance is unknown,
+can't be canceled (`409 Conflict`; was `500`, or `200` without effect
+for tasks in state `UNKNOWN`).
+
 ## Task listing
 
 `GET /tasks` returns an empty `next_page_token` on the last page (it
