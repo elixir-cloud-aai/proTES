@@ -460,17 +460,23 @@ def _fail_cut_off(collection: Collection[dict[str, Any]], max_create_time: int) 
         Number of tasks set to `SYSTEM_ERROR`.
     """
     cutoff = datetime.fromtimestamp(time.time() - max_create_time, UTC)
+    # also checked when updated (unless forwarded since); tasks stored by
+    # earlier versions may have their remote identifier only in their logs:
+    # in their forwards (also nested), or as `remote_task_id` (cf.
+    # `pro_tes.ga4gh.tes.task_runs.TaskRuns._remote_task_id`)
     unconfirmed = {
         "task.state": TesState.UNKNOWN.value,
         "tes_endpoint.task_id": {"$not": {"$type": "string"}},
+        "$nor": [
+            {"task.logs.0.metadata.forwarded_to.id": {"$type": "string"}},
+            {"task.logs.0.metadata.remote_task_id": {"$type": "string"}},
+        ],
     }
     failed = 0
     for document in collection.find(
         {**unconfirmed, "_id": {"$lt": ObjectId.from_datetime(cutoff)}},
-        projection=["worker_id", "task.logs"],
+        projection=["worker_id"],
     ):
-        if _logged_remote_task_id(document):
-            continue
         result = collection.update_one(
             {"_id": document["_id"], **unconfirmed},
             {"$set": {"task.state": TesState.SYSTEM_ERROR.value}},
@@ -485,26 +491,6 @@ def _fail_cut_off(collection: Collection[dict[str, Any]], max_create_time: int) 
             )
             failed += 1
     return failed
-
-
-def _logged_remote_task_id(document: dict[str, Any]) -> bool:
-    """Tell whether a stored task has a remote identifier in its logs.
-
-    As tasks stored by earlier versions may have (cf.
-    :py:meth:`~pro_tes.ga4gh.tes.task_runs.TaskRuns._remote_task_id`).
-
-    Args:
-        document: Stored task, with its logs.
-
-    Returns:
-        Whether the logs record a forward (also nested, of earlier
-        versions) or a remote task identifier.
-    """
-    logs = document.get("task", {}).get("logs") or [{}]
-    metadata = logs[0].get("metadata") or {}
-    return bool(metadata.get("forwarded_to")) or isinstance(
-        metadata.get("remote_task_id"), str
-    )
 
 
 def resume_tracking_periodically(stop: Event, interval: float) -> None:

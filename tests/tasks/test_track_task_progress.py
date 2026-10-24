@@ -716,17 +716,18 @@ def test_cut_off_creates_failed(
     states = {
         document["worker_id"]: document["task"]["state"] for document in tasks.find()
     }
-    failed = {
-        "cut-off",
-        "cut-off-host",
-        "cut-off-no-remote-id",
-        "cut-off-empty-forwards",
-    }
-    assert {key for key, state in states.items() if state == "SYSTEM_ERROR"} == failed
-    assert states["queued"] == "QUEUED"
-    assert {state for key, state in states.items() if key not in failed} == {
-        "UNKNOWN",
-        "QUEUED",
+    assert states == {
+        **dict.fromkeys(
+            [
+                "cut-off",
+                "cut-off-host",
+                "cut-off-no-remote-id",
+                "cut-off-empty-forwards",
+            ],
+            "SYSTEM_ERROR",
+        ),
+        **dict.fromkeys(["being-created", "forwarded", *legacy], "UNKNOWN"),
+        "queued": "QUEUED",
     }
     # the task with a remote identifier is resumed instead
     (call,) = scheduled
@@ -738,11 +739,12 @@ def test_cut_off_create_logged(
 ) -> None:
     """Tasks set to `SYSTEM_ERROR` are counted and logged.
 
-    Not tasks that changed after they were read (e.g., forwarded since).
+    Not tasks that changed after they were read (e.g., forwarded since, also
+    by earlier versions, which log the remote identifier).
     """
     max_create_time = 60
     tasks.delete_many({})
-    for worker_id in ("cut-off", "changed"):
+    for worker_id in ("cut-off", "changed", "changed-legacy"):
         insert_task(
             tasks,
             worker_id,
@@ -751,7 +753,7 @@ def test_cut_off_create_logged(
         )
 
     class Forwarding:
-        """Collection whose task `changed` is forwarded once it is read.
+        """Collection whose tasks `changed*` are forwarded once read.
 
         Attributes:
             collection: Collection of the tasks.
@@ -762,10 +764,14 @@ def test_cut_off_create_logged(
             self.collection = collection
 
         def find(self, *args: Any, **kwargs: Any) -> list[dict[str, Any]]:
-            """Find the tasks, then forward task `changed`."""
+            """Find the tasks, then forward the tasks `changed*`."""
             found = list(self.collection.find(*args, **kwargs))
             self.collection.update_one(
                 {"worker_id": "changed"}, {"$set": {"tes_endpoint.task_id": "r-1"}}
+            )
+            self.collection.update_one(
+                {"worker_id": "changed-legacy"},
+                {"$set": {"task.logs.0.metadata": {"remote_task_id": "r-2"}}},
             )
             return found
 
@@ -782,7 +788,11 @@ def test_cut_off_create_logged(
     states = {
         document["worker_id"]: document["task"]["state"] for document in tasks.find()
     }
-    assert states == {"cut-off": "SYSTEM_ERROR", "changed": "UNKNOWN"}
+    assert states == {
+        "cut-off": "SYSTEM_ERROR",
+        "changed": "UNKNOWN",
+        "changed-legacy": "UNKNOWN",
+    }
     (record,) = [
         record
         for record in caplog.records
