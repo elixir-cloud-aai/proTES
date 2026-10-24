@@ -174,6 +174,7 @@ def _version() -> str:
     version = hooks.citation.release_version(
         (ROOT / "CITATION.cff").read_text(encoding="utf-8")
     )
+    # The hooks are loaded from their file, so their types are unknown
     assert version is None or isinstance(version, str)
     return version or str(hooks.UNRELEASED)
 
@@ -231,7 +232,8 @@ def test_on_page_markdown_readme_version() -> None:
         ("{{ version }} {{ chart_version }}", "1.2.3rc1", "1.2.3rc1 1.2.3-rc1"),
         ("only {{ chart_version }}", "1.2.3b1", "only 1.2.3-b1"),
         ("no placeholder", None, "no placeholder"),
-        ("{{ version }}", None, "X.Y.Z"),
+        # Before the first release, the placeholders become `UNRELEASED`
+        ("{{ version }} {{ chart_version }}", None, "X.Y.Z X.Y.Z"),
     ],
 )
 def test_substitute_version(markdown: str, version: str | None, expected: str) -> None:
@@ -243,10 +245,3 @@ def test_substitute_version(markdown: str, version: str | None, expected: str) -
         expected: Expected Markdown.
     """
     assert hooks.substitute_version(markdown, version) == expected
-
-
-def test_substitute_version_without_version() -> None:
-    """Before the first release, the placeholders become `UNRELEASED`."""
-    assert hooks.substitute_version("{{ version }} {{ chart_version }}", None) == (
-        f"{hooks.UNRELEASED} {hooks.UNRELEASED}"
-    )

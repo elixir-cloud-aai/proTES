@@ -8,7 +8,7 @@ Pages write the current release version as `{{ version }}` (`VARIABLE` of
 "Versioning and releases" in `docs/development.md`): the hook replaces them
 with the `version` of `CITATION.cff`, the latest release (or the upcoming
 one, once its citation metadata is set; before the first release, it has
-none, and the docs show `X.Y.Z`, `UNRELEASED`), also in code blocks and in the
+none, and the docs show `X.Y.Z` (`UNRELEASED`)), also in code blocks and in the
 included chart README. Only these exact forms are replaced; other
 `{{ ... }}`, e.g., of Helm templates, are left as they are. Snippets
 (`--8<--` sections of `README.md`) are included after the hook ran, so they
@@ -177,6 +177,9 @@ def on_page_markdown(markdown: str, page: object, config: Config, files: object)
     Returns:
         The Markdown, with the README in place of the line `INCLUDE`, and the
         release and chart versions in place of their placeholders.
+
+    Raises:
+        ValueError: If the version in `CITATION.cff` is invalid.
     """
     root = Path(config.config_file_path).parent
     if INCLUDE in markdown.splitlines():
