@@ -411,7 +411,10 @@ jobs:
       # `scripts/release_version.py`), or since the start for the first
       # release. Only tags with a published GitHub release count, so that the
       # changes of a tag whose release failed (and was replaced by a new
-      # patch version) are listed in the next release
+      # patch version) are listed in the next release. The script filters
+      # the tags itself and reads all of them: a filter that exits early
+      # (e.g., `grep -f` with no published releases) would kill `git tag`
+      # with SIGPIPE and fail the step under `pipefail`
       - name: Determine the previous release
         id: previous
         env:
@@ -424,8 +427,8 @@ jobs:
           gh release list --limit 1000 --exclude-drafts --json tagName \
               --jq '.[].tagName' > "${published}"
           git tag -l 'v*' --merged HEAD \
-              | { grep -Fx -f "${published}" || [[ $? -eq 1 ]]; } \
-              | python scripts/release_version.py previous "${TAG}" >> "${GITHUB_OUTPUT}"
+              | python scripts/release_version.py previous "${TAG}" \
+                  --published "${published}" >> "${GITHUB_OUTPUT}"
       - name: Create release
         env:
           GH_TOKEN: ${{ github.token }}
