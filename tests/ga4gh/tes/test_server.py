@@ -17,7 +17,7 @@ import requests
 import tes
 
 from pro_tes.config_models import ListTasks
-from pro_tes.exceptions import BackendAuthError, BadRequest
+from pro_tes.exceptions import BackendAuthError, BackendOutcomeUnknown, BadRequest
 from pro_tes.ga4gh.tes import ownership, task_runs
 from pro_tes.ga4gh.tes.models import DbDocument, TesTask
 from pro_tes.middleware.middleware_handler import MiddlewareHandler
@@ -132,6 +132,30 @@ def test_create_task_state_unavailable(
     assert len(tracked) == 1
 
 
+def test_create_task_state_invalid(
+    client: FlaskClient,
+    backend: type[FakeBackend],
+    tracked: list[dict[str, Any]],
+    mongo_client: MongoClient[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Tasks are stored with their backend if it serves them invalid.
+
+    E.g., with an unknown state: the backend accepted the task, so it is
+    tracked (and not created again by clients retrying after errors).
+    """
+    monkeypatch.setattr(
+        backend,
+        "get_task",
+        lambda self, task_id, **kwargs: tes.Task(id=task_id, state="DONE"),
+    )
+    response = client.post(f"{BASE_PATH}/tasks", json=TASK)
+    assert response.status_code == 200
+    document = stored(mongo_client, response.get_json()["id"])
+    assert document["tes_endpoint"]["task_id"] == "remote-1"
+    assert len(tracked) == 1
+
+
 def test_create_task_files(client: FlaskClient, backend: type[FakeBackend]) -> None:
     """Backends get the inputs and outputs as they are."""
     response = client.post(f"{BASE_PATH}/tasks", json=TASK_FILES)
@@ -194,6 +218,35 @@ def test_create_task_backend_auth_error(
     response = client.post(f"{BASE_PATH}/tasks", json=TASK)
     assert response.status_code == 200
     assert [config.url for config in backend.clients] == BACKENDS
+
+
+def test_create_task_outcome_unknown(
+    client: FlaskClient,
+    backend: type[FakeBackend],
+    tracked: list[dict[str, Any]],
+    mongo_client: MongoClient[dict[str, Any]],
+    in_order: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Tasks that a backend may have accepted are not sent elsewhere (`502`).
+
+    They are stored as `SYSTEM_ERROR`, with the backend, without remote
+    identifier, and are not tracked.
+    """
+
+    def create_task(self: FakeBackend, task: tes.Task) -> str:
+        """Fail as if the response timed out."""
+        raise BackendOutcomeUnknown("timed out")
+
+    monkeypatch.setattr(backend, "create_task", create_task)
+    response = client.post(f"{BASE_PATH}/tasks", json=TASK)
+    assert response.status_code == 502
+    assert "may have processed it" in response.get_json()["detail"]
+    assert [config.url for config in backend.clients] == [BACKENDS[0]]
+    assert not tracked
+    (document,) = mongo_client[DB]["tasks"].find()
+    assert document["task"]["state"] == "SYSTEM_ERROR"
+    assert document["tes_endpoint"] == {"host": BACKENDS[0], "base_path": ""}
 
 
 def test_task_original_unchanged(
@@ -818,6 +871,35 @@ def test_cancel_task_backend_auth_error(
     response = client.post(f"{BASE_PATH}/tasks/{task_id}:cancel")
     assert response.status_code == 500
     assert "No credentials" in response.get_json()["detail"]
+    assert stored(mongo_client, task_id)["task"]["state"] == "RUNNING"
+
+
+@pytest.mark.parametrize(
+    "error, status",
+    [(BackendOutcomeUnknown("timed out"), 502), (requests.HTTPError("400"), 500)],
+)
+def test_cancel_task_backend_error(
+    client: FlaskClient,
+    task_id: str,
+    backend: type[FakeBackend],
+    mongo_client: MongoClient[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+    error: Exception,
+    status: int,
+) -> None:
+    """Tasks stay as they are if their backend doesn't confirm the cancel.
+
+    If the backend may have canceled the task, the request fails with `502`.
+    """
+
+    def cancel_task(self: FakeBackend, task_id: str) -> None:
+        """Fail."""
+        raise error
+
+    monkeypatch.setattr(backend, "cancel_task", cancel_task)
+    set_state(mongo_client, task_id, "RUNNING")
+    response = client.post(f"{BASE_PATH}/tasks/{task_id}:cancel")
+    assert response.status_code == status
     assert stored(mongo_client, task_id)["task"]["state"] == "RUNNING"
 
 

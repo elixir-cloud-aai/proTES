@@ -54,25 +54,6 @@ class TaskID(ConfigModel):
     length: int = 6
 
 
-class Timeout(ConfigModel):
-    """Timeout config.
-
-    Args:
-        post: Timeout for POST requests (None disables timeout).
-        poll: Timeout for polling.
-        job: Timeout for job execution (None disables timeout).
-
-    Attributes:
-        post: Timeout for POST requests (None disables timeout).
-        poll: Timeout for polling.
-        job: Timeout for job execution (None disables timeout).
-    """
-
-    post: int | None = None
-    poll: int = 2
-    job: int | None = None
-
-
 # RabbitMQ's default acknowledgement timeout (`consumer_timeout`), in
 # seconds: scheduled polls are held unacknowledged until they are due
 CONSUMER_TIMEOUT = 1800
@@ -113,7 +94,6 @@ class PostTask(ConfigModel):
     Args:
         db: DB insert behavior.
         task_id: Task ID generation settings.
-        timeout: Timeout settings.
         polling: Polling behavior.
         url_credentials: What happens to tasks with credentials in the URLs
             of their inputs or outputs (`https://user:password@host/...`):
@@ -123,7 +103,6 @@ class PostTask(ConfigModel):
     Attributes:
         db: DB insert behavior.
         task_id: Task ID generation settings.
-        timeout: Timeout settings.
         polling: Polling behavior.
         url_credentials: What happens to tasks with credentials in the URLs
             of their inputs or outputs (`https://user:password@host/...`):
@@ -133,7 +112,6 @@ class PostTask(ConfigModel):
 
     db: DB = DB()
     task_id: TaskID = TaskID()
-    timeout: Timeout = Timeout()
     polling: Polling = Polling()
     url_credentials: Literal["reject", "strip"] = "reject"
 
@@ -453,6 +431,12 @@ class Tes(ConfigModel):
             `https`.
         client_credentials: Client of proTES at its identity provider, for
             the backends with `auth: client_credentials`.
+        timeout: Timeout of requests to TES backends, in seconds (of
+            connecting, at most 5 seconds); requests to create or cancel
+            tasks are not sent again after timeouts, so it should be long
+            enough for slow backends, but short enough that requests to
+            create tasks (which may try several backends) stay below the
+            read timeout of a reverse proxy in front of proTES.
 
     Attributes:
         service_list: TES backends that tasks may be forwarded to.
@@ -463,12 +447,14 @@ class Tes(ConfigModel):
             `https`.
         client_credentials: Client of proTES at its identity provider, for
             the backends with `auth: client_credentials`.
+        timeout: Timeout of requests to TES backends, in seconds.
     """
 
     service_list: list[TesBackend] = []
     discovery: Discovery = Discovery()
     url_schemes: list[Literal["https", "http"]] = Field(default=["https"], min_length=1)
     client_credentials: ClientCredentials = ClientCredentials()
+    timeout: PositiveInt = 15
 
     @model_validator(mode="after")
     def check_urls(self) -> "Tes":
