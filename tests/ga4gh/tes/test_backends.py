@@ -1,15 +1,30 @@
 """Tests of the clients of TES backends and their credentials."""
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
+import socket
+import ssl
 from typing import Any
 
 from connexion import FlaskApp
 import pydantic
 import pytest
 import requests
+import tes
+from urllib3.exceptions import (
+    MaxRetryError,
+    NameResolutionError,
+    NewConnectionError,
+    ProtocolError,
+    ReadTimeoutError,
+    SSLError,
+)
 
 from pro_tes.config_models import BasicCredentials, ClientCredentials, Tes, TesBackend
-from pro_tes.exceptions import BackendAuthError, BackendNotConfigured
+from pro_tes.exceptions import (
+    BackendAuthError,
+    BackendNotConfigured,
+    BackendOutcomeUnknown,
+)
 from pro_tes.ga4gh.tes import backends
 from pro_tes.utils.misc import get_custom_config
 
@@ -383,7 +398,7 @@ def test_client_token(configured: None, idp: FakeIdp) -> None:
         assert kwargs["headers"]["Authorization"] == "Bearer token-1"
         assert "auth" not in kwargs
         assert kwargs["data"] == "{}"
-        assert kwargs["timeout"] == backends.TIMEOUT
+        assert kwargs["timeout"] == get_custom_config().tes.timeout == 30
 
 
 def test_client_basic(
@@ -534,3 +549,195 @@ def test_tes_config_http() -> None:
         client_credentials={"issuer": "http://idp.example.org/"},  # type: ignore[arg-type]
     )
     assert config.service_list[0].url == "http://tes.example.org"
+
+
+NONE_URL = f"{BACKEND_URL}/none"
+TASK = tes.Task(executors=[tes.Executor(image="alpine", command=["true"])])
+
+
+class FakePost:
+    """Fake `requests.post`: records requests, and answers or fails.
+
+    Attributes:
+        sent: URLs and keyword arguments of the requests.
+        answer: Response to serve, or exception to raise.
+    """
+
+    def __init__(self, answer: FakeResponse | Exception) -> None:
+        """Create the fake."""
+        self.sent: list[tuple[str, dict[str, Any]]] = []
+        self.answer = answer
+
+    def __call__(self, url: str, **kwargs: Any) -> FakeResponse:
+        """Record the request, and serve the answer.
+
+        Raises:
+            Exception: The answer is an exception.
+        """
+        self.sent.append((url, kwargs))
+        if isinstance(self.answer, Exception):
+            raise self.answer
+        return self.answer
+
+
+@pytest.fixture
+def post(
+    configured: None, monkeypatch: pytest.MonkeyPatch
+) -> Callable[[FakeResponse | Exception], FakePost]:
+    """Factory of fake `requests.post`s (installed when created)."""
+
+    def install(answer: FakeResponse | Exception) -> FakePost:
+        """Install a fake `requests.post` with an answer."""
+        fake = FakePost(answer)
+        monkeypatch.setattr(backends.requests, "post", fake)
+        return fake
+
+    return install
+
+
+def wrapped(reason: Exception, error: type[requests.RequestException]) -> Exception:
+    """Get an error of `requests`, as raised for a reason of `urllib3`.
+
+    Args:
+        reason: Error of `urllib3`.
+        error: Class of the error of `requests`.
+
+    Returns:
+        The error, wrapping `MaxRetryError` with the reason, as `requests`
+        raises it.
+    """
+    return error(MaxRetryError(None, "/", reason=reason))  # type: ignore[arg-type]
+
+
+def test_client_timeout(configured: None) -> None:
+    """Requests to backends time out after `custom.tes.timeout` seconds."""
+    get_custom_config().tes.timeout = 120
+    assert request_kwargs(NONE_URL)["timeout"] == 120
+    client = backends.TesClient(
+        url=BACKEND_URL, backend=TesBackend(url=BACKEND_URL, auth="none"), timeout=7
+    )
+    assert client._request_params()["timeout"] == 7
+
+
+def test_create_task_once(post: Callable[..., FakePost]) -> None:
+    """Tasks are created with a single request, to the API path."""
+    fake = post(FakeResponse({"id": "remote-1"}))
+    client = backends.create_client(host=f"{NONE_URL}/")
+    assert client.create_task(TASK) == "remote-1"
+    ((url, kwargs),) = fake.sent
+    assert url == f"{NONE_URL}/ga4gh/tes/v1/tasks"
+    assert kwargs["data"] == TASK.as_json()
+    assert kwargs["timeout"] == 30
+
+
+def test_cancel_task_once(post: Callable[..., FakePost]) -> None:
+    """Tasks are canceled with a single request; their identifier is quoted."""
+    fake = post(FakeResponse({}))
+    backends.create_client(host=NONE_URL).cancel_task("remote/1?x")
+    ((url, _),) = fake.sent
+    assert url == f"{NONE_URL}/ga4gh/tes/v1/tasks/remote%2F1%3Fx:cancel"
+
+
+@pytest.mark.parametrize("status", [500, 502, 503, 504])
+def test_post_server_error(post: Callable[..., FakePost], status: int) -> None:
+    """Server errors leave the outcome unknown; requests aren't sent again."""
+    fake = post(FakeResponse({"id": "remote-1"}, status_code=status))
+    client = backends.create_client(host=NONE_URL)
+    with pytest.raises(BackendOutcomeUnknown, match=f"status {status}"):
+        client.create_task(TASK)
+    with pytest.raises(BackendOutcomeUnknown):
+        client.cancel_task("remote-1")
+    assert len(fake.sent) == 2
+
+
+@pytest.mark.parametrize("status", [302, 400, 401, 403, 404])
+def test_post_rejected(post: Callable[..., FakePost], status: int) -> None:
+    """Other errors (and redirects) are rejections; requests aren't sent again."""
+    fake = post(FakeResponse({}, status_code=status))
+    with pytest.raises(requests.HTTPError, match=f"status {status}") as info:
+        backends.create_client(host=NONE_URL).create_task(TASK)
+    assert info.value.response.status_code == status
+    assert len(fake.sent) == 1
+
+
+@pytest.mark.parametrize("body", [None, [], {}, {"id": ""}, {"id": 1}])
+def test_create_task_no_id(post: Callable[..., FakePost], body: Any) -> None:
+    """Tasks accepted without an identifier have an unknown outcome."""
+    post(FakeResponse(body))
+    with pytest.raises(BackendOutcomeUnknown, match="without an identifier"):
+        backends.create_client(host=NONE_URL).create_task(TASK)
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        requests.ConnectTimeout("connect timeout"),
+        wrapped(NewConnectionError(None, "refused"), requests.ConnectionError),  # type: ignore[arg-type]
+        wrapped(
+            NameResolutionError("tes.example.org", None, socket.gaierror()),  # type: ignore[arg-type]
+            requests.ConnectionError,
+        ),
+        wrapped(
+            SSLError(ssl.SSLCertVerificationError("certificate verify failed")),
+            requests.exceptions.SSLError,
+        ),
+    ],
+)
+def test_post_not_sent(post: Callable[..., FakePost], error: Exception) -> None:
+    """Requests that certainly weren't received fail as they are."""
+    fake = post(error)
+    with pytest.raises(type(error)):
+        backends.create_client(host=NONE_URL).create_task(TASK)
+    assert len(fake.sent) == 1
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        requests.ReadTimeout("read timeout"),
+        wrapped(
+            ReadTimeoutError(None, "/", "read timed out"),  # type: ignore[arg-type]
+            requests.ConnectionError,
+        ),
+        requests.ConnectionError(
+            ProtocolError("Connection aborted.", ConnectionResetError())
+        ),
+        wrapped(SSLError("EOF occurred"), requests.exceptions.SSLError),
+        requests.exceptions.ChunkedEncodingError("incomplete"),
+    ],
+)
+def test_post_maybe_received(post: Callable[..., FakePost], error: Exception) -> None:
+    """Requests that may have been received have an unknown outcome."""
+    fake = post(error)
+    with pytest.raises(BackendOutcomeUnknown, match=type(error).__name__) as info:
+        backends.create_client(host=NONE_URL).create_task(TASK)
+    assert info.value.__cause__ is error
+    assert len(fake.sent) == 1
+
+
+def test_post_no_credentials(post: Callable[..., FakePost]) -> None:
+    """Without credentials, nothing is sent."""
+    fake = post(FakeResponse({"id": "remote-1"}))
+    with pytest.raises(BackendAuthError):
+        backends.create_client(host=f"{BACKEND_URL}/basic").create_task(TASK)
+    assert not fake.sent
+
+
+def test_not_sent_refused() -> None:
+    """Refused connections are recognized, as `requests` raises them."""
+    with socket.socket() as sock:
+        # a port that nothing listens on
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+        with pytest.raises(requests.ConnectionError) as info:
+            requests.post(f"http://127.0.0.1:{port}/", timeout=5)
+    assert backends.not_sent(info.value)
+
+
+def test_not_sent_cyclic() -> None:
+    """Exceptions whose causes form a cycle are checked once each."""
+    first = requests.ConnectionError("first")
+    second = ValueError("second")
+    first.__cause__ = second
+    second.__context__ = first
+    assert not backends.not_sent(first)

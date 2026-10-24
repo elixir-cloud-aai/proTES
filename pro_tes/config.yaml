@@ -221,10 +221,6 @@ custom:
       task_id:
         charset: ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789
         length: 6
-      timeout:
-        post: null
-        poll: 2
-        job: null
       polling:
         wait: 3
         attempts: 100
@@ -298,6 +294,11 @@ custom:
       auth_method: client_secret_basic
       refresh_before: 60
       timeout: 10
+    # Timeout of requests to TES backends, in seconds. Tasks are created and
+    # canceled with a single request each: if a backend doesn't answer in
+    # time, the task is not sent to another backend (it may run already),
+    # but fails with `SYSTEM_ERROR`. Allow for slow backends
+    timeout: 30
 
   storeLogs:
     execution_trace: True

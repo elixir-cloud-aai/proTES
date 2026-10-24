@@ -65,6 +65,21 @@ URLs must use one of the schemes of `custom.tes.url_schemes` (default:
 `https` only). The [middlewares](middlewares.md) decide which of the TES
 instances are tried, and in which order (see [Tasks](api.md#tasks)).
 
+Requests to TES instances time out after `custom.tes.timeout` seconds
+(default: 30). proTES creates and cancels tasks with a single request each,
+to the API path of the URL (`<url>/ga4gh/tes/v1`), and never sends such a
+request again, so that no TES instance gets a task twice. It tries the next
+TES instance only if a TES instance certainly did not accept the task: it
+was not reached (connection refused, host not resolved, connection timed
+out, certificate not accepted), there were no credentials for it, or it
+answered with a status other than 2xx and 5xx (e.g., `400` or `401`). If
+it may have accepted the task, because the response timed out, the
+connection was lost after the request was sent, or it answered with a
+server error (5xx; gateways answer `502`, `503` or `504` also when the TES
+instance behind them got the request), the task is not sent to other TES
+instances, as it may run already: it fails with `SYSTEM_ERROR` (see
+[Tasks](api.md#tasks)). Set the timeout long enough for slow TES instances.
+
 ### Discovery in a service registry
 
 proTES can also take TES instances from a service registry implementing the

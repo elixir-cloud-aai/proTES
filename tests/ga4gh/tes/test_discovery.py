@@ -869,7 +869,7 @@ def test_get_backend_no_discovery(app: FlaskApp, registry: FakeRegistry) -> None
 def test_client_static_not_checked(discovering: FakeRegistry) -> None:
     """Hosts of configured backends are not checked (e.g., internal ones)."""
     client = backends.create_client(host="https://static.example.org")
-    assert client._request_params()["timeout"] == backends.TIMEOUT
+    assert client._request_params()["timeout"] == get_custom_config().tes.timeout
     assert not discovering.requests or all(
         "static" not in url for url, _ in discovering.requests
     )

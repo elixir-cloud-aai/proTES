@@ -124,6 +124,9 @@ dependencies = [
     # Used directly (TES backends, geolocation services); 2.33.0 fixes
     # CVE-2026-25645
     "requests>=2.33.0,<3",
+    # Used directly (errors that show whether requests to TES backends were
+    # sent)
+    "urllib3>=2,<3",
 ]
 
 [project.optional-dependencies]

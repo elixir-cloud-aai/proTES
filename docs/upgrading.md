@@ -158,6 +158,19 @@ URL with an entry, e.g., `- url: https://tes.example.org`, and choose its
   and `basic.password_env`), set for the app and the Celery worker;
 - `none` for TES instances that need no credentials.
 
+proTES creates and cancels tasks with a single request each, to
+`<url>/ga4gh/tes/v1` only (earlier versions also tried `<url>/v1` and
+`<url>`, and the next path or TES instance after timeouts and server
+errors, so that TES instances could get a task more than once). TES
+instances must serve the API at `/ga4gh/tes/v1` of their configured URL.
+Tasks that a TES instance may have accepted without confirming it fail
+with `SYSTEM_ERROR` and `502 Bad Gateway`, instead of being sent to the next
+TES instance (see [TES instances](configuration.md#tes-instances)).
+Requests to TES instances time out after `custom.tes.timeout` seconds
+(default: 30, instead of 5); `custom.controllers.post_task.timeout`
+(`post`, `poll` and `job`), which had no effect, was removed: remove it
+from config overlays.
+
 The base config no longer lists public TES instances; deployments list
 their own. URLs of TES instances must use `https`, unless
 `custom.tes.url_schemes` allows `http`, and must not have credentials;

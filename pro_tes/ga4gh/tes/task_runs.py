@@ -20,6 +20,7 @@ from tes.models import Task
 from pro_tes.config_models import CustomConfig
 from pro_tes.exceptions import (
     BackendAuthError,
+    BackendOutcomeUnknown,
     BadRequest,
     MiddlewareException,
     NoTesInstancesAvailable,
@@ -110,10 +111,21 @@ class TaskRuns:
         Returns:
             Task identifier.
 
+        Tasks are sent to the TES instances in turn, until one accepts the
+        task. They are sent to the next one only if a TES instance certainly
+        did not accept the task, never if it may have (cf.
+        :py:class:`pro_tes.ga4gh.tes.backends.TesClient`).
+
         Raises:
+            pro_tes.exceptions.BackendOutcomeUnknown: A TES instance may
+                have accepted the task, but did not confirm it; the task is
+                stored with the state `SYSTEM_ERROR`, and with the TES
+                instance, without remote identifier.
             pro_tes.exceptions.BadRequest: The request has no JSON body.
             pro_tes.exceptions.MiddlewareException: The middlewares removed
                 the JSON body.
+            pro_tes.exceptions.NoTesInstancesAvailable: No TES instance
+                accepted the task.
             pro_tes.exceptions.Unauthorized: The user of the request could
                 not be identified.
         """
@@ -220,7 +232,24 @@ class TaskRuns:
             task_relayed = self._relayed_task(task=payload_marshalled)
             try:
                 remote_task_id = cli.create_task(task_relayed)
+            except BackendOutcomeUnknown as exc:
+                # the backend may run the task, so it is not sent elsewhere
+                logger.error(
+                    "Task '%s' may or may not have been accepted by TES endpoint"
+                    " hosted at: %s; not sent to other TES endpoints. Original"
+                    " error message: '%s: %s'",
+                    db_document.task.id,
+                    url,
+                    type(exc).__name__,
+                    exc,
+                )
+                db_connector.upsert_fields_in_root_object(
+                    root="tes_endpoint", host=tes_url, base_path=""
+                )
+                db_connector.update_task_state(state=TesState.SYSTEM_ERROR.value)
+                raise
             except (requests.RequestException, BackendAuthError) as exc:
+                # the backend did not accept the task (cf. `TesClient`)
                 logger.warning(
                     "Task '%s' could not be sent to TES endpoint hosted at: %s."
                     " Original error message: '%s: %s'",
