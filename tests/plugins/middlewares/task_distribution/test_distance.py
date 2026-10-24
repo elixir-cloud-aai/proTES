@@ -116,6 +116,16 @@ def test_rank_same_address(monkeypatch: pytest.MonkeyPatch, located: list[str]) 
     assert sorted(located) == ["192.0.2.1", "192.0.2.2"]
 
 
+@pytest.mark.parametrize("reverse", [False, True])
+def test_rank_ties(
+    monkeypatch: pytest.MonkeyPatch, located: list[str], reverse: bool
+) -> None:
+    """Backends at the same distance keep their order."""
+    monkeypatch.setitem(HOSTS, "tes-helsinki.example.org", "192.0.2.1")
+    tes_urls = list(reversed(TES_URLS)) if reverse else TES_URLS
+    assert rank(INPUTS, tes_urls) == tes_urls
+
+
 def test_no_input_urls(located: list[str]) -> None:
     """Tasks without input URLs can't be distributed by distance."""
     with pytest.raises(MiddlewareException, match="No input URIs available"):

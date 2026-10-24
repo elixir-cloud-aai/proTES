@@ -18,7 +18,8 @@ ways of distributing tasks. Both forward to the TES instances of
   `pro_tes.plugins.middlewares.task_distribution.distance.TaskDistributionDistance`
   orders the TES instances by the distance that the task's input data has to
   travel to them: the sum of the geodesic distances between the instance and
-  each input (`inputs[].url`). Locations are looked up for each task, from
+  each input (`inputs[].url`); instances at the same distance keep the order
+  of the base class (see below). Locations are looked up for each task, from
   the IP addresses of the hosts: the free API of [DB-IP](https://db-ip.com/)
   gives the place of an IP address (city, region and country), and
   [Nominatim](https://nominatim.org/) of
@@ -52,8 +53,8 @@ next alternative of the step is tried. The task distribution middlewares
 derive from
 [`TaskDistributionBaseClass`](reference.md#pro_tes.plugins.middlewares.task_distribution.base.TaskDistributionBaseClass),
 which sets `tes_urls` from the URLs of `custom.tes.service_list` and the
-discovered TES instances; override its `_set_tes_urls()` to order them
-differently.
+discovered TES instances, once each, in that order; override its
+`_set_tes_urls()` to order them differently.
 
 Middlewares are imported by their import path, so they can live in any
 package installed next to proTES, e.g., in a custom image based on the proTES
