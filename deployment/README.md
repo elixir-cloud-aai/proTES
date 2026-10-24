@@ -106,7 +106,7 @@ release version as `version` and `appVersion`, so they deploy the image of
 their release (`X.Y.Z`). In the repository, both are placeholders, and
 `appVersion` is `dev`: the chart deploys the latest image of branch `dev`,
 which changes with every commit. Deployments from the repository should set
-the tag of a release (e.g., `0.3.0`) or of a commit on `dev`
+the tag of a release (e.g., `{{ version }}`) or of a commit on `dev`
 (`sha-<commit>`, the full commit SHA) in the values file:
 
 ```yaml
@@ -115,7 +115,7 @@ protes:
 ```
 
 `protes.image` may also include a tag or digest (e.g.,
-`elixircloud/protes:0.3.0`, as in earlier chart versions); then `protes.tag`
+`elixircloud/protes:{{ version }}`, as in earlier chart versions); then `protes.tag`
 must be empty. See [Versioning and
 releases](https://protes.readthedocs.io/en/latest/development/#versioning-and-releases)
 for the image tags.

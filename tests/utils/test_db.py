@@ -63,6 +63,20 @@ def test_update_task_state_if_state(connector: DbDocumentConnector) -> None:
     assert document["task"]["state"] == "RUNNING"
 
 
+def test_update_task_state_if_states(connector: DbDocumentConnector) -> None:
+    """States are updated only if they are one of the expected ones."""
+    assert not connector.update_task_state(
+        state="QUEUED", if_state=["UNKNOWN", "RUNNING"]
+    )
+    # none expected: never updated
+    assert not connector.update_task_state(state="QUEUED", if_state=[])
+    # the stored state of the fixture is `invalid`
+    assert connector.update_task_state(state="QUEUED", if_state=["UNKNOWN", "invalid"])
+    document = connector.collection.find_one({"worker_id": "worker-1"})
+    assert document is not None
+    assert document["task"]["state"] == "QUEUED"
+
+
 def files(*urls: str | None) -> list[dict[str, Any]]:
     """Get stored inputs or outputs.
 
