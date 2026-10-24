@@ -225,9 +225,14 @@ custom:
         post: null
         poll: 2
         job: null
+      # Tasks are polled at their backend every `wait` seconds until they
+      # are finished; after `attempts` consecutive failed polls, their state
+      # is `UNKNOWN`, and polls back off to every `max_wait` seconds at most
+      # (keep it below RabbitMQ's `consumer_timeout`, 30 minutes by default)
       polling:
         wait: 3
         attempts: 100
+        max_wait: 600
       # Tasks with credentials in the URLs of inputs or outputs
       # (`https://user:password@host/...`) are rejected (`reject`), or the
       # credentials are removed (`strip`); they are never stored or forwarded

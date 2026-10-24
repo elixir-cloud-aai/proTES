@@ -63,19 +63,30 @@ class Timeout(BaseModel):
 
 
 class Polling(BaseModel):
-    """Polling config.
+    """How tasks are tracked at their TES backends.
 
     Args:
-        wait: Wait time between polling attempts.
-        attempts: Max polling attempts before failure.
+        wait: Seconds between polls of the state of a task.
+        attempts: Consecutive failed polls (the count is reset by a
+            successful one) after which the state of the task is set to
+            `UNKNOWN`, and polls back off.
+        max_wait: Maximum number of seconds between polls while they back
+            off (at least `wait`); keep it below the broker's acknowledgement
+            timeout (RabbitMQ's `consumer_timeout`, 30 minutes by default).
 
     Attributes:
-        wait: Wait time between polling attempts.
-        attempts: Max polling attempts before failure.
+        wait: Seconds between polls of the state of a task.
+        attempts: Consecutive failed polls (the count is reset by a
+            successful one) after which the state of the task is set to
+            `UNKNOWN`, and polls back off.
+        max_wait: Maximum number of seconds between polls while they back
+            off (at least `wait`); keep it below the broker's acknowledgement
+            timeout (RabbitMQ's `consumer_timeout`, 30 minutes by default).
     """
 
-    wait: int = 3
-    attempts: int = 100
+    wait: PositiveInt = 3
+    attempts: PositiveInt = 100
+    max_wait: PositiveInt = 600
 
 
 class PostTask(BaseModel):
