@@ -689,9 +689,10 @@ def test_create_task_inline_content_middleware(
     app: FlaskApp,
     client: FlaskClient,
     backend: type[FakeBackend],
+    mongo_client: MongoClient[dict[str, Any]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Inline contents that middlewares add count, too."""
+    """Inline contents that middlewares add count, too; the task isn't kept."""
     apply = TaskDistributionRandom.apply_middleware
 
     def add_content(self: TaskDistributionRandom, request: Any) -> Any:
@@ -708,6 +709,8 @@ def test_create_task_inline_content_middleware(
     response = client.post(f"{BASE_PATH}/tasks", json=TASK)
     assert response.status_code == 413
     assert not relayed(backend)
+    assert mongo_client[DB]["tasks"].count_documents({}) == 0
+    assert mongo_client[DB]["policy_rules"].count_documents({"ptype": "g2"}) == 0
 
 
 @pytest.mark.parametrize("view", ["BASIC", "FULL"])
@@ -1185,6 +1188,7 @@ def test_create_task_not_discarded(
     backend.failing.update(BACKENDS)
     response = client.post(f"{BASE_PATH}/tasks", json=TASK)
     assert response.status_code == 500
+    assert response.get_json()["detail"] == "No TES instance accepted the task."
     (document,) = mongo_client[DB]["tasks"].find()
     assert document["task"]["state"] == "SYSTEM_ERROR"
 
