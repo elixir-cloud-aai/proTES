@@ -450,18 +450,20 @@ jobs:
         run: |
           # With curated notes of the release commit, the body is the curated
           # notes, then the generated ones (the agreed format, see
-          # `scripts/release_notes.py`); otherwise the generated ones alone
+          # `scripts/release_notes.py`); otherwise the generated ones alone.
+          # Generated on every run, so that a draft of an earlier attempt gets
+          # the notes since the current previous release
           curated="docs/releases/${VERSION}.md"
-          notes_file=""
+          generate=(-f "tag_name=${TAG}")
+          if [[ -n "${PREVIOUS}" ]]; then
+              generate+=(-f "previous_tag_name=${PREVIOUS}")
+          fi
+          notes_file="$(mktemp)"
+          gh api "repos/${GH_REPO}/releases/generate-notes" "${generate[@]}" \
+              --jq .body > "${notes_file}"
           if [[ -f "${curated}" ]]; then
-              generate=(-f "tag_name=${TAG}")
-              if [[ -n "${PREVIOUS}" ]]; then
-                  generate+=(-f "previous_tag_name=${PREVIOUS}")
-              fi
-              generated="$(mktemp)"
+              generated="${notes_file}"
               notes_file="$(mktemp)"
-              gh api "repos/${GH_REPO}/releases/generate-notes" "${generate[@]}" \
-                  --jq .body > "${generated}"
               python scripts/release_notes.py body "${curated}" "${generated}" \
                   > "${notes_file}"
           fi
@@ -479,27 +481,21 @@ jobs:
               --releases "${releases}" dist/*)"
           state="${state#state=}"
           if [[ "${state}" == "none" ]]; then
-              notes=(--generate-notes)
-              if [[ -n "${PREVIOUS}" ]]; then
-                  notes+=(--notes-start-tag "${PREVIOUS}")
-              fi
-              if [[ -n "${notes_file}" ]]; then
-                  notes=(--notes-file "${notes_file}")
-              fi
               gh release create "${TAG}" \
                   --draft \
                   --verify-tag \
                   --title "${TAG}" \
-                  "${notes[@]}" \
+                  --notes-file "${notes_file}" \
                   --prerelease="${PRERELEASE}"
-              state=draft
-          fi
-          # Uploads to drafts may replace the assets of an earlier attempt
-          if [[ "${state}" == "draft" ]]; then
-              gh release upload "${TAG}" dist/* --clobber
           fi
           edit=(--title "${TAG}" --prerelease="${PRERELEASE}" --latest="${LATEST}")
-          if [[ -n "${notes_file}" ]]; then
+          # Uploads to drafts may replace the assets of an earlier attempt.
+          # The notes of a published release are replaced only by curated
+          # ones (generated ones are left as they are)
+          if [[ "${state}" != "published" ]]; then
+              gh release upload "${TAG}" dist/* --clobber
+              edit+=(--notes-file "${notes_file}")
+          elif [[ -f "${curated}" ]]; then
               edit+=(--notes-file "${notes_file}")
           fi
           # Publishes a draft
