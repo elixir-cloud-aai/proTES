@@ -39,6 +39,11 @@ def create_celery_app(foca: Foca) -> Celery:
 
 
 celery: Celery = create_celery_app(foca)
+# Each worker process reserves one message at a time (tracking messages are
+# acknowledged after their poll), so that messages wait in the broker, not
+# in a busy worker; messages of scheduled polls are reserved until they are
+# due anyway
+celery.conf.worker_prefetch_multiplier = 1
 
 
 @worker_init.connect
