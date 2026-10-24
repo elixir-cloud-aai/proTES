@@ -25,5 +25,5 @@ class TaskDistributionRandom(TaskDistributionBaseClass):
             tes_urls: List of TES URIs.
             task: Task to be modified.
         """
-        self.tes_urls = list(set(tes_urls))
+        self.tes_urls = list(dict.fromkeys(tes_urls))
         random.shuffle(self.tes_urls)

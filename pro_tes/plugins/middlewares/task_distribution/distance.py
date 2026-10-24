@@ -150,9 +150,11 @@ class TaskDistributionDistance(TaskDistributionBaseClass):
     """Distance-based task distribution middleware.
 
     Sorts the available TES instances by the sum of minimum geodesic distances
-    between a given TES instance and all of the task'sinputs, in ascending
-    order. Distances are calculated based on IP geolocations of the TES
-    instance and the inputs.
+    between a given TES instance and all of the task's inputs, in ascending
+    order; instances at the same distance keep their order (that of
+    `custom.tes.service_list`, followed by the discovered backends).
+    Distances are calculated based on IP geolocations of the TES instance and
+    the inputs.
 
     Attributes:
         tes_urls: TES instance best suited for TES task.
@@ -188,7 +190,7 @@ class TaskDistributionDistance(TaskDistributionBaseClass):
         Args:
             tes_urls: List of TES URLs.
         """
-        for url in list(set(tes_urls)):
+        for url in dict.fromkeys(tes_urls):
             self.task_summary.tes_instances[url] = TesInstance()
 
     def _set_task_inputs(self, task: dict[str, Any]) -> None:
@@ -201,22 +203,22 @@ class TaskDistributionDistance(TaskDistributionBaseClass):
             MiddlewareException: If no input URIs are available.
         """
         input_uris = list(
-            {
+            dict.fromkeys(
                 input_value.get("url")
                 for input_value in task.get("inputs", [])
                 if input_value.get("url") is not None
-            }
+            )
         )
         if not input_uris:
             raise MiddlewareException("No input URIs available.")
-        for uri in list(set(input_uris)):
+        for uri in input_uris:
             self.task_summary.inputs[uri] = TaskInput()
 
     def _set_locations(self) -> None:
         """Set IP locations for TES instances and task inputs."""
         tes_urls = list(self.task_summary.tes_instances.keys())
         input_uris = list(self.task_summary.inputs.keys())
-        uris_unique: list[str] = list(set(tes_urls + input_uris))
+        uris_unique: list[str] = list(dict.fromkeys(tes_urls + input_uris))
         ips: dict[str, str] = self._get_ips(*uris_unique)
         locations = self._get_ip_locations(*ips.values())
         for url in tes_urls:
