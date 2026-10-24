@@ -94,6 +94,28 @@ def test_request_body_size_limit(client: FlaskClient) -> None:
     assert response.status_code == 413
 
 
+def test_spec_extensions(client: FlaskClient) -> None:
+    """The served spec adds proTES's error responses to the TES operations.
+
+    The operations keep their own fields (cf. `additions.openapi.yaml`).
+    """
+    spec = client.get(f"{BASE_PATH}/openapi.json").get_json()
+    create = spec["paths"]["/tasks"]["post"]
+    cancel = spec["paths"]["/tasks/{id}:cancel"]["post"]
+    assert set(create["responses"]) == {"200", "413"}
+    assert set(cancel["responses"]) == {"200", "409"}
+    assert create["operationId"] == "CreateTask"
+    assert "requestBody" in create
+    assert cancel["operationId"] == "CancelTask"
+    assert cancel["parameters"][0]["name"] == "id"
+    assert spec["paths"]["/tasks"]["get"]["operationId"] == "ListTasks"
+    problem = {"$ref": "#/components/schemas/ProblemDetails"}
+    for operation, status in ((create, "413"), (cancel, "409")):
+        content = operation["responses"][status]["content"]
+        assert content["application/json"]["schema"] == problem
+    assert "detail" in spec["components"]["schemas"]["ProblemDetails"]["properties"]
+
+
 @pytest.mark.parametrize(
     "service, fields",
     [

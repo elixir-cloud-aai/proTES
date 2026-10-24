@@ -232,7 +232,15 @@ custom:
 - `list_tasks.max_page_size_full`: the maximum number of tasks per page of
   the view `FULL` (default 64), whose tasks may be large (e.g., with inline
   contents of inputs and logs); larger `page_size`s, and the default page
-  size, are reduced to it.
+  size, are reduced to it. Only the number of tasks is limited, not the
+  size of a page: a task may be as large as the [request size
+  limit](#request-size-limit) (1 MiB by default), plus the logs that its
+  TES instance reports, so a page of the view `FULL` may be about
+  `max_page_size_full` times that size (64 MiB with the defaults), which a
+  Gunicorn worker holds in memory while serving it (for each request that
+  it serves at once). For small memory limits (e.g., the 256 MiB of the
+  [Helm chart](deployment.md)), lower `max_page_size_full` (e.g., to 8) or
+  raise the memory, if users may store large tasks.
 
 `custom.storeLogs.execution_trace` sets whether proTES records the TES
 instance and the remote task identifier of each forwarded task in the task's
