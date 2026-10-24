@@ -104,8 +104,3 @@ schema `ProblemDetails` (cf.
 as clients don't get these from TES servers in general; the operations are
 otherwise those of the TES specification. The other errors are those of
 any HTTP API, and are not declared.
-
-## Middleware management API
-
-The [middleware management API](middlewares.md#middleware-management-api) is
-specified, but not served yet.

@@ -65,7 +65,7 @@ def test_service_info_not_stored(
 
 
 def test_middleware_api_not_registered(client: FlaskClient) -> None:
-    """The middleware management API is not served (no controllers yet)."""
+    """There is no middleware management API: middlewares are configured."""
     assert client.get("/protes/v1/middlewares").status_code == 404
 
 

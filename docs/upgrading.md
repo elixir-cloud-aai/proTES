@@ -314,9 +314,10 @@ tasks by an arbitrary location.
 
 ## Middleware management API
 
-The middleware management API is no longer registered, as its controllers
-don't exist yet (see [Middleware management
-API](middlewares.md#middleware-management-api)).
+The middleware management API is no longer registered, and its
+specification is removed: the stack of middlewares is configured only (see
+[Middlewares](middlewares.md)). Its collection (`middlewares`) is no longer
+created, so it can be dropped.
 
 ## Image
 
