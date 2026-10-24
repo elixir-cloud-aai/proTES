@@ -1042,6 +1042,55 @@ def test_cancel_task_remote_id_stored_meanwhile(
     assert stored(mongo_client, task_id)["task"]["state"] == "CANCELED"
 
 
+@pytest.mark.parametrize(
+    "state, expected",
+    [
+        ("COMPLETE", "COMPLETE"),
+        ("EXECUTOR_ERROR", "EXECUTOR_ERROR"),
+        ("SYSTEM_ERROR", "SYSTEM_ERROR"),
+        ("PREEMPTED", "PREEMPTED"),
+        ("CANCELED", "CANCELED"),
+        # the backend confirmed the cancel: tracking keeps `CANCELED`
+        ("CANCELING", "CANCELED"),
+    ],
+)
+def test_cancel_task_finished_meanwhile(
+    client: FlaskClient,
+    task_id: str,
+    backend: type[FakeBackend],
+    mongo_client: MongoClient[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+    state: str,
+    expected: str,
+) -> None:
+    """Final states stored while tasks are canceled at their backend are kept.
+
+    E.g., if a poll stored the final state reported by the backend after the
+    task was read, and the backend accepts cancels of finished tasks; a
+    stored `CANCELING` becomes `CANCELED`.
+    """
+    set_state(mongo_client, task_id, "RUNNING")
+    cancel_task = backend.cancel_task
+    finished_id = task_id
+
+    def cancel_task_finishing(self: FakeBackend, task_id: str) -> None:
+        """Cancel the task after a poll stored a new state.
+
+        Args:
+            self: Fake backend.
+            task_id: Identifier of the task at the backend.
+        """
+        set_state(mongo_client, task_id=finished_id, state=state)
+        cancel_task(self, task_id=task_id)
+
+    monkeypatch.setattr(backend, "cancel_task", cancel_task_finishing)
+    response = client.post(f"{BASE_PATH}/tasks/{task_id}:cancel")
+    assert response.status_code == 200
+    assert response.get_json() == {}
+    assert backend.canceled == ["remote-1"]
+    assert stored(mongo_client, task_id)["task"]["state"] == expected
+
+
 def test_cancel_task_backend_not_configured(
     app: FlaskApp,
     client: FlaskClient,

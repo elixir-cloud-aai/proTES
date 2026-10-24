@@ -328,8 +328,8 @@ gone, and the environment variables `GUNICORN_PROCESSES` and
 `GUNICORN_THREADS` are replaced by `GUNICORN_CMD_ARGS` (see
 [Server](configuration.md#server)). The Helm chart of this version needs
 images of this version, and the legacy chart (versions 2 and 3.0.0) needs
-earlier images. Released charts have the version of their release (e.g.,
-0.3.0), so chart versions restart below 3.0.0.
+earlier images. Released charts have the version of their release, so chart versions
+restart below 3.0.0.
 
 Images are tagged `dev` and `sha-<commit>` for commits on `dev`, and `X.Y.Z`
 for releases; `latest` is the highest stable release, no longer the latest
@@ -338,7 +338,7 @@ releases](development.md#versioning-and-releases)). The Helm chart takes
 the image tag from `protes.tag`, which defaults to the chart's `appVersion`:
 `dev` in the repository, the release version in released charts (see
 [Image](deployment.md#image)). `protes.image` may still include a tag (e.g.,
-`elixircloud/protes:0.3.0`); the Celery worker runs the app's image.
+`elixircloud/protes:{{ version }}`); the Celery worker runs the app's image.
 
 ## Helm chart
 
