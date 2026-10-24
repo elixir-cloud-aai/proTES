@@ -8,6 +8,7 @@
 [![Coverage][badge-coverage]][badge-url-coverage]
 [![GitHub_tag][badge-github-tag]][badge-url-github-tag]
 [![Docker_image][badge-docker]][badge-url-docker]
+[![DOI][badge-doi]][badge-url-doi]
 
 <!-- --8<-- [start:synopsis] -->
 A gateway for the [GA4GH Task Execution Service (TES)
@@ -74,6 +75,18 @@ brings a fake one (see [Access
 control](https://protes.readthedocs.io/en/latest/access-control/)).
 <!-- --8<-- [end:quick-start] -->
 
+## Citation
+
+<!-- --8<-- [start:citation] -->
+If you use proTES, please cite it with its DOI
+[10.5281/zenodo.23619646](https://doi.org/10.5281/zenodo.23619646), which
+always resolves to the latest version on [Zenodo](https://zenodo.org/); the
+Zenodo record lists the DOI of each version, too. The citation metadata is in
+[`CITATION.cff`](https://github.com/elixir-cloud-aai/proTES/blob/dev/CITATION.cff):
+on GitHub, "Cite this repository" in the sidebar of the repository formats it
+as APA or BibTeX.
+<!-- --8<-- [end:citation] -->
+
 ## Contributing
 
 Contributions are welcome! See [`CONTRIBUTING.md`](CONTRIBUTING.md) and
@@ -83,12 +96,14 @@ conduct](CODE_OF_CONDUCT.md).
 [badge-build-status]: <https://github.com/elixir-cloud-aai/proTES/actions/workflows/checks.yaml/badge.svg?branch=dev>
 [badge-coverage]: <https://codecov.io/gh/elixir-cloud-aai/proTES/branch/dev/graph/badge.svg?branch=dev>
 [badge-docker]: <https://img.shields.io/docker/v/elixircloud/protes?sort=semver&label=image&color=C39BD3>
+[badge-doi]: <https://zenodo.org/badge/DOI/10.5281/zenodo.23619646.svg>
 [badge-docs]: <https://app.readthedocs.org/projects/protes/badge/>
 [badge-github-tag]: <https://img.shields.io/github/v/tag/elixir-cloud-aai/proTES?color=C39BD3>
 [badge-license]: <https://img.shields.io/badge/license-Apache%202.0-blue.svg>
 [badge-url-build-status]: <https://github.com/elixir-cloud-aai/proTES/actions/workflows/checks.yaml?query=branch%3Adev>
 [badge-url-coverage]: <https://codecov.io/gh/elixir-cloud-aai/proTES?branch=dev>
 [badge-url-docker]: <https://hub.docker.com/r/elixircloud/protes/tags>
+[badge-url-doi]: <https://doi.org/10.5281/zenodo.23619646>
 [badge-url-docs]: <https://protes.readthedocs.io/en/latest/>
 [badge-url-github-tag]: <https://github.com/elixir-cloud-aai/proTES/releases>
 [badge-url-license]: <https://www.apache.org/licenses/LICENSE-2.0>
