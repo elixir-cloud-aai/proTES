@@ -25,6 +25,7 @@ from pro_tes.plugins.middlewares.task_distribution.random import (
     TaskDistributionRandom,
 )
 from pro_tes.tasks import track_task_progress
+from pro_tes.utils.db import DbDocumentConnector
 from pro_tes.utils.misc import get_custom_config
 from tests.conftest import DB, OTHER_USER, USER
 from tests.ga4gh.tes.conftest import (
@@ -1172,6 +1173,43 @@ def test_forward_state_changed(
         return tes.Task(id=task_id, state="QUEUED")
 
     monkeypatch.setattr(backend, "get_task", get_task)
+    response = client.post(f"{BASE_PATH}/tasks", json=TASK)
+    assert response.status_code == 200
+    document = stored(mongo_client, response.get_json()["id"])
+    assert document["task"]["state"] == "CANCELED"
+
+
+def test_forward_state_changed_while_stored(
+    client: FlaskClient,
+    backend: type[FakeBackend],
+    mongo_client: MongoClient[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Storing forwarded tasks doesn't replace states set in the meantime.
+
+    E.g., of a request that canceled the task after its backend was stored,
+    before its logs were.
+
+    Args:
+        client: Client of the app.
+        backend: Fake backends.
+        mongo_client: Client of the database.
+        monkeypatch: Pytest fixture.
+    """
+    upsert = DbDocumentConnector.upsert_fields_in_root_object
+
+    def upsert_and_cancel(
+        self: DbDocumentConnector, root: str, **kwargs: Any
+    ) -> DbDocument:
+        """Cancel the task after its backend was stored."""
+        document = upsert(self, root, **kwargs)
+        if root == "tes_endpoint":
+            set_state(mongo_client, document.task.id, "CANCELED")
+        return document
+
+    monkeypatch.setattr(
+        DbDocumentConnector, "upsert_fields_in_root_object", upsert_and_cancel
+    )
     response = client.post(f"{BASE_PATH}/tasks", json=TASK)
     assert response.status_code == 200
     document = stored(mongo_client, response.get_json()["id"])

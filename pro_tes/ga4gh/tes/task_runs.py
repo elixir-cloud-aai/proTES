@@ -705,7 +705,7 @@ class TaskRuns:
         # without the state, which a request to cancel the task may have
         # changed in the meantime
         task = db_document.model_dump(mode="json", exclude_none=True)["task"]
-        del task["state"]
+        task.pop("state", None)
         db_document = db_connector.upsert_fields_in_root_object(root="task", **task)
         logger.debug("Task '%s' inserted to database", db_document.task)
         return db_document
