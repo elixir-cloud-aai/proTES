@@ -6,6 +6,7 @@ from urllib.parse import SplitResult, urlsplit
 from foca.utils.urls import normalize_url
 from pydantic import (
     BaseModel,
+    ConfigDict,
     Field,
     PositiveInt,
     RootModel,
@@ -14,7 +15,17 @@ from pydantic import (
 )
 
 
-class DB(BaseModel):
+class ConfigModel(BaseModel):
+    """Base of the models of the custom configuration: unknown keys are errors.
+
+    So that misspelled or removed keys (e.g., in config overlays) stop the
+    app and the Celery worker on startup, instead of being ignored.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class DB(ConfigModel):
     """DB config for post_task.
 
     Args:
@@ -27,7 +38,7 @@ class DB(BaseModel):
     insert_attempts: int = 10
 
 
-class TaskID(BaseModel):
+class TaskID(ConfigModel):
     """Task ID config.
 
     Args:
@@ -43,7 +54,7 @@ class TaskID(BaseModel):
     length: int = 6
 
 
-class Timeout(BaseModel):
+class Timeout(ConfigModel):
     """Timeout config.
 
     Args:
@@ -62,7 +73,7 @@ class Timeout(BaseModel):
     job: int | None = None
 
 
-class Polling(BaseModel):
+class Polling(ConfigModel):
     """Polling config.
 
     Args:
@@ -78,7 +89,7 @@ class Polling(BaseModel):
     attempts: int = 100
 
 
-class PostTask(BaseModel):
+class PostTask(ConfigModel):
     """Configuration for POST /task.
 
     Args:
@@ -109,7 +120,7 @@ class PostTask(BaseModel):
     url_credentials: Literal["reject", "strip"] = "reject"
 
 
-class ListTasks(BaseModel):
+class ListTasks(ConfigModel):
     """Configuration for GET /tasks.
 
     Defaults are those of the TES specification (pages of fewer than 2048
@@ -150,52 +161,20 @@ class ListTasks(BaseModel):
         return self
 
 
-class Monitor(BaseModel):
-    """Celery monitor settings.
-
-    Args:
-        timeout: Timeout to wait for Celery monitoring.
-
-    Attributes:
-        timeout: Timeout to wait for Celery monitoring.
-    """
-
-    timeout: float = 0.1
-
-
-class Celery(BaseModel):
-    """Celery configuration.
-
-    Args:
-        monitor: Monitor settings.
-        message_maxsize: Maximum allowed message size.
-
-    Attributes:
-        monitor: Monitor settings.
-        message_maxsize: Maximum allowed message size.
-    """
-
-    monitor: Monitor = Monitor()
-    message_maxsize: int = 16777216
-
-
-class Controllers(BaseModel):
+class Controllers(ConfigModel):
     """Controller configurations.
 
     Args:
         post_task: Settings for POST /task.
         list_tasks: Settings for GET /tasks.
-        celery: Celery background task settings.
 
     Attributes:
         post_task: Settings for POST /task.
         list_tasks: Settings for GET /tasks.
-        celery: Celery background task settings.
     """
 
     post_task: PostTask = PostTask()
     list_tasks: ListTasks = ListTasks()
-    celery: Celery = Celery()
 
 
 def split_server_url(url: str, name: str) -> SplitResult:
@@ -223,7 +202,7 @@ def split_server_url(url: str, name: str) -> SplitResult:
     return parts
 
 
-class BasicCredentials(BaseModel):
+class BasicCredentials(ConfigModel):
     """Names of the environment variables with HTTP Basic credentials.
 
     The credentials themselves are never part of the config.
@@ -241,7 +220,7 @@ class BasicCredentials(BaseModel):
     password_env: str = Field(min_length=1)
 
 
-class TesBackend(BaseModel):
+class TesBackend(ConfigModel):
     """TES backend that tasks may be forwarded to.
 
     Args:
@@ -296,7 +275,7 @@ class TesBackend(BaseModel):
         return self
 
 
-class ClientCredentials(BaseModel):
+class ClientCredentials(ConfigModel):
     """Client of proTES at its identity provider (OAuth 2.0 client credentials).
 
     proTES gets its own access tokens with the client credentials grant (RFC
@@ -362,7 +341,7 @@ class DiscoveredBackend(TesBackend):
     service_id: str
 
 
-class Discovery(BaseModel):
+class Discovery(ConfigModel):
     """Discovery of TES backends in a service registry.
 
     The registry implements the GA4GH Service Registry API, with the list of
@@ -444,7 +423,7 @@ class Discovery(BaseModel):
         return normalize_url(value, name="Registry URLs")
 
 
-class Tes(BaseModel):
+class Tes(ConfigModel):
     """TES backend configuration.
 
     Args:
@@ -517,7 +496,7 @@ class Tes(BaseModel):
         return self
 
 
-class StoreLogs(BaseModel):
+class StoreLogs(ConfigModel):
     """Logging configuration.
 
     Args:
@@ -554,7 +533,7 @@ class Middlewares(RootModel[list[list[str]]]):
     ]
 
 
-class AccessControl(BaseModel):
+class AccessControl(ConfigModel):
     """Access control settings of the app.
 
     Args:
@@ -571,7 +550,7 @@ class AccessControl(BaseModel):
     require_admin: bool = True
 
 
-class CustomConfig(BaseModel):
+class CustomConfig(ConfigModel):
     """Custom app configuration.
 
     Args:
