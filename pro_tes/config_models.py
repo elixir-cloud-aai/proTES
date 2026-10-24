@@ -105,7 +105,8 @@ class PostTask(ConfigModel):
         max_create_time: Seconds after which tasks still being created
             (in state `UNKNOWN`, without identifier at a TES instance; e.g.,
             if proTES stopped while forwarding them) are set to
-            `SYSTEM_ERROR`; longer than creating a task may take.
+            `SYSTEM_ERROR`; longer than creating a task may take, and at
+            most a year.
 
     Attributes:
         db: DB insert behavior.
@@ -126,7 +127,8 @@ class PostTask(ConfigModel):
     polling: Polling = Polling()
     url_credentials: Literal["reject", "strip"] = "reject"
     max_inline_content: PositiveInt = 131072
-    max_create_time: PositiveInt = 3600
+    # at most a year (cut-offs before the Unix epoch are invalid)
+    max_create_time: Annotated[int, Field(gt=0, le=31536000)] = 3600
 
 
 class ListTasks(ConfigModel):
