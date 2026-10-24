@@ -121,6 +121,37 @@ def test_create_task_no_backend(
     assert mongo_client[DB]["policy_rules"].count_documents({"ptype": "g2"}) == 0
 
 
+def test_create_task_no_backend_selected(
+    app: FlaskApp,
+    client: FlaskClient,
+    backend: type[FakeBackend],
+    tracked: list[dict[str, Any]],
+    mongo_client: MongoClient[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Tasks without backends fail (`500`) as if none accepted them.
+
+    They are rejected before they are stored, so no task, no owner's roles
+    and no task in a state such as `SYSTEM_ERROR` are left.
+    """
+    stores: list[Any] = []
+    monkeypatch.setattr(
+        task_runs.TaskRuns,
+        "_update_task",
+        lambda self, **kwargs: stores.append(kwargs),
+    )
+    with app.app.app_context():
+        get_custom_config().tes.service_list = []
+    response = client.post(f"{BASE_PATH}/tasks", json=TASK)
+    assert response.status_code == 500
+    assert response.get_json()["detail"] == "No TES instance accepted the task."
+    assert not stores
+    assert not relayed(backend)
+    assert not tracked
+    assert mongo_client[DB]["tasks"].count_documents({}) == 0
+    assert mongo_client[DB]["policy_rules"].count_documents({"ptype": "g2"}) == 0
+
+
 @pytest.mark.parametrize("served", ["none", "invalid"])
 def test_create_task_state_unavailable(
     client: FlaskClient,

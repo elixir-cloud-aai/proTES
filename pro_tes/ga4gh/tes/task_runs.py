@@ -141,7 +141,8 @@ class TaskRuns:
                 not be applied, or no middleware left a list of URL strings
                 in `tes_urls`; the task is not kept.
             pro_tes.exceptions.NoTesInstancesAvailable: No TES instance
-                accepted the task; the task is not kept.
+                accepted the task, or the middlewares selected none (then
+                before the task is stored); the task is not kept.
             pro_tes.exceptions.Unauthorized: The user of the request could
                 not be identified.
         """
@@ -525,6 +526,9 @@ class TaskRuns:
         Raises:
             pro_tes.exceptions.MiddlewareException: A middleware step could
                 not be applied, or no middleware selected TES backends.
+            pro_tes.exceptions.NoTesInstancesAvailable: The middlewares
+                selected an empty list of TES backends (e.g., as none are
+                configured or discovered).
         """
         mw_handler = MiddlewareHandler()
         mw_handler.set_middlewares(paths=self.custom_config.middlewares.root)
@@ -535,6 +539,9 @@ class TaskRuns:
             isinstance(url, str) for url in tes_urls
         ):
             raise MiddlewareException("Middlewares selected no TES backends")
+        # before the task is stored: the same error as if no backend accepted
+        if not tes_urls:
+            raise NoTesInstancesAvailable("Middlewares selected an empty list")
         return payload, tes_urls
 
     def _find_task(self, id: str) -> tuple[dict[str, Any], DbDocument]:

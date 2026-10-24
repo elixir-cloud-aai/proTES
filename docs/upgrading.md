@@ -329,6 +329,11 @@ silently. With no other alternative, task creation then fails with `500`
 and the detail "Middleware could not be applied."; the log says why ("No
 middleware could be applied", or "Middlewares selected no TES backends").
 
+Code that calls `TaskRuns` directly (e.g., custom controllers) passes the
+task and the request path of the tasks: `create_task(task=…,
+collection=…)` and `list_tasks(collection=…, …)`; `TaskRuns` no longer
+reads them from the request.
+
 ## Middleware management API
 
 The middleware management API is no longer registered, and its
