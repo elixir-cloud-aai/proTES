@@ -485,10 +485,12 @@ class TaskRuns:
             )
             cli.cancel_task(task_id=task_id)
             # unless tracking stored a final state meanwhile: the backend
-            # may accept cancels of finished tasks (as no-ops)
+            # may accept cancels of finished tasks (as no-ops); a stored
+            # `CANCELING` (the backend confirmed the cancel) becomes
+            # `CANCELED`, which tracking keeps until the task is final
             if db_connector.update_task_state(
                 state="CANCELED",
-                if_state=States.TO_CANCEL,
+                if_state=States.TO_CANCEL + States.CANCELING,
             ):
                 logger.info(
                     "Task '%s' with worker ID '%s' canceled.",
@@ -497,8 +499,9 @@ class TaskRuns:
                 )
             else:
                 logger.info(
-                    "Task '%s' with worker ID '%s' not canceled: its state"
-                    " changed meanwhile.",
+                    "Task '%s' with worker ID '%s' canceled at its TES"
+                    " instance; its stored state is kept, as it changed"
+                    " meanwhile.",
                     id,
                     db_document.worker_id,
                 )

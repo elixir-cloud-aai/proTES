@@ -68,7 +68,9 @@ def test_update_task_state_if_states(connector: DbDocumentConnector) -> None:
     assert not connector.update_task_state(
         state="QUEUED", if_state=["UNKNOWN", "RUNNING"]
     )
+    # none expected: never updated
     assert not connector.update_task_state(state="QUEUED", if_state=[])
+    # the stored state of the fixture is `invalid`
     assert connector.update_task_state(state="QUEUED", if_state=["UNKNOWN", "invalid"])
     document = connector.collection.find_one({"worker_id": "worker-1"})
     assert document is not None
