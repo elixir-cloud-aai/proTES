@@ -67,6 +67,35 @@ URLs must use one of the schemes of `custom.tes.url_schemes` (default:
 `https` only). The [middlewares](middlewares.md) decide which of the TES
 instances are tried, and in which order (see [Tasks](api.md#tasks)).
 
+Requests to TES instances time out after `custom.tes.timeout` seconds
+(default: 15), and after 5 seconds while connecting. proTES creates, gets
+and cancels tasks with a single request each, to the API path of the URL
+(`<url>/ga4gh/tes/v1`), and never sends a request to create or cancel a
+task again, so that no TES instance gets a task twice; these requests don't
+follow redirects. It tries the next TES instance only if a TES instance
+certainly did not accept the task: it was not reached (connection refused,
+host not resolved, connection timed out, certificate not accepted), there
+were no credentials for it, or it answered with a status other than 2xx and
+5xx (e.g., `400` or `401`, or a redirect, e.g., of an authentication
+gateway or from `http` to `https`: configure the URL that the redirect
+leads to). If
+it may have accepted the task, because the response timed out, the
+connection was lost after the request was sent, or it answered with a
+server error (5xx; gateways answer `502`, `503` or `504` also when the TES
+instance behind them got the request), the task is not sent to other TES
+instances, as it may run already: it fails with `SYSTEM_ERROR` (see
+[Tasks](api.md#tasks)). Other failures of TLS handshakes (e.g., an `https`
+URL of a plain HTTP port) and of proxies count as unknown outcomes too, so
+they stop the failover: check the URLs of the TES instances. Set the
+timeout long enough for slow TES instances, but keep the duration of a
+request to create a task (per TES instance tried, up to 5 seconds to
+connect, and up to the timeout each to create the task and to get its
+state) below the read timeout of a reverse proxy in front of proTES (e.g.,
+60 seconds by default for ingress-nginx): clients that retry requests that
+timed out may create tasks twice. Requests in flight when an instance of
+proTES stops are cut off after Gunicorn's graceful timeout (20 seconds in
+the chart).
+
 ### Discovery in a service registry
 
 proTES can also take TES instances from a service registry implementing the

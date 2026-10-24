@@ -46,7 +46,15 @@ For `POST /tasks`, proTES:
    it, the task's state is set to `SYSTEM_ERROR`, and the request fails with
    `500 Internal Server Error`. Each TES instance gets its own copy of the
    validated task, with the credentials of proTES for it (see [Credentials
-   of TES instances](access-control.md#credentials-of-tes-instances));
+   of TES instances](access-control.md#credentials-of-tes-instances)), in a
+   single request; the next TES instance is tried only if a TES instance
+   certainly did not accept the task (see [TES
+   instances](configuration.md#tes-instances)). If a TES instance may have
+   accepted it without confirming it (e.g., the response timed out), the
+   task is not sent to other TES instances, its state is set to
+   `SYSTEM_ERROR`, and the request fails with `502 Bad Gateway`: the task
+   may run at that TES instance, but proTES can neither track nor cancel
+   it;
 4. tracks the task at the TES instance in the background (a Celery worker
    polls its state until it has finished; see [Tasks](configuration.md#tasks)),
    and updates its state and logs.
@@ -67,8 +75,10 @@ users without the required role and for tasks of others or unknown tasks
 (see [Access control](access-control.md)), `404 Not Found` for tasks of the
 caller deleted from the database,
 `413 Content Too Large` for request bodies over the [size
-limit](configuration.md#request-size-limit), and `500 Internal Server Error`
-if a task could not be forwarded or no middleware could be applied. The
+limit](configuration.md#request-size-limit), `500 Internal Server Error`
+if a task could not be forwarded or no middleware could be applied, and
+`502 Bad Gateway` if a TES instance did not confirm a request to create or
+cancel a task, which it may have processed (see [Tasks](#tasks)). The
 mapping of exceptions to problem details is
 `exceptions` in
 [`pro_tes.exceptions`](reference.md#pro_tes.exceptions).
