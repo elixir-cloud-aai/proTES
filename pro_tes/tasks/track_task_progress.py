@@ -47,6 +47,9 @@ logger = logging.getLogger(__name__)
 # the time (seconds since the epoch) at which it claimed the tracking
 POLL_FIELD = "tracking.poll"
 POLLED_AT_FIELD = "tracking.polled_at"
+# Field of stored tasks with the number of consecutive failed polls, which
+# resumed polls continue from
+FAILURES_FIELD = "tracking.failures"
 # Tasks not polled for this many times `polling.max_wait` are resumed by
 # `task__resume_tracking`, which runs every `polling.max_wait` seconds
 STALE_FACTOR = 3
@@ -146,7 +149,7 @@ def _schedule(
     )
     collection.update_one(
         {"worker_id": kwargs["worker_id"], POLL_FIELD: kwargs["poll"]},
-        {"$set": {POLL_FIELD: successor}},
+        {"$set": {POLL_FIELD: successor, FAILURES_FIELD: failures}},
     )
 
 
@@ -249,13 +252,16 @@ def _poll(kwargs: dict[str, Any]) -> None:
             type(exc).__name__,
             exc,
         )
-        if failures == get_custom_config().controllers.post_task.polling.attempts:
+        attempts = get_custom_config().controllers.post_task.polling.attempts
+        if failures == attempts:
             logger.error(
                 "[%s] %d consecutive polls failed; the state is unknown until"
                 " the backend answers again",
                 worker_id,
                 failures,
             )
+        # also if `attempts` was lowered meanwhile
+        if failures >= attempts:
             _store_state(
                 collection=collection,
                 worker_id=worker_id,
@@ -363,8 +369,13 @@ def task__track_task_progress(
             type(exc).__name__,
             exc,
         )
-        # retried until MongoDB is available (`max_retries=None`)
-        raise self.retry(exc=exc, countdown=countdown) from exc
+        try:
+            # retried until MongoDB is available (`max_retries=None`)
+            raise self.retry(exc=exc, countdown=countdown) from exc
+        except Reject as reject:
+            # the retry couldn't be published (Celery rejects the poll
+            # without requeuing it): the broker delivers the poll again
+            raise Reject(reject.args[0], requeue=True) from exc
 
 
 @celery.task(name="tasks.resume_tracking", ignore_result=True, acks_late=True)
@@ -398,7 +409,8 @@ def task__resume_tracking() -> int:
     for document in collection.find(
         query, projection=["worker_id", "tes_endpoint", "tracking"]
     ):
-        current = (document.get("tracking") or {}).get("poll")
+        tracking = document.get("tracking") or {}
+        current = tracking.get("poll")
         poll = uuid4().hex
         endpoint = document["tes_endpoint"]
         # scheduled first, so that the poll can take over if storing it fails
@@ -410,6 +422,7 @@ def task__resume_tracking() -> int:
                 "remote_task_id": endpoint["task_id"],
                 "poll": poll,
                 "previous": current,
+                "failures": tracking.get("failures") or 0,
             },
         )
         collection.update_one(

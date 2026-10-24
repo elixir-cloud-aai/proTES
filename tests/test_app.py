@@ -187,3 +187,4 @@ def test_task_indexes(app: FlaskApp, mongo_client: MongoClient[dict[str, Any]]) 
     assert indexes[(("task.id", 1),)].get("unique") is True
     assert not indexes[(("task.id", 1),)].get("sparse")
     assert not indexes[(("worker_id", 1),)].get("unique")
+    assert (("task.state", 1), ("tracking.polled_at", 1)) in indexes

@@ -229,8 +229,9 @@ the TES instance answers again, and polls back off up to
 `polling.max_wait` seconds (new, default 600); the first poll is retried,
 too, and so are polls of tasks whose TES instance is not (or no longer)
 configured or discovered. `polling.wait` and `polling.attempts` must be
-positive. The workers no longer set `INITIALIZING` when they start tracking a
-task: the state is the one reported by its TES instance.
+positive, and `wait` and `max_wait` below 1800. The workers no longer set
+`INITIALIZING` when they start tracking a task: the state is the one
+reported by its TES instance.
 
 ## Task times and remote identifiers
 

@@ -178,10 +178,11 @@ custom:
   3) until the task has finished. After `attempts` consecutive failed polls
   (default 100; a successful poll resets the count), the task's state is
   `UNKNOWN`, and the polls back off, doubling the interval up to `max_wait`
-  seconds (default 600; keep it below RabbitMQ's `consumer_timeout`, 30
-  minutes by default), until the TES instance answers again: failed polls
+  seconds (default 600), until the TES instance answers again: failed polls
   never make a task fail, as it may still be running (see [Task
-  tracking](operations.md#task-tracking));
+  tracking](operations.md#task-tracking)). `wait` and `max_wait` must be
+  below 1800 seconds, RabbitMQ's default acknowledgement timeout
+  (`consumer_timeout`), as scheduled polls are acknowledged when they run;
 - `post_task.url_credentials`: what happens to tasks with credentials in the
   URLs of their inputs or outputs (`https://user:password@host/...`): they
   are rejected with `400 Bad Request` (`reject`, the default), or the

@@ -9,6 +9,7 @@ from connexion import FlaskApp
 from foca import get_collection
 from foca.models.config import Config
 from kombu.exceptions import OperationalError
+from pydantic import ValidationError
 from pymongo import MongoClient
 from pymongo.collection import Collection
 from pymongo.errors import ServerSelectionTimeoutError
@@ -378,6 +379,33 @@ def test_infrastructure_error_not_failed_poll(
     assert not scheduled
 
 
+def test_retry_not_published_requeued(
+    tasks: Collection[dict[str, Any]],
+    client_class: type[FakeClient],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Polls go back to the broker if their retry can't be published.
+
+    Celery would reject them without requeuing them, which ends the chain.
+    """
+
+    def unavailable(**kwargs: Any) -> bool:
+        """Fail like an unavailable MongoDB."""
+        raise ServerSelectionTimeoutError("unavailable")
+
+    def retry(**kwargs: Any) -> None:
+        """Fail to publish the retry, as Celery does."""
+        raise Reject(OperationalError("unavailable"), requeue=False)
+
+    monkeypatch.setattr(track_task_progress, "_claim", unavailable)
+    monkeypatch.setattr(TRACK, "retry", retry)
+    with pytest.raises(Reject) as info:
+        run()
+    reason, requeue = info.value.args
+    assert requeue
+    assert isinstance(reason, OperationalError)
+
+
 def test_broker_error_requeued(
     tasks: Collection[dict[str, Any]],
     client_class: type[FakeClient],
@@ -579,6 +607,55 @@ def test_failures_exceeded(
     assert stored_states == ["UNKNOWN", "RUNNING", "COMPLETE"]
 
 
+def test_attempts_lowered(
+    tasks: Collection[dict[str, Any]],
+    client_class: type[FakeClient],
+    scheduled: list[dict[str, Any]],
+    stored_states: list[str],
+) -> None:
+    """Tasks become `UNKNOWN` also if `attempts` was lowered meanwhile.
+
+    I.e., below the failures counted by a scheduled poll.
+    """
+    client_class.states = [None]
+    run(failures=200)
+    assert stored_states == ["UNKNOWN"]
+
+
+def test_failures_resumed(
+    tasks: Collection[dict[str, Any]],
+    client_class: type[FakeClient],
+    scheduled: list[dict[str, Any]],
+) -> None:
+    """Resumed polls continue from the stored count of failed polls.
+
+    So that they keep backing off while the backend is unavailable.
+    """
+    client_class.states = [None]
+    endpoint = {"host": ARGS["remote_host"], "base_path": "", "task_id": "remote-1"}
+    tasks.update_one({}, {"$set": {"tes_endpoint": endpoint}})
+    run(failures=4)
+    document = tasks.find_one({})
+    assert document is not None
+    assert document["tracking"]["failures"] == 5
+    tasks.update_one({}, {"$set": {"tracking.polled_at": 0}})
+    scheduled.clear()
+    track_task_progress.task__resume_tracking.run()
+    (call,) = scheduled
+    assert call["kwargs"]["failures"] == 5
+
+
+@pytest.mark.parametrize("field", ["wait", "max_wait"])
+def test_intervals_below_ack_timeout(field: str) -> None:
+    """Intervals are below the broker's acknowledgement timeout.
+
+    Scheduled polls are acknowledged when they run, so RabbitMQ would
+    deliver them again before they are due.
+    """
+    with pytest.raises(ValidationError):
+        Polling(**{field: 1800})
+
+
 def test_backoff_capped(polling: Polling) -> None:
     """Intervals of polls are capped, also after many failures.
 
@@ -739,6 +816,7 @@ def test_tracking_resumed(
         "remote_task_id": "remote-1",
         "poll": current_poll(tasks),
         "previous": None,
+        "failures": 0,
     }
     assert call.get("countdown") is None
     # the first poll of the earlier chain does nothing
