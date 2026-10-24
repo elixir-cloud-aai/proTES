@@ -223,6 +223,15 @@ custom:
   per input; all contents together are limited by the [request size
   limit](#request-size-limit)); tasks with larger contents are rejected
   with `413 Content Too Large`, also if middlewares added the contents;
+- `post_task.max_create_time`: the number of seconds (default 3600) after
+  which tasks that are still being created, i.e., in state `UNKNOWN`
+  without identifier at a TES instance (e.g., because proTES stopped while
+  forwarding them, as in a rolling upgrade), are set to `SYSTEM_ERROR` by
+  the Celery workers (see [Task tracking](operations.md#task-tracking)).
+  It must be longer than creating a task may take: about 5 seconds of
+  connecting to each TES instance that is tried, the token requests
+  (`client_credentials.timeout`), and `tes.timeout`, for the TES instance
+  that accepts the task;
 - `list_tasks.default_page_size`: the number of tasks per page of
   `GET /tasks` if the request sets no `page_size` (default 256, as in the
   TES specification);

@@ -1,6 +1,7 @@
 """Tests of the Celery tasks tracking tasks at TES backends."""
 
 from collections.abc import Iterator
+from datetime import UTC, datetime
 import time
 from typing import Any, ClassVar
 
@@ -19,7 +20,7 @@ import tes
 
 from pro_tes.app import init_app
 from pro_tes.celery_worker import celery
-from pro_tes.config_models import Discovery, Polling, TesBackend
+from pro_tes.config_models import Discovery, Polling, PostTask, TesBackend
 from pro_tes.ga4gh.tes import backends
 from pro_tes.tasks import track_task_progress
 from pro_tes.utils.db import DbDocumentConnector
@@ -643,6 +644,94 @@ def test_failures_resumed(
     track_task_progress.task__resume_tracking.run()
     (call,) = scheduled
     assert call["kwargs"]["failures"] == 5
+
+
+def iso_time(seconds_ago: float) -> str:
+    """Get a past time, in the format of `creation_time`.
+
+    Args:
+        seconds_ago: Seconds before now.
+
+    Returns:
+        The time, in UTC, in RFC 3339 format.
+    """
+    return datetime.fromtimestamp(time.time() - seconds_ago, UTC).isoformat()
+
+
+def test_cut_off_creates_failed(
+    tasks: Collection[dict[str, Any]],
+    scheduled: list[dict[str, Any]],
+) -> None:
+    """Tasks whose creation was cut off are set to `SYSTEM_ERROR`.
+
+    I.e., tasks still in state `UNKNOWN` without identifier at a backend,
+    created more than `max_create_time` seconds ago (e.g., if proTES stopped
+    while forwarding them); not tasks being created, tasks with a remote
+    identifier (also in the logs, of earlier versions), tasks in other
+    states, or tasks without creation time.
+    """
+    max_create_time = get_custom_config().controllers.post_task.max_create_time
+    old = iso_time(max_create_time + 60)
+    endpoint = {"host": ARGS["remote_host"], "base_path": "", "task_id": "remote-1"}
+    tasks.delete_many({})
+
+    def insert(worker_id: str, created: str | None = old, **fields: Any) -> None:
+        """Store a task in state `UNKNOWN`, with its creation time.
+
+        Args:
+            worker_id: Worker identifier of the task.
+            created: Creation time of the task; none if `None`.
+            **fields: Further fields of the document, or of its task
+                (`task`, merged into it).
+        """
+        insert_task(tasks, worker_id, state="UNKNOWN", **fields)
+        if created is not None:
+            tasks.update_one(
+                {"worker_id": worker_id}, {"$set": {"task.creation_time": created}}
+            )
+
+    insert("cut-off")
+    insert("cut-off-host", tes_endpoint={"host": ARGS["remote_host"], "base_path": ""})
+    insert("cut-off-empty-forwards")
+    tasks.update_one(
+        {"worker_id": "cut-off-empty-forwards"},
+        {"$set": {"task.logs.0.metadata": {"forwarded_to": []}}},
+    )
+    insert("being-created", created=iso_time(60))
+    insert("forwarded", tes_endpoint=endpoint)
+    insert("no-creation-time", created=None)
+    insert("queued")
+    tasks.update_one({"worker_id": "queued"}, {"$set": {"task.state": "QUEUED"}})
+    legacy = {
+        "legacy-forwards": {"forwarded_to": [{"id": "remote-2", "url": "x"}]},
+        "legacy-nested": {"forwarded_to": {"id": "remote-3", "url": "x"}},
+        "legacy-remote-id": {"remote_task_id": "remote-4"},
+    }
+    for worker_id, metadata in legacy.items():
+        insert(worker_id)
+        tasks.update_one(
+            {"worker_id": worker_id}, {"$set": {"task.logs.0.metadata": metadata}}
+        )
+    assert track_task_progress.task__resume_tracking.run() == 1
+    states = {
+        document["worker_id"]: document["task"]["state"] for document in tasks.find()
+    }
+    failed = {"cut-off", "cut-off-host", "cut-off-empty-forwards"}
+    assert {key for key, state in states.items() if state == "SYSTEM_ERROR"} == failed
+    assert states["queued"] == "QUEUED"
+    assert {state for key, state in states.items() if key not in failed} == {
+        "UNKNOWN",
+        "QUEUED",
+    }
+    # the task with a remote identifier is resumed instead
+    (call,) = scheduled
+    assert call["kwargs"]["worker_id"] == "forwarded"
+
+
+def test_max_create_time_positive() -> None:
+    """The maximum duration of creating a task is positive."""
+    with pytest.raises(ValidationError):
+        PostTask(max_create_time=0)
 
 
 @pytest.mark.parametrize("field", ["wait", "max_wait"])

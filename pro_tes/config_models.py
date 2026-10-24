@@ -102,6 +102,10 @@ class PostTask(ConfigModel):
         max_inline_content: Maximum size of the inline contents of the
             inputs of a task (`inputs[].content`), together, in bytes
             (UTF-8); tasks with larger contents are rejected.
+        max_create_time: Seconds after which tasks still being created
+            (in state `UNKNOWN`, without identifier at a TES instance; e.g.,
+            if proTES stopped while forwarding them) are set to
+            `SYSTEM_ERROR`; longer than creating a task may take.
 
     Attributes:
         db: DB insert behavior.
@@ -113,6 +117,8 @@ class PostTask(ConfigModel):
             (`strip`); credentials are never stored or forwarded.
         max_inline_content: Maximum size of the inline contents of the
             inputs of a task, together, in bytes (UTF-8).
+        max_create_time: Seconds after which tasks still being created are
+            set to `SYSTEM_ERROR`.
     """
 
     db: DB = DB()
@@ -120,6 +126,7 @@ class PostTask(ConfigModel):
     polling: Polling = Polling()
     url_credentials: Literal["reject", "strip"] = "reject"
     max_inline_content: PositiveInt = 131072
+    max_create_time: PositiveInt = 3600
 
 
 class ListTasks(ConfigModel):

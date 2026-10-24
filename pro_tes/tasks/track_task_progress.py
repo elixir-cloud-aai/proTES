@@ -20,6 +20,7 @@ of stored unfinished tasks that haven't been polled for long is resumed
 lost.
 """
 
+from datetime import UTC, datetime
 import logging
 from threading import Event, Thread
 import time
@@ -388,14 +389,17 @@ def task__resume_tracking() -> int:
     `polling.max_wait` seconds, or ever. Each gets a new poll, which takes
     over from the stored one, so that a chain that still tracks the task
     ends. Run when a worker starts, and then periodically (cf.
-    :py:func:`resume_tracking_on_start`); idempotent.
+    :py:func:`resume_tracking_on_start`); idempotent. Tasks whose creation
+    was cut off are set to `SYSTEM_ERROR` first (cf. :py:func:`_fail_cut_off`).
 
     Returns:
         Number of tasks whose tracking is resumed.
     """
-    polling = get_custom_config().controllers.post_task.polling
+    post_task = get_custom_config().controllers.post_task
+    polling = post_task.polling
     stale = time.time() - STALE_FACTOR * max(polling.max_wait, polling.wait)
     collection = get_collection(TASK_DB, TASK_COLLECTION)
+    _fail_cut_off(collection=collection, max_create_time=post_task.max_create_time)
     query = {
         "task.state": {"$in": States.UNFINISHED},
         "tes_endpoint.host": {"$nin": ["", None]},
@@ -432,6 +436,74 @@ def task__resume_tracking() -> int:
         resumed += 1
     logger.info("Resumed the tracking of %d unfinished tasks", resumed)
     return resumed
+
+
+def _fail_cut_off(collection: Collection[dict[str, Any]], max_create_time: int) -> int:
+    """Set tasks whose creation was cut off to `SYSTEM_ERROR`.
+
+    That is, tasks still in state `UNKNOWN` without identifier at a TES
+    instance (also none in their logs, as stored by earlier versions) that
+    were created more than `max_create_time` seconds ago, e.g., if proTES
+    stopped while forwarding them. They can be neither tracked nor
+    canceled; as their TES instance may run them, they are kept, as are
+    tasks that a TES instance did not confirm (cf.
+    :py:class:`~pro_tes.exceptions.BackendOutcomeUnknown`).
+
+    Args:
+        collection: Database collection of the tasks.
+        max_create_time: Seconds after which tasks still being created are
+            set to `SYSTEM_ERROR`.
+
+    Returns:
+        Number of tasks set to `SYSTEM_ERROR`.
+    """
+    cutoff = datetime.fromtimestamp(time.time() - max_create_time, UTC).isoformat()
+    unconfirmed = {
+        "task.state": TesState.UNKNOWN.value,
+        "tes_endpoint.task_id": {"$not": {"$type": "string"}},
+    }
+    failed = 0
+    for document in collection.find(
+        # creation times are in the same format (cf. `utc_now`)
+        {**unconfirmed, "task.creation_time": {"$type": "string", "$lt": cutoff}},
+        projection=["worker_id", "task.logs"],
+    ):
+        if _logged_remote_task_id(document):
+            continue
+        result = collection.update_one(
+            {"_id": document["_id"], **unconfirmed},
+            {"$set": {"task.state": TesState.SYSTEM_ERROR.value}},
+        )
+        if result.modified_count:
+            logger.warning(
+                "[%s] %s: its creation was cut off (not forwarded within %d"
+                " seconds); it may run at a TES instance",
+                document["worker_id"],
+                TesState.SYSTEM_ERROR.value,
+                max_create_time,
+            )
+            failed += 1
+    return failed
+
+
+def _logged_remote_task_id(document: dict[str, Any]) -> bool:
+    """Tell whether a stored task has a remote identifier in its logs.
+
+    As tasks stored by earlier versions may have (cf.
+    :py:meth:`~pro_tes.ga4gh.tes.task_runs.TaskRuns._remote_task_id`).
+
+    Args:
+        document: Stored task, with its logs.
+
+    Returns:
+        Whether the logs record a forward (also nested, of earlier
+        versions) or a remote task identifier.
+    """
+    logs = document.get("task", {}).get("logs") or [{}]
+    metadata = logs[0].get("metadata") or {}
+    return bool(metadata.get("forwarded_to")) or isinstance(
+        metadata.get("remote_task_id"), str
+    )
 
 
 def resume_tracking_periodically(stop: Event, interval: float) -> None:

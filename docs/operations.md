@@ -61,6 +61,16 @@ stop the tracking of tasks; they only delay their next polls. Canceled
 tasks are not resumed: if their tracking is lost before their TES instance
 has finished them, they stay `CANCELED`, without their final logs.
 
+Tasks whose creation was cut off (e.g., if a Gunicorn worker was stopped
+while it forwarded them, during an upgrade) stay in state `UNKNOWN`
+without identifier at a TES instance: they can be neither tracked nor
+canceled. The workers set them to `SYSTEM_ERROR` when they resume the
+tracking of tasks, once the tasks are older than
+`post_task.max_create_time` seconds (default 3600; see
+[Tasks](configuration.md#tasks)). As for tasks that a TES instance did not
+confirm, the task may run at a TES instance: it is kept, and the logs of
+the API name the TES instances that were tried.
+
 ## Task owners
 
 Only the owner of a task can read and cancel it through the API, not admins
