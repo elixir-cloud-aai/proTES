@@ -452,10 +452,45 @@ def test_list_tasks_page_sizes(
     assert len(list_tasks(client, page_size=100)["tasks"]) == 3
 
 
+def test_list_tasks_page_sizes_full(
+    app: FlaskApp, client: FlaskClient, backend: type[FakeBackend]
+) -> None:
+    """Pages of the view `FULL` have at most their own maximum size.
+
+    Also by default, and at most the maximum size of all views.
+    """
+    with app.app.app_context():
+        config = get_custom_config().controllers.list_tasks
+        config.default_page_size = 3
+        config.max_page_size = 4
+        config.max_page_size_full = 2
+    ids = create_tasks(client, ["a", "b", "c", "d", "e"])
+    page = list_tasks(client, view="FULL")
+    assert [task["id"] for task in page["tasks"]] == ids[:2]
+    assert len(list_tasks(client, view="FULL", page_size=100)["tasks"]) == 2
+    assert len(list_tasks(client, view="BASIC", page_size=100)["tasks"]) == 4
+    assert len(list_tasks(client, view="MINIMAL")["tasks"]) == 3
+    next_page = list_tasks(client, view="FULL", page_token=page["next_page_token"])
+    assert [task["id"] for task in next_page["tasks"]] == ids[2:4]
+    with app.app.app_context():
+        config.max_page_size_full = 10
+    assert len(list_tasks(client, view="FULL", page_size=100)["tasks"]) == 4
+
+
+def test_list_tasks_last_page_full(client: FlaskClient, task_id: str) -> None:
+    """Pages that hold the remaining tasks have no next page token."""
+    page = list_tasks(client, view="FULL")
+    assert [task["id"] for task in page["tasks"]] == [task_id]
+    assert page["next_page_token"] == ""
+
+
 def test_page_size_config() -> None:
     """The default page size must not exceed the maximum."""
     assert ListTasks().default_page_size == 256
     assert ListTasks().max_page_size == 2047
+    assert ListTasks().max_page_size_full == 64
+    with pytest.raises(ValidationError):
+        ListTasks(max_page_size_full=0)
     with pytest.raises(ValidationError, match="exceeds max_page_size"):
         ListTasks(default_page_size=10, max_page_size=5)
     assert ListTasks(default_page_size=5, max_page_size=5).max_page_size == 5
@@ -499,6 +534,82 @@ def test_list_tasks_name_prefix_null(client: FlaskClient) -> None:
     """Name prefixes with null characters are rejected."""
     response = client.get(f"{BASE_PATH}/tasks", query_string={"name_prefix": "a\x00"})
     assert response.status_code == 400
+
+
+@pytest.mark.parametrize(
+    "contents, accepted",
+    [
+        (["a" * 8, "b" * 8], True),
+        (["a" * 8, "b" * 9], False),
+        # bytes, not characters
+        (["\u00e4" * 8], True),
+        (["\u00e4" * 8, "x"], False),
+    ],
+)
+def test_create_task_inline_content(
+    app: FlaskApp,
+    client: FlaskClient,
+    backend: type[FakeBackend],
+    mongo_client: MongoClient[dict[str, Any]],
+    contents: list[str],
+    accepted: bool,
+) -> None:
+    """Tasks with larger inline contents than the limit are rejected (`413`).
+
+    The contents of all inputs count together, in bytes (UTF-8); rejected
+    tasks are neither stored nor relayed.
+
+    Args:
+        app: The app.
+        client: Client of the app.
+        backend: Fake backends.
+        mongo_client: Client of the database.
+        contents: Inline contents of the inputs.
+        accepted: Whether the task is accepted.
+    """
+    with app.app.app_context():
+        get_custom_config().controllers.post_task.max_inline_content = 16
+    task = {
+        **TASK,
+        "inputs": [
+            {"content": content, "path": f"/in{index}", "type": "FILE"}
+            for index, content in enumerate(contents)
+        ]
+        + [{"url": "s3://bucket/in", "path": "/in", "type": "FILE"}],
+    }
+    response = client.post(f"{BASE_PATH}/tasks", json=task)
+    if accepted:
+        assert response.status_code == 200
+        return
+    assert response.status_code == 413
+    assert "inline contents" in response.get_json()["detail"]
+    assert not relayed(backend)
+    assert mongo_client[DB]["tasks"].count_documents({}) == 0
+
+
+def test_create_task_inline_content_middleware(
+    app: FlaskApp,
+    client: FlaskClient,
+    backend: type[FakeBackend],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Inline contents that middlewares add count, too."""
+    apply = TaskDistributionRandom.apply_middleware
+
+    def add_content(self: TaskDistributionRandom, request: Any) -> Any:
+        """Add a large inline content."""
+        request = apply(self, request)
+        request.json["inputs"] = [
+            {"content": "x" * 32, "path": "/added", "type": "FILE"}
+        ]
+        return request
+
+    monkeypatch.setattr(TaskDistributionRandom, "apply_middleware", add_content)
+    with app.app.app_context():
+        get_custom_config().controllers.post_task.max_inline_content = 16
+    response = client.post(f"{BASE_PATH}/tasks", json=TASK)
+    assert response.status_code == 413
+    assert not relayed(backend)
 
 
 @pytest.mark.parametrize("view", ["BASIC", "FULL"])

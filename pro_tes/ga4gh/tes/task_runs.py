@@ -21,6 +21,7 @@ from pro_tes.config_models import CustomConfig
 from pro_tes.exceptions import (
     BackendAuthError,
     BadRequest,
+    InlineContentTooLarge,
     MiddlewareException,
     NoTesInstancesAvailable,
     TaskNotFound,
@@ -131,6 +132,8 @@ class TaskRuns:
             payload=request.json,
             mode=self.custom_config.controllers.post_task.url_credentials,
         )
+        max_inline_content = self.custom_config.controllers.post_task.max_inline_content
+        self._check_inline_content(payload=request.json, limit=max_inline_content)
         payload_original: dict[str, Any] = deepcopy(request.json)
         db_document.task_original = TesTask(**payload_original)
 
@@ -144,8 +147,9 @@ class TaskRuns:
         if request_modified.json is None:
             raise MiddlewareException("Middlewares removed the request body")
         payload: dict[str, Any] = request_modified.json
-        # also credentials that middlewares added
+        # also credentials and contents that middlewares added
         self._handle_url_credentials(payload=payload, mode="strip")
+        self._check_inline_content(payload=payload, limit=max_inline_content)
         tes_urls = deepcopy(payload["tes_urls"])
         del payload["tes_urls"]
         # set by the server (TES), not by clients
@@ -291,7 +295,8 @@ class TaskRuns:
             pro_tes.exceptions.BadRequest: The page size is not positive, or
                 the page token is invalid.
         """
-        page_size = self._page_size(page_size=kwargs.get("page_size"))
+        view = kwargs.get("view", DEFAULT_VIEW)
+        page_size = self._page_size(page_size=kwargs.get("page_size"), view=view)
         filter_dict: dict[str, Any] = {**owned_tasks_filter(collection=request.path)}
 
         # an empty token (of the last page) is taken as no token
@@ -301,7 +306,6 @@ class TaskRuns:
                 filter_dict["_id"] = {"$lt": ObjectId(page_token)}
             except (InvalidId, TypeError) as exc:
                 raise BadRequest(f"Invalid page token: {page_token!r}") from exc
-        view = kwargs.get("view", DEFAULT_VIEW)
         projection = self._set_projection(view=view)
 
         # matched literally, as a prefix
@@ -313,30 +317,30 @@ class TaskRuns:
             pattern = "^" + re.escape(name_prefix)
             filter_dict["task_original.name"] = {"$regex": pattern}
 
+        # one more task than the page size tells whether there is a next
+        # page; documents are processed one by one, as the cursor yields them
         cursor = (
             self.db_client.find(filter=filter_dict, projection=projection)
             .sort("_id", -1)
             .limit(page_size + 1)
         )
-        tasks_list = list(cursor)
-
-        logger.debug("Tasks list: %s", tasks_list)
+        tasks: list[dict[str, Any]] = []
         next_page_token = ""
-        if len(tasks_list) > page_size:
-            tasks_list = tasks_list[:page_size]
-            next_page_token = str(tasks_list[-1]["_id"])
-
-        tasks_lists = []
-        for task in tasks_list:
-            del task["_id"]
+        last_id: Any = None
+        for document in cursor:
+            if len(tasks) == page_size:
+                next_page_token = str(last_id)
+                break
+            last_id = document["_id"]
             if view == "MINIMAL":
-                tasks_lists.append(
-                    {"id": task["task"]["id"], "state": task["task"]["state"]}
+                tasks.append(
+                    {"id": document["task"]["id"], "state": document["task"]["state"]}
                 )
             else:
-                tasks_lists.append(flatten_forwards(task["task"]))
-
-        return {"next_page_token": next_page_token, "tasks": tasks_lists}
+                tasks.append(flatten_forwards(document["task"]))
+        cursor.close()
+        logger.debug("Listed %s tasks", len(tasks))
+        return {"next_page_token": next_page_token, "tasks": tasks}
 
     def get_task(self, id: str, **kwargs: Any) -> dict[str, Any]:
         """Return detailed information about a task.
@@ -691,26 +695,30 @@ class TaskRuns:
             log.metadata.forwarded_to.append(forward)
         return db_document
 
-    def _page_size(self, page_size: int | None) -> int:
+    def _page_size(self, page_size: int | None, view: str = DEFAULT_VIEW) -> int:
         """Get the size of a page of tasks.
 
         Args:
             page_size: Page size of the request, if any.
+            view: View of the tasks.
 
         Returns:
-            The page size of the request, at most the maximum page size of
-            the config; the default page size of the config if none is
-            requested.
+            The page size of the request, or the default page size of the
+            config if none is requested; at most the maximum page size of
+            the config, of the view `FULL` for that view.
 
         Raises:
             pro_tes.exceptions.BadRequest: The page size is not positive.
         """
         config = self.custom_config.controllers.list_tasks
+        maximum = config.max_page_size
+        if view == "FULL":
+            maximum = min(maximum, config.max_page_size_full)
         if page_size is None:
-            return config.default_page_size
+            return min(config.default_page_size, maximum)
         if page_size < 1:
             raise BadRequest(f"Page size must be positive: {page_size}")
-        return min(page_size, config.max_page_size)
+        return min(page_size, maximum)
 
     @staticmethod
     def _handle_url_credentials(
@@ -752,6 +760,33 @@ class TaskRuns:
                         " names or passwords)"
                     )
                 item["url"] = strip_auth(url)
+
+    @staticmethod
+    def _check_inline_content(payload: dict[str, Any], limit: int) -> None:
+        """Check the size of the inline contents of the inputs of a task.
+
+        Args:
+            payload: Task (JSON).
+            limit: Maximum size of the contents (`inputs[].content`),
+                together, in bytes (UTF-8).
+
+        Raises:
+            pro_tes.exceptions.InlineContentTooLarge: The contents are
+                larger.
+        """
+        inputs = payload.get("inputs")
+        if not isinstance(inputs, list):
+            return
+        size = sum(
+            len(item["content"].encode("utf-8", errors="surrogatepass"))
+            for item in inputs
+            if isinstance(item, dict) and isinstance(item.get("content"), str)
+        )
+        if size > limit:
+            raise InlineContentTooLarge(
+                f"Inline contents of inputs (`inputs[].content`) exceed {limit}"
+                f" bytes: {size}"
+            )
 
     @staticmethod
     def _relayed_task(task: tes.Task) -> tes.Task:

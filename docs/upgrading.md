@@ -234,6 +234,14 @@ most 2047 (`custom.controllers.list_tasks`, see
 [Tasks](configuration.md#tasks)). `name_prefix` is taken literally, not as a
 regular expression. proTES no longer starts if
 `custom.controllers.list_tasks.default_page_size` exceeds `max_page_size`.
+Pages of the view `FULL` have at most 64 tasks
+(`custom.controllers.list_tasks.max_page_size_full`), also by default:
+clients that list full tasks must follow `next_page_token`.
+
+Tasks whose inline contents of inputs (`inputs[].content`) together exceed
+64 KiB (`custom.controllers.post_task.max_inline_content`) are rejected
+with `413 Content Too Large`; raise the limit (and
+`server.max_content_length`) if needed, or use inputs with URLs.
 
 ## Distance-based task distribution
 

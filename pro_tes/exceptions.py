@@ -49,6 +49,13 @@ class IdsUnavailableProblem(PyMongoError):
     """Raised when task identifier is unavailable."""
 
 
+class InlineContentTooLarge(RequestEntityTooLarge):
+    """Raised when the inline contents of the inputs of a task are too large.
+
+    Cf. `custom.controllers.post_task.max_inline_content`.
+    """
+
+
 class InputUriError(ValueError):
     """Raised when input URI cannot be parsed."""
 
@@ -142,6 +149,13 @@ exceptions = {
     RequestEntityTooLarge: {
         "title": "Content Too Large",
         "detail": "The request body exceeds the size limit.",
+        "status": 413,
+    },
+    InlineContentTooLarge: {
+        "title": "Content Too Large",
+        "detail": (
+            "The inline contents of the inputs of the task exceed the size limit."
+        ),
         "status": 413,
     },
     InternalServerError: {

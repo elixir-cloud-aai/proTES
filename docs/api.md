@@ -13,7 +13,7 @@ control](access-control.md)).
 | --- | --- |
 | `GET /service-info` | The service info of the deployment (see [Service info](configuration.md#service-info)). |
 | `POST /tasks` | Create a task: proTES forwards it to a TES instance (see [Tasks](#tasks)) and returns its own identifier of the task. |
-| `GET /tasks` | List the caller's tasks, newest first, one page at a time (`page_size`, at most `max_page_size` of the [config](configuration.md#tasks); `page_token` from `next_page_token` of the previous page, which is empty on the last page), optionally only those whose name starts with `name_prefix` (taken literally). |
+| `GET /tasks` | List the caller's tasks, newest first, one page at a time (`page_size`, at most `max_page_size` of the [config](configuration.md#tasks), and `max_page_size_full` for the view `FULL`; `page_token` from `next_page_token` of the previous page, which is empty on the last page), optionally only those whose name starts with `name_prefix` (taken literally). |
 | `GET /tasks/{id}` | Get a task of the caller, with its state as last tracked from the TES instance. |
 | `POST /tasks/{id}:cancel` | Cancel a task of the caller that has not finished yet, at the TES instance that runs it. |
 

@@ -185,7 +185,16 @@ custom:
   TES specification);
 - `list_tasks.max_page_size`: the maximum number of tasks per page; larger
   `page_size`s are reduced to it (default and upper limit 2047: the TES
-  specification requires fewer than 2048).
+  specification requires fewer than 2048);
+- `list_tasks.max_page_size_full`: the maximum number of tasks per page of
+  the view `FULL` (default 64), whose tasks may be large (e.g., with inline
+  contents of inputs and logs); larger `page_size`s, and the default page
+  size, are reduced to it;
+- `post_task.max_inline_content`: the maximum size of the inline contents
+  of the inputs of a task (`inputs[].content`), together, in bytes of
+  UTF-8 (default 65536, i.e., 64 KiB); tasks with larger contents are
+  rejected with `413 Content Too Large`, also if middlewares added the
+  contents.
 
 `custom.storeLogs.execution_trace` sets whether proTES records the TES
 instance and the remote task identifier of each forwarded task in the task's
@@ -204,8 +213,17 @@ defaults. See [Access control](access-control.md).
 Request bodies are limited to `server.max_content_length` bytes (default:
 1048576, i.e., 1 MiB), by FOCA: larger requests, also chunked ones, are
 rejected with `413 Content Too Large` before they are authenticated and
-parsed. Raise the limit if tasks with large inline contents
-(`inputs[].content`) must be accepted.
+parsed. Inline contents of inputs (`inputs[].content`) have a lower limit of
+their own (`custom.controllers.post_task.max_inline_content`, see
+[Tasks](#tasks)), as they are stored with each task: raise both if tasks
+with large inline contents must be accepted. Prefer inputs with URLs.
+
+The app has no rate limits of its own: in production, limit the rate of
+requests per client at the reverse proxy or ingress controller in front of
+it (e.g., with the rate-limit annotations of ingress-nginx, or the
+rate-limit middleware of Traefik; see the Helm chart's
+[README](deployment.md)), so that single clients can't overload the app,
+its database or the TES instances.
 
 ## Server
 
