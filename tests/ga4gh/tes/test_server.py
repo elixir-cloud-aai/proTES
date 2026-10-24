@@ -19,12 +19,13 @@ import tes
 from pro_tes.config_models import ListTasks
 from pro_tes.exceptions import BackendAuthError, BadRequest
 from pro_tes.ga4gh.tes import ownership, task_runs
-from pro_tes.ga4gh.tes.models import DbDocument, TesTask
+from pro_tes.ga4gh.tes.models import DbDocument, TesState, TesTask
 from pro_tes.middleware.middleware_handler import MiddlewareHandler
 from pro_tes.plugins.middlewares.task_distribution.random import (
     TaskDistributionRandom,
 )
 from pro_tes.tasks import track_task_progress
+from pro_tes.utils.db import DbDocumentConnector
 from pro_tes.utils.misc import get_custom_config
 from tests.conftest import DB, OTHER_USER, USER
 from tests.ga4gh.tes.conftest import (
@@ -118,18 +119,46 @@ def test_create_task_no_backend(
     assert document["task"]["state"] == "SYSTEM_ERROR"
 
 
+@pytest.mark.parametrize("served", ["none", "invalid"])
 def test_create_task_state_unavailable(
     client: FlaskClient,
     backend: type[FakeBackend],
     tracked: list[dict[str, Any]],
     mongo_client: MongoClient[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+    served: str,
 ) -> None:
-    """Tasks are tracked even if the backend doesn't serve them right away."""
-    backend.no_tasks.update(BACKENDS)
+    """Tasks are tracked even if the backend doesn't serve them right away.
+
+    Also if it serves them with an invalid state. They are stored as
+    `UNKNOWN`, with their backend, and can be canceled.
+
+    Args:
+        client: Client of the app.
+        backend: Fake backends.
+        tracked: Arguments of the Celery tasks started.
+        mongo_client: Client of the database.
+        monkeypatch: Pytest fixture.
+        served: Whether the backend serves no tasks (`none`), or tasks with
+            an invalid state (`invalid`).
+    """
+    if served == "none":
+        backend.no_tasks.update(BACKENDS)
+    else:
+        monkeypatch.setattr(
+            backend,
+            "get_task",
+            lambda self, task_id, **kwargs: tes.Task(id=task_id, state="DONE"),
+        )
     response = client.post(f"{BASE_PATH}/tasks", json=TASK)
     assert response.status_code == 200
-    assert stored(mongo_client, response.get_json()["id"])
+    task_id = response.get_json()["id"]
+    document = stored(mongo_client, task_id)
+    assert document["task"]["state"] == "UNKNOWN"
+    assert document["tes_endpoint"]["task_id"] == "remote-1"
     assert len(tracked) == 1
+    assert client.post(f"{BASE_PATH}/tasks/{task_id}:cancel").status_code == 200
+    assert backend.canceled == ["remote-1"]
 
 
 def test_create_task_files(client: FlaskClient, backend: type[FakeBackend]) -> None:
@@ -1058,6 +1087,32 @@ def test_forward_stored_no_logs(app: FlaskApp) -> None:
             tes_url=BACKENDS[0],
             remote_task_id="remote-1",
         )
+
+
+def test_forward_state_changed(
+    app: FlaskApp,
+    task_id: str,
+    backend: type[FakeBackend],
+    mongo_client: MongoClient[dict[str, Any]],
+) -> None:
+    """States of the backend don't replace states set in the meantime.
+
+    E.g., of a request that canceled the task while it was stored with its
+    backend.
+    """
+    set_state(mongo_client, task_id, "CANCELED")
+    worker_id = stored(mongo_client, task_id)["worker_id"]
+    with app.app.app_context():
+        document = task_runs.TaskRuns()._update_doc_in_db(
+            db_connector=DbDocumentConnector(
+                collection=mongo_client[DB]["tasks"], worker_id=worker_id
+            ),
+            tes_url=BACKENDS[0],
+            remote_task_id="remote-1",
+            state=TesState.QUEUED,
+        )
+    assert document.task.state == "CANCELED"
+    assert stored(mongo_client, task_id)["task"]["state"] == "CANCELED"
 
 
 def test_task_not_stored(

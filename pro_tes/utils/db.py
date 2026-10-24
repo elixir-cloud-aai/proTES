@@ -257,11 +257,17 @@ class DbDocumentConnector:
     def update_task_state(
         self,
         state: str = "UNKNOWN",
-    ) -> None:
+        if_state: str | None = None,
+    ) -> bool:
         """Update task status.
 
         Args:
-            state: New task status; one of `pro_wes.ga4gh.wes.models.State`.
+            state: New task status; one of `pro_tes.ga4gh.tes.models.TesState`.
+            if_state: Update the status only if it is this one (atomically);
+                in any case if `None`.
+
+        Returns:
+            Whether the status was updated.
 
         Raises:
             ValueError: Invalid state passed.
@@ -270,11 +276,17 @@ class DbDocumentConnector:
             TesState(state)
         except Exception as exc:
             raise ValueError(f"Unknown state: {state}") from exc
-        self.collection.find_one_and_update(
-            {"worker_id": self.worker_id},
+        filter_dict: dict[str, Any] = {"worker_id": self.worker_id}
+        if if_state is not None:
+            filter_dict["task.state"] = if_state
+        document = self.collection.find_one_and_update(
+            filter_dict,
             {"$set": {"task.state": state}},
         )
+        if document is None:
+            return False
         logger.info("[%s] %s", self.worker_id, state)
+        return True
 
     def upsert_fields_in_root_object(
         self,

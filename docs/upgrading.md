@@ -218,7 +218,7 @@ served), so that tasks can be canceled with
 New tasks are stored with the state that their TES instance reports when
 they are forwarded (e.g., `QUEUED`), instead of `UNKNOWN` until the Celery
 worker tracks them. Tasks in state `UNKNOWN` are canceled at their TES
-instance too (cancelling them returned `200` without effect); tasks that
+instance too (canceling them returned `200` without effect); tasks that
 have not finished, but whose identifier at their TES instance is unknown,
 can't be canceled (`409 Conflict`, was `500`).
 

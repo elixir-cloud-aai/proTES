@@ -42,4 +42,8 @@ class States:
 
     DEFINED: ClassVar[list[str]] = CANCELABLE + CANCELING + FINISHED
 
+    # canceled at their backend on request: also tasks whose state is not
+    # known yet (e.g., not tracked yet)
+    TO_CANCEL: ClassVar[list[str]] = CANCELABLE + UNDEFINED
+
     ALL: ClassVar[list[str]] = UNDEFINED + DEFINED

@@ -244,8 +244,10 @@ class TaskRuns:
                 task: Task = cli.get_task(remote_task_id)
                 task_model_converter = TaskModelConverter(task=task)
                 task_converted: TesTask = task_model_converter.convert_task()
-                state = task_converted.state
-            except (requests.RequestException, BackendAuthError) as exc:
+                state = TesState(task_converted.state)
+            except (requests.RequestException, BackendAuthError, ValueError) as exc:
+                # e.g., invalid states (`ValueError`): the task is stored with
+                # its backend, as it was accepted, and tracked
                 logger.error(
                     "Task '%s' info could not be retrieved from TES endpoint"
                     " hosted at: %s. Original error message: '%s: %s'",
@@ -398,7 +400,7 @@ class TaskRuns:
             raise TaskNotFound
         db_document: DbDocument = DbDocument(**document)
 
-        if db_document.task.state in States.CANCELABLE + States.UNDEFINED:
+        if db_document.task.state in States.TO_CANCEL:
             db_connector = DbDocumentConnector(
                 collection=self.db_client,
                 worker_id=db_document.worker_id,
@@ -629,8 +631,9 @@ class TaskRuns:
             tes_url: The TES URL where the task if forwarded.
             remote_task_id: Task identifier at the remote TES instance.
             state: State of the task at the remote TES instance, if known;
-                stored as the task's state (else the state is kept, i.e.,
-                `UNKNOWN`, until the task is tracked).
+                stored as the task's state unless that changed from
+                `UNKNOWN` in the meantime (e.g., the task was canceled); else
+                the state is kept until the task is tracked.
 
         Returns:
             The updated database document.
@@ -648,8 +651,6 @@ class TaskRuns:
             root="tes_endpoint",
             **tes_endpoint_dict,
         )
-        if state is not None:
-            db_document.task.state = state
         if db_document.task.logs is None:
             raise ValueError(f"Task '{db_document.task.id}' has no logs")
         task_logs = db_document.task.logs
@@ -665,10 +666,15 @@ class TaskRuns:
                 remote_task_id=remote_task_id,
             )
 
-        db_document = db_connector.upsert_fields_in_root_object(
-            root="task",
-            **db_document.model_dump(mode="json", exclude_none=True)["task"],
-        )
+        # without the state, which a request to cancel the task may have
+        # changed in the meantime
+        task = db_document.model_dump(mode="json", exclude_none=True)["task"]
+        del task["state"]
+        db_document = db_connector.upsert_fields_in_root_object(root="task", **task)
+        if state is not None and db_connector.update_task_state(
+            state=state.value, if_state=TesState.UNKNOWN.value
+        ):
+            db_document.task.state = state
         logger.debug("Task '%s' inserted to database", db_document.task)
         return db_document
 
