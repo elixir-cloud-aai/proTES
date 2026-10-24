@@ -1,6 +1,7 @@
 """Middleware handler."""
 
 from collections.abc import Sequence
+from copy import deepcopy
 import importlib
 import logging
 from typing import Any
@@ -60,7 +61,9 @@ class MiddlewareHandler:
         attempts to apply them in order. Each middleware can be a single class
         or a list of classes. The latter provides a fallback mechanism in case
         a middleware fails to be applied. In that case, the next middleware in
-        the list is attempted.
+        the list is attempted, with the JSON body of the request as it was
+        before the failed one: changes that a failed middleware made to it
+        are undone.
 
         Args:
             request: Incoming request.
@@ -75,7 +78,10 @@ class MiddlewareHandler:
                 in a list of alternatives) could not be applied.
         """
         for middleware in self.middlewares:
-            for mw_class in middleware:
+            # the body before this step, restored after failed alternatives
+            # that have a next one (steps with a single middleware need none)
+            snapshot = deepcopy(request.json) if len(middleware) > 1 else None
+            for index, mw_class in enumerate(middleware):
                 logger.info("Applying middleware: %s", mw_class)
                 instance = mw_class()
                 try:
@@ -84,11 +90,31 @@ class MiddlewareHandler:
                     logger.warning(
                         "Error occurred in middleware class '%s': %s", mw_class, exc
                     )
+                    if index < len(middleware) - 1:
+                        self._restore_body(request=request, snapshot=snapshot)
                     continue
                 break
             else:
                 raise MiddlewareException("No middleware could be applied.")
         return request
+
+    @staticmethod
+    def _restore_body(request: flask.Request, snapshot: Any) -> None:
+        """Restore the JSON body of a request, in place.
+
+        Middlewares change the body in place (`request.json`, which Flask
+        parses once per request), so it is restored in place, too.
+
+        Args:
+            request: Request whose body a failed middleware may have changed.
+            snapshot: Copy of the body before the middleware; not changed.
+                Bodies that are not objects are left as they are.
+        """
+        body = request.json
+        # task bodies are objects (validated by Connexion)
+        if isinstance(body, dict) and isinstance(snapshot, dict):
+            body.clear()
+            body.update(deepcopy(snapshot))
 
     @staticmethod
     def _import_middleware_class(import_path: str) -> type[AbstractMiddleware]:

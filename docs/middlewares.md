@@ -49,7 +49,12 @@ forwards the task, and skips URLs that are neither in
 `custom.tes.service_list` nor discovered (it has no credentials for them).
 Credentials that middlewares add to the URLs of inputs and outputs are
 removed. Raise an exception if the middleware can't be applied, so that the
-next alternative of the step is tried. The task distribution middlewares
+next alternative of the step is tried; changes that the middleware made to
+the JSON body (`request.json`) in place are undone, so the next alternative
+gets the body as it was before the step. Only the JSON body is restored:
+other changes to the request (e.g., its headers, its environment or
+attributes set on it) are not undone, nor is a body that the middleware
+replaced instead of changing it in place. The task distribution middlewares
 derive from
 [`TaskDistributionBaseClass`](reference.md#pro_tes.plugins.middlewares.task_distribution.base.TaskDistributionBaseClass),
 which sets `tes_urls` from the URLs of `custom.tes.service_list` and the

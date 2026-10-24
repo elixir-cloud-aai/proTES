@@ -1,5 +1,7 @@
 """Tests of the middleware handler."""
 
+from typing import Any
+
 import flask
 import pytest
 
@@ -42,8 +44,49 @@ class Failing(AbstractMiddleware):
         raise MiddlewareException("failed")
 
 
+class ChangeThenFail(AbstractMiddleware):
+    """Middleware that changes the request body, then fails."""
+
+    def apply_middleware(self, request: flask.Request) -> flask.Request:
+        """Append `X` and add a field, then fail.
+
+        Raises:
+            MiddlewareException: Always.
+        """
+        assert request.json is not None
+        request.json["steps"].append("X")
+        request.json["added"] = True
+        raise MiddlewareException("failed")
+
+
+class Noop(AbstractMiddleware):
+    """Middleware that changes nothing."""
+
+    def apply_middleware(self, request: flask.Request) -> flask.Request:
+        """Return the request as it is."""
+        return request
+
+
 class NotAMiddleware:
     """Class that is not a middleware."""
+
+
+def apply_body(paths: list[str | list[str]], body: Any) -> Any:
+    """Apply middlewares to a request, returning its body.
+
+    Args:
+        paths: Import paths of the middlewares, as in the config.
+        body: JSON body of the request.
+
+    Returns:
+        The request body after the middlewares.
+    """
+    handler = MiddlewareHandler()
+    handler.set_middlewares(paths=paths)
+    app = flask.Flask(__name__)
+    with app.test_request_context(json=body):
+        request = handler.apply_middlewares(request=flask.request)
+        return request.json
 
 
 def apply(paths: list[str | list[str]]) -> list[str]:
@@ -55,14 +98,8 @@ def apply(paths: list[str | list[str]]) -> list[str]:
     Returns:
         The steps that the middlewares added to the request body.
     """
-    handler = MiddlewareHandler()
-    handler.set_middlewares(paths=paths)
-    app = flask.Flask(__name__)
-    with app.test_request_context(json={"steps": []}):
-        request = handler.apply_middlewares(request=flask.request)
-        assert request.json is not None
-        steps: list[str] = request.json["steps"]
-        return steps
+    steps: list[str] = apply_body(paths=paths, body={"steps": []})["steps"]
+    return steps
 
 
 def test_set_middlewares() -> None:
@@ -82,6 +119,20 @@ def test_apply_middlewares() -> None:
 def test_apply_middlewares_fallback() -> None:
     """The next alternative is applied if a middleware fails."""
     assert apply([[f"{MODULE}.Failing", f"{MODULE}.AddA", f"{MODULE}.AddB"]]) == ["A"]
+
+
+def test_apply_middlewares_fallback_isolated() -> None:
+    """Changes of failed alternatives are undone before the next one."""
+    paths: list[str | list[str]] = [
+        f"{MODULE}.AddA",
+        [f"{MODULE}.ChangeThenFail", f"{MODULE}.ChangeThenFail", f"{MODULE}.AddB"],
+    ]
+    assert apply_body(paths=paths, body={"steps": []}) == {"steps": ["A", "B"]}
+
+
+def test_apply_middlewares_fallback_not_object() -> None:
+    """Bodies that are not objects are passed on as they are."""
+    assert apply_body(paths=[[f"{MODULE}.Failing", f"{MODULE}.Noop"]], body=[1]) == [1]
 
 
 def test_apply_middlewares_all_fail() -> None:
