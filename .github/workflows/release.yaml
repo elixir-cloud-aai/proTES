@@ -309,6 +309,7 @@ jobs:
       url: ${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ github.ref_name }}
     permissions:
       contents: write # create the GitHub release
+      pull-requests: read # list the pull requests of a first release
       id-token: write # Sigstore signing certificates
       attestations: write # GitHub artifact attestations
     env:
@@ -410,12 +411,12 @@ jobs:
       # GitHub's generated notes list the merged pull requests since the
       # previous release in the history of the release commit (see
       # `scripts/release_version.py`), or since the start for the first
-      # release. Only tags with a published GitHub release count, so that the
-      # changes of a tag whose release failed (and was replaced by a new
-      # patch version) are listed in the next release. The script filters
-      # the tags itself and reads all of them: a filter that exits early
-      # (e.g., `grep -f` with no published releases) would kill `git tag`
-      # with SIGPIPE and fail the step under `pipefail`
+      # release (see "Create release"). Only tags with a published GitHub
+      # release count, so that the changes of a tag whose release failed (and
+      # was replaced by a new patch version) are listed in the next release.
+      # The script filters the tags itself and reads all of them: a filter
+      # that exits early (e.g., `grep -f` with no published releases) would
+      # kill `git tag` with SIGPIPE and fail the step under `pipefail`
       - name: Determine the previous release
         id: previous
         env:
@@ -453,14 +454,27 @@ jobs:
           # `scripts/release_notes.py`); otherwise the generated ones alone.
           # Generated on every run, so that a draft of an earlier attempt gets
           # the notes since the current previous release
+          # Without a previous published release, GitHub's generated notes
+          # would start at an older tag of its choice, even one without a
+          # release, so the notes of a first release list all merged pull
+          # requests in the history of the release commit instead, in
+          # GitHub's format (`scripts/release_notes.py first`)
           curated="docs/releases/${VERSION}.md"
-          generate=(-f "tag_name=${TAG}")
-          if [[ -n "${PREVIOUS}" ]]; then
-              generate+=(-f "previous_tag_name=${PREVIOUS}")
-          fi
           notes_file="$(mktemp)"
-          gh api "repos/${GH_REPO}/releases/generate-notes" "${generate[@]}" \
-              --jq .body > "${notes_file}"
+          if [[ -n "${PREVIOUS}" ]]; then
+              gh api "repos/${GH_REPO}/releases/generate-notes" \
+                  -f "tag_name=${TAG}" -f "previous_tag_name=${PREVIOUS}" \
+                  --jq .body > "${notes_file}"
+          else
+              pulls="$(mktemp)"
+              commits="$(mktemp)"
+              gh api --paginate --slurp \
+                  "repos/${GH_REPO}/pulls?state=closed&per_page=100" > "${pulls}"
+              git rev-list HEAD > "${commits}"
+              python scripts/release_notes.py first "${TAG}" \
+                  --repository "${GH_REPO}" --pulls "${pulls}" \
+                  --commits "${commits}" > "${notes_file}"
+          fi
           if [[ -f "${curated}" ]]; then
               generated="${notes_file}"
               notes_file="$(mktemp)"
