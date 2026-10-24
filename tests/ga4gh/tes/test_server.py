@@ -877,6 +877,41 @@ def test_cancel_task_no_remote_id(
     assert stored(mongo_client, task_id)["task"]["state"] == state
 
 
+def test_cancel_task_remote_id_stored_meanwhile(
+    client: FlaskClient,
+    task_id: str,
+    backend: type[FakeBackend],
+    mongo_client: MongoClient[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Tasks are read again before they are refused to be canceled.
+
+    E.g., if forwarding stored their remote identifier since they were read.
+    """
+    set_state(mongo_client, task_id, "UNKNOWN")
+    find_task = task_runs.TaskRuns._find_task
+    calls: list[str] = []
+
+    def find_task_forwarding(
+        self: task_runs.TaskRuns, id: str
+    ) -> tuple[dict[str, Any], DbDocument]:
+        """Serve the task without its remote identifier first."""
+        calls.append(id)
+        document, db_document = find_task(self, id=id)
+        if len(calls) == 1:
+            document["tes_endpoint"].pop("task_id")
+            document["task"]["logs"][0]["metadata"] = {}
+            db_document = DbDocument(**document)
+        return document, db_document
+
+    monkeypatch.setattr(task_runs.TaskRuns, "_find_task", find_task_forwarding)
+    response = client.post(f"{BASE_PATH}/tasks/{task_id}:cancel")
+    assert response.status_code == 200
+    assert calls == [task_id, task_id]
+    assert len(backend.canceled) == 1
+    assert stored(mongo_client, task_id)["task"]["state"] == "CANCELED"
+
+
 def test_cancel_task_backend_not_configured(
     app: FlaskApp,
     client: FlaskClient,

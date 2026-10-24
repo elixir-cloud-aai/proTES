@@ -432,14 +432,12 @@ class TaskRuns:
             requests.RequestException: The TES instance was not reached, or
                 rejected the request.
         """
-        document = self.db_client.find_one(
-            filter={"task.id": id},
-            projection={"_id": False},
-        )
-        if document is None:
-            logger.error("Task '%s' not found.", id)
-            raise TaskNotFound
-        db_document: DbDocument = DbDocument(**document)
+        document, db_document = self._find_task(id=id)
+        task_id = self._remote_task_id(document=document, db_document=db_document)
+        if db_document.task.state in States.TO_CANCEL and task_id is None:
+            # forwarding may have stored it since
+            document, db_document = self._find_task(id=id)
+            task_id = self._remote_task_id(document=document, db_document=db_document)
 
         if db_document.task.state in States.TO_CANCEL:
             db_connector = DbDocumentConnector(
@@ -451,7 +449,6 @@ class TaskRuns:
                 f"{db_document.tes_endpoint.base_path.strip('/')}"
             )
 
-            task_id = self._remote_task_id(document=document, db_document=db_document)
             if task_id is None:
                 # e.g., tasks that are being forwarded, or that a TES
                 # instance may have accepted without confirming it
@@ -479,6 +476,27 @@ class TaskRuns:
                 "Task '%s' with worker ID '%s' canceled.", id, db_document.worker_id
             )
         return {}
+
+    def _find_task(self, id: str) -> tuple[dict[str, Any], DbDocument]:
+        """Get a stored task.
+
+        Args:
+            id: Task identifier.
+
+        Returns:
+            The task as stored, and as model.
+
+        Raises:
+            pro_tes.exceptions.TaskNotFound: The task is not available.
+        """
+        document = self.db_client.find_one(
+            filter={"task.id": id},
+            projection={"_id": False},
+        )
+        if document is None:
+            logger.error("Task '%s' not found.", id)
+            raise TaskNotFound
+        return document, DbDocument(**document)
 
     def _write_doc_to_db(
         self,
