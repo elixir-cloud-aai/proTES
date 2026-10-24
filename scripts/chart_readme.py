@@ -4,7 +4,7 @@
 to files on branch `dev` (`FILES`), which is right for the repository and the
 docs (`docs/hooks.py`), but not for the README packaged with a released chart:
 its users would read docs of newer versions. The release workflow
-(`.github/workflows/release.yaml`) runs this script on a copy of the chart
+(`.github/workflows/release.yml`) runs this script on a copy of the chart
 before packaging it: it rewrites these links to the release's docs and files
 (`/en/v<version>/`, `blob/v<version>/`; Read the Docs builds version tags),
 and fails with GitHub annotations on standard error if any link to a version

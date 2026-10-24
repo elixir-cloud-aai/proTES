@@ -147,11 +147,11 @@ later, which reads the signatures in the Sigstore bundle format):
 ```bash
 gh attestation verify oci://docker.io/elixircloud/protes:{{ version }} \
     --repo elixir-cloud-aai/proTES \
-    --signer-workflow elixir-cloud-aai/proTES/.github/workflows/release.yaml \
+    --signer-workflow elixir-cloud-aai/proTES/.github/workflows/release.yml \
     --source-ref refs/tags/v{{ version }}
 cosign verify docker.io/elixircloud/protes:{{ version }} \
     --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-    --certificate-identity https://github.com/elixir-cloud-aai/proTES/.github/workflows/release.yaml@refs/tags/v{{ version }}
+    --certificate-identity https://github.com/elixir-cloud-aai/proTES/.github/workflows/release.yml@refs/tags/v{{ version }}
 ```
 
 These are the commands for release `{{ version }}`: replace it with the
@@ -159,9 +159,12 @@ version to verify. `--source-ref` and the ref in
 `--certificate-identity` check that the workflow ran for the release tag,
 not for another branch. Images of commits on `dev` (`dev`, `sha-<commit>`)
 are signed and attested by the CI workflow instead: use `--signer-workflow
-elixir-cloud-aai/proTES/.github/workflows/checks.yaml`,
+elixir-cloud-aai/proTES/.github/workflows/ci.yml`,
 `--source-ref refs/heads/dev` and `--certificate-identity
-https://github.com/elixir-cloud-aai/proTES/.github/workflows/checks.yaml@refs/heads/dev`.
+https://github.com/elixir-cloud-aai/proTES/.github/workflows/ci.yml@refs/heads/dev`.
+The workflow files were renamed after the first release: for its image and
+chart, use `release.yaml` instead of `release.yml`, and for images of
+commits on `dev` built before the rename, `checks.yaml` instead of `ci.yml`.
 To show an image's SBOM or provenance, run:
 
 ```bash
@@ -180,12 +183,12 @@ gh release download v{{ version }} --repo elixir-cloud-aai/proTES \
     --pattern 'protes-{{ chart_version }}.tgz*'
 gh attestation verify protes-{{ chart_version }}.tgz \
     --repo elixir-cloud-aai/proTES \
-    --signer-workflow elixir-cloud-aai/proTES/.github/workflows/release.yaml \
+    --signer-workflow elixir-cloud-aai/proTES/.github/workflows/release.yml \
     --source-ref refs/tags/v{{ version }}
 cosign verify-blob protes-{{ chart_version }}.tgz \
     --bundle protes-{{ chart_version }}.tgz.sigstore.json \
     --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-    --certificate-identity https://github.com/elixir-cloud-aai/proTES/.github/workflows/release.yaml@refs/tags/v{{ version }}
+    --certificate-identity https://github.com/elixir-cloud-aai/proTES/.github/workflows/release.yml@refs/tags/v{{ version }}
 ```
 
 Images are scanned for known vulnerabilities with [Trivy](https://trivy.dev/)

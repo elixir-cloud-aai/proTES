@@ -17,7 +17,7 @@ that move (`UNVERSIONED`, e.g., the latest docs or branch `dev`), but to the
 release's (e.g., `/en/vX.Y.Z/`, `blob/vX.Y.Z/`).
 
 The curated notes (`docs/releases/<version>.md`) hold parts 1 and 2; the
-release workflow (`.github/workflows/release.yaml`) adds parts 3 and 4 from
+release workflow (`.github/workflows/release.yml`) adds parts 3 and 4 from
 GitHub's `generate-notes` API, or, for a first release, from `first`.
 
 Commands:

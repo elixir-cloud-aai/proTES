@@ -1,7 +1,7 @@
 """Check that a release only pins released versions of its dependencies.
 
-Used by the release workflow (`.github/workflows/release.yaml`), the CI
-job "Check release readiness" (`.github/workflows/checks.yaml`) and the
+Used by the release workflow (`.github/workflows/release.yml`), the CI
+job "Release readiness" (`.github/workflows/ci.yml`) and the
 tests of release checkouts (`tests/test_check_release_pins.py`), so that
 temporary pins to development versions (e.g., of FOCA, to test unreleased
 changes) can't be released by accident. Fails, with errors as GitHub
