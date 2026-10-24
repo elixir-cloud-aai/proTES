@@ -35,6 +35,13 @@ authors:
     family-names: Perard
   - given-names: Risto
     family-names: Laurikainen
+doi: 10.5281/zenodo.23619646
+identifiers:
+  - type: doi
+    value: 10.5281/zenodo.23619646
+    description: >-
+      Concept DOI of all versions on Zenodo; it always resolves to the latest
+      version
 repository-code: "https://github.com/elixir-cloud-aai/proTES"
 url: "https://protes.readthedocs.io/"
 keywords:
