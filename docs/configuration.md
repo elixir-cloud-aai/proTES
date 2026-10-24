@@ -7,7 +7,9 @@ the base config, which documents its values. It is a
 `security`, `db`, `api`, `log`, `jobs`, `service_info` and `exceptions` are
 described in the [FOCA documentation](https://foca.readthedocs.io/en/latest/),
 the app's own settings are in section `custom` (validated on startup by
-[`pro_tes.config_models.CustomConfig`](reference.md#pro_tes.config_models.CustomConfig)).
+[`pro_tes.config_models.CustomConfig`](reference.md#pro_tes.config_models.CustomConfig);
+unknown keys, e.g., misspelled ones, are errors, so that the app and the
+Celery worker don't start with settings they ignore).
 To override some values, write them to a config overlay file and list it in
 environment variable `FOCA_CONFIG_OVERLAY` (several files separated by `:`);
 FOCA merges overlays into the config on startup (see the [FOCA deployment
