@@ -79,8 +79,9 @@ class MiddlewareHandler:
         """
         for middleware in self.middlewares:
             # the body before this step, restored after failed alternatives
-            snapshot = deepcopy(request.json)
-            for mw_class in middleware:
+            # that have a next one (steps with a single middleware need none)
+            snapshot = deepcopy(request.json) if len(middleware) > 1 else None
+            for index, mw_class in enumerate(middleware):
                 logger.info("Applying middleware: %s", mw_class)
                 instance = mw_class()
                 try:
@@ -89,7 +90,8 @@ class MiddlewareHandler:
                     logger.warning(
                         "Error occurred in middleware class '%s': %s", mw_class, exc
                     )
-                    self._restore_body(request=request, snapshot=snapshot)
+                    if index < len(middleware) - 1:
+                        self._restore_body(request=request, snapshot=snapshot)
                     continue
                 break
             else:
