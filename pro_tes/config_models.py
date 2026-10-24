@@ -119,7 +119,7 @@ class PostTask(ConfigModel):
     task_id: TaskID = TaskID()
     polling: Polling = Polling()
     url_credentials: Literal["reject", "strip"] = "reject"
-    max_inline_content: PositiveInt = 65536
+    max_inline_content: PositiveInt = 131072
 
 
 class ListTasks(ConfigModel):

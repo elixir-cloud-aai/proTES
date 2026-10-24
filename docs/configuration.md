@@ -217,6 +217,12 @@ custom:
   are rejected with `400 Bad Request` (`reject`, the default), or the
   credentials are removed (`strip`); credentials are never stored or
   forwarded, and those that middlewares add are always removed;
+- `post_task.max_inline_content`: the maximum size of the inline contents
+  of the inputs of a task (`inputs[].content`), together, in bytes of
+  UTF-8 (default 131072, i.e., 128 KiB, the minimum that the TES
+  specification recommends); tasks with larger contents are
+  rejected with `413 Content Too Large`, also if middlewares added the
+  contents;
 - `list_tasks.default_page_size`: the number of tasks per page of
   `GET /tasks` if the request sets no `page_size` (default 256, as in the
   TES specification);
@@ -226,12 +232,7 @@ custom:
 - `list_tasks.max_page_size_full`: the maximum number of tasks per page of
   the view `FULL` (default 64), whose tasks may be large (e.g., with inline
   contents of inputs and logs); larger `page_size`s, and the default page
-  size, are reduced to it;
-- `post_task.max_inline_content`: the maximum size of the inline contents
-  of the inputs of a task (`inputs[].content`), together, in bytes of
-  UTF-8 (default 65536, i.e., 64 KiB); tasks with larger contents are
-  rejected with `413 Content Too Large`, also if middlewares added the
-  contents.
+  size, are reduced to it.
 
 `custom.storeLogs.execution_trace` sets whether proTES records the TES
 instance and the remote task identifier of each forwarded task in the task's
@@ -255,12 +256,12 @@ their own (`custom.controllers.post_task.max_inline_content`, see
 [Tasks](#tasks)), as they are stored with each task: raise both if tasks
 with large inline contents must be accepted. Prefer inputs with URLs.
 
-The app has no rate limits of its own: in production, limit the rate of
+## Rate limits
+
+proTES has no rate limits of its own. In production, limit the rate of
 requests per client at the reverse proxy or ingress controller in front of
-it (e.g., with the rate-limit annotations of ingress-nginx, or the
-rate-limit middleware of Traefik; see the Helm chart's
-[README](deployment.md)), so that single clients can't overload the app,
-its database or the TES instances.
+it, so that single clients can't overload the app, its database or the TES
+instances (see the Helm chart's [README](deployment.md)).
 
 ## Server
 

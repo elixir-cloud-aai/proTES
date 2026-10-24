@@ -16,7 +16,7 @@ import pytest
 import requests
 import tes
 
-from pro_tes.config_models import ListTasks
+from pro_tes.config_models import ListTasks, PostTask
 from pro_tes.exceptions import BackendAuthError, BackendOutcomeUnknown, BadRequest
 from pro_tes.ga4gh.tes import ownership, task_runs
 from pro_tes.ga4gh.tes.models import DbDocument, TesTask
@@ -594,6 +594,13 @@ def test_page_size_config() -> None:
         ListTasks(max_page_size=2048)
 
 
+def test_post_task_config() -> None:
+    """Inline contents are limited to 128 KiB by default (cf. TES)."""
+    assert PostTask().max_inline_content == 131072
+    with pytest.raises(ValidationError):
+        PostTask(max_inline_content=0)
+
+
 def test_default_view(client: FlaskClient, task_id: str) -> None:
     """Without a `view`, tasks are returned in the `MINIMAL` view."""
     minimal = {"id": task_id, "state": ANY}
@@ -1143,6 +1150,74 @@ def test_create_task_not_relayable(
     assert not relayed(backend)
     assert mongo_client[DB]["tasks"].count_documents({}) == 0
     assert mongo_client[DB]["policy_rules"].count_documents({"ptype": "g2"}) == 0
+
+
+@pytest.mark.parametrize("field", ["inputs", "executors"])
+def test_create_task_unknown_field(
+    client: FlaskClient,
+    backend: type[FakeBackend],
+    mongo_client: MongoClient[dict[str, Any]],
+    field: str,
+) -> None:
+    """Tasks with fields that py-tes doesn't know fail (`400`); not kept."""
+    task = deepcopy(TASK)
+    task.setdefault(field, [{"url": "s3://bucket/x", "path": "/x"}])
+    task[field][0]["unknown"] = 1
+    response = client.post(f"{BASE_PATH}/tasks", json=task)
+    assert response.status_code == 400
+    assert not relayed(backend)
+    assert mongo_client[DB]["tasks"].count_documents({}) == 0
+    assert mongo_client[DB]["policy_rules"].count_documents({"ptype": "g2"}) == 0
+
+
+def test_create_task_not_discarded(
+    client: FlaskClient,
+    backend: type[FakeBackend],
+    mongo_client: MongoClient[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Tasks that can't be deleted fail as `SYSTEM_ERROR`, with their error."""
+
+    def delete_one(*args: Any, **kwargs: Any) -> None:
+        """Fail to delete the task."""
+        raise PyMongoError("unavailable")
+
+    monkeypatch.setattr(type(mongo_client[DB]["tasks"]), "delete_one", delete_one)
+    backend.failing.update(BACKENDS)
+    response = client.post(f"{BASE_PATH}/tasks", json=TASK)
+    assert response.status_code == 500
+    assert "not kept" in response.get_json()["detail"]
+    (document,) = mongo_client[DB]["tasks"].find()
+    assert document["task"]["state"] == "SYSTEM_ERROR"
+
+
+@pytest.mark.parametrize("view", ["MINIMAL", "BASIC", "FULL"])
+def test_list_tasks_no_original(
+    client: FlaskClient,
+    task_id: str,
+    mongo_client: MongoClient[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+    view: str,
+) -> None:
+    """Listings don't read the original tasks (e.g., with inline contents)."""
+    collection = type(mongo_client[DB]["tasks"])
+    find = collection.find
+    projections: list[Any] = []
+
+    def find_spied(self: Any, *args: Any, **kwargs: Any) -> Any:
+        """Record the projections of the queries."""
+        if self.name == "tasks":
+            projections.append(kwargs.get("projection"))
+        return find(self, *args, **kwargs)
+
+    monkeypatch.setattr(collection, "find", find_spied)
+    response = client.get(f"{BASE_PATH}/tasks?view={view}")
+    assert response.status_code == 200
+    (projection,) = projections
+    monkeypatch.undo()
+    (document,) = mongo_client[DB]["tasks"].find({}, projection)
+    assert "task" in document
+    assert "task_original" not in document
 
 
 def test_create_task_no_body(app: FlaskApp, backend: type[FakeBackend]) -> None:

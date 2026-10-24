@@ -240,7 +240,7 @@ custom:
       # Maximum size (bytes, UTF-8) of the inline contents of the inputs of
       # a task (`inputs[].content`), together; larger tasks are rejected
       # (`413`). Below the limit of request bodies (`server.max_content_length`)
-      max_inline_content: 65536
+      max_inline_content: 131072
     # Tasks per page of `GET /tasks` if the request sets no `page_size`, and
     # at most (the TES specification requires fewer than 2048); at most
     # `max_page_size_full` of the view `FULL`, whose tasks may be large

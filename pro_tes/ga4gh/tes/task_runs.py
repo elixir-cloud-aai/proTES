@@ -1,5 +1,6 @@
 """Class implementing TES API-server-side controller methods."""
 
+from contextlib import suppress
 from copy import deepcopy
 import logging
 import re
@@ -125,11 +126,16 @@ class TaskRuns:
                 have accepted the task, but did not confirm it; the task is
                 stored with the state `SYSTEM_ERROR`, and with the TES
                 instance, without remote identifier.
-            pro_tes.exceptions.BadRequest: The request has no JSON body.
+            pro_tes.exceptions.BadRequest: The request has no JSON body,
+                or the task is invalid (e.g., after the middlewares changed
+                it; the task is then not kept).
+            pro_tes.exceptions.InlineContentTooLarge: The inline contents of
+                the inputs of the task exceed the limit, before or after the
+                middlewares.
             pro_tes.exceptions.MiddlewareException: The middlewares removed
                 the JSON body.
             pro_tes.exceptions.NoTesInstancesAvailable: No TES instance
-                accepted the task.
+                accepted the task; the task is not kept.
             pro_tes.exceptions.Unauthorized: The user of the request could
                 not be identified.
         """
@@ -194,10 +200,10 @@ class TaskRuns:
         # clients can't set them, but middlewares could
         for field in ("creation_time", "logs"):
             payload.pop(field, None)
-        payload = self._sanitize_request(payload=payload)
         try:
+            payload = self._sanitize_request(payload=payload)
             payload_marshalled = tes.Task(**payload)
-        except TypeError as exc:
+        except (TypeError, ValueError) as exc:
             self._discard_task(
                 db_document=db_document, owner=owner, collection=collection
             )
@@ -578,7 +584,9 @@ class TaskRuns:
         """Delete a stored task that was not forwarded, with its owner roles.
 
         The task is deleted first, as roles left on deleted tasks give no
-        access (cf. :py:meth:`_write_doc_to_db`).
+        access (cf. :py:meth:`_write_doc_to_db`). Errors are logged, not
+        raised, so that the error of the request is raised; tasks that
+        could not be deleted are marked as `SYSTEM_ERROR`, if possible.
 
         Args:
             db_document: The stored task.
@@ -586,10 +594,19 @@ class TaskRuns:
             collection: Request path of the tasks (e.g.,
                 `/ga4gh/tes/v1/tasks`).
         """
-        self.db_client.delete_one({"worker_id": db_document.worker_id})
-        remove_task_owner(
-            collection=collection, task_id=str(db_document.task.id), owner=owner
-        )
+        try:
+            self.db_client.delete_one({"worker_id": db_document.worker_id})
+            remove_task_owner(
+                collection=collection, task_id=str(db_document.task.id), owner=owner
+            )
+        except Exception:
+            logger.exception("Task '%s' could not be discarded", db_document.task.id)
+            with suppress(Exception):
+                self.db_client.update_one(
+                    {"worker_id": db_document.worker_id},
+                    {"$set": {"task.state": TesState.SYSTEM_ERROR.value}},
+                )
+            return
         logger.info("Task '%s' not kept: it was not forwarded", db_document.task.id)
 
     def _sanitize_request(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -640,10 +657,12 @@ class TaskRuns:
                 "task.logs.system_logs": False,
                 "task.logs.logs.stdout": False,
                 "task.logs.logs.stderr": False,
+                "task_original": False,
                 "tes_endpoint": False,
             }
         elif view == "FULL":
             projection = {
+                "task_original": False,
                 "worker_id": False,
                 "tes_endpoint": False,
             }
