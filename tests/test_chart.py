@@ -238,7 +238,7 @@ def test_image_defaults_to_app_version() -> None:
 # them
 @pytest.mark.parametrize(
     ("chart_version", "app_version"),
-    [("0.3.0", "0.3.0"), ("0.3.0-rc1", "0.3.0rc1")],
+    [("1.2.3", "1.2.3"), ("1.2.3-rc1", "1.2.3rc1")],
 )
 def test_image_of_packaged_chart(
     tmp_path: Path, chart_version: str, app_version: str

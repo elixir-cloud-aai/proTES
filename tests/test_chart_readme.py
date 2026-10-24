@@ -41,6 +41,14 @@ _spec.loader.exec_module(chart_readme)
             f"[a]({DOCS}/v1.2.3rc1/a/) [b]({REPO}/blob/v1.2.3rc1/b)\n"
             f"```\n{DOCS}/v1.2.3rc1/\n```",
         ),
+        # The placeholders get the release version (without `v`) and the
+        # chart version; other `{{ ... }}` (e.g., of Helm templates) are left
+        (
+            f"{REPO}/releases/download/v{{{{ version }}}}/"
+            "protes-{{ chart_version }}.tgz {{ .Values.x }} {{version}}",
+            f"{REPO}/releases/download/v1.2.3rc1/"
+            "protes-1.2.3-rc1.tgz {{ .Values.x }} {{version}}",
+        ),
         # Other links are left as they are
         (f"[Releases]({REPO}/releases)", f"[Releases]({REPO}/releases)"),
         (
@@ -241,3 +249,22 @@ def test_script_usage(tmp_path: Path) -> None:
     )
     assert result.returncode == 2
     assert "usage:" in result.stderr
+
+
+@pytest.mark.parametrize(
+    "tag", ["v1.2.3", "v0.10.0", "v1.2.3a1", "v1.2.3b2", "v1.2.3rc10"]
+)
+def test_chart_version(tag: str) -> None:
+    """Chart versions are those of the release workflow (`release_version.py`).
+
+    Args:
+        tag: Release tag.
+    """
+    spec = importlib.util.spec_from_file_location(
+        "release_version", ROOT / "scripts/release_version.py"
+    )
+    assert spec and spec.loader
+    release_version = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(release_version)
+    release = release_version.parse_tag(tag)
+    assert chart_readme.chart_version(release.version) == release.chart_version
