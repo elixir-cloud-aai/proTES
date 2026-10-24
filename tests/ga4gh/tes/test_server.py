@@ -18,7 +18,7 @@ import tes
 
 from pro_tes.config_models import ListTasks, PostTask
 from pro_tes.exceptions import BackendAuthError, BackendOutcomeUnknown, BadRequest
-from pro_tes.ga4gh.tes import ownership, task_runs
+from pro_tes.ga4gh.tes import ownership, server, task_runs
 from pro_tes.ga4gh.tes.models import DbDocument, TesTask
 from pro_tes.plugins.middlewares.task_distribution.random import (
     TaskDistributionRandom,
@@ -1281,6 +1281,66 @@ def test_create_task_no_body(app: FlaskApp, backend: type[FakeBackend]) -> None:
         pytest.raises(BadRequest, match="body is missing"),
     ):
         task_runs.TaskRuns().create_task(task=None, collection=f"{BASE_PATH}/tasks")
+
+
+def test_controllers_pass_request_data(
+    client: FlaskClient,
+    backend: type[FakeBackend],
+    mongo_client: MongoClient[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The controllers pass the task and the request path to `TaskRuns`.
+
+    The owner's policies are on the request path of the task, and tasks are
+    listed from the request path, too.
+    """
+    collections: list[str] = []
+    for method in ("create_task", "list_tasks"):
+        original = getattr(task_runs.TaskRuns, method)
+
+        def record(
+            self: task_runs.TaskRuns,
+            *args: Any,
+            original: Any = original,
+            **kwargs: Any,
+        ) -> Any:
+            """Record the collection, then call the method."""
+            collections.append(kwargs["collection"])
+            return original(self, *args, **kwargs)
+
+        monkeypatch.setattr(task_runs.TaskRuns, method, record)
+    response = client.post(f"{BASE_PATH}/tasks", json=TASK)
+    assert response.status_code == 200
+    task_id = response.get_json()["id"]
+    assert stored(mongo_client, task_id)["task"]["name"] == TASK["name"]
+    rules = mongo_client[DB]["policy_rules"].find({"ptype": "g2"})
+    assert {rule["v2"] for rule in rules} == {
+        f"{BASE_PATH}/tasks/{task_id}",
+        f"{BASE_PATH}/tasks/{task_id}:cancel",
+    }
+    assert [task["id"] for task in list_tasks(client)["tasks"]] == [task_id]
+    assert collections == [f"{BASE_PATH}/tasks"] * 2
+
+
+def test_controller_no_body(
+    client: FlaskClient,
+    app: FlaskApp,
+    backend: type[FakeBackend],
+    mongo_client: MongoClient[dict[str, Any]],
+) -> None:
+    """Requests without a body are rejected (`400`), also by the controller.
+
+    Connexion rejects them first; the controller passes no task then.
+    """
+    response = client.post(f"{BASE_PATH}/tasks")
+    assert response.status_code == 400
+    assert not relayed(backend)
+    assert mongo_client[DB]["tasks"].count_documents({}) == 0
+    with (
+        app.app.test_request_context(f"{BASE_PATH}/tasks", method="POST"),
+        pytest.raises(BadRequest, match="body is missing"),
+    ):
+        server.CreateTask()
 
 
 def test_create_task_body_unchanged(

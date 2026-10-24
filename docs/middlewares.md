@@ -2,7 +2,7 @@
 
 Middlewares process each new task (`POST /tasks`) before proTES forwards it:
 they select the TES instances that the task is forwarded to, and in which
-order, and may change the request. The stack of middlewares is configured in
+order, and may change the task. The stack of middlewares is configured in
 `custom.middlewares` (see [Middlewares](configuration.md#middlewares)): a
 list of steps, each a list of alternative middlewares, of which the first one
 that can be applied is used.
@@ -49,6 +49,8 @@ select TES instances, set the key `tes_urls` of the task to the list of their
 URLs, in the order in which they are tried; proTES removes the key before it
 forwards the task, and skips URLs that are neither in
 `custom.tes.service_list` nor discovered (it has no credentials for them).
+If no middleware leaves a list of URL strings in `tes_urls`, the request
+fails (`500`) and the task is not kept.
 Credentials that middlewares add to the URLs of inputs and outputs are
 removed. Raise an exception if the middleware can't be applied, so that the
 next alternative of the step is tried; returning something other than a

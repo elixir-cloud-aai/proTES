@@ -312,6 +312,20 @@ aren't sent to the services anymore, nor places without city or country:
 it falls back to the next middleware for them, instead of distributing
 tasks by an arbitrary location.
 
+## Custom middlewares
+
+Middlewares get the task instead of the request: `apply_middleware()`
+receives the JSON body of `POST /tasks` as a `dict` and returns it (it was
+given and returned a `flask.Request`, and changed `request.json`). Each
+alternative of a step gets its own copy of the task, which is kept only if
+it succeeds; returning something other than a `dict` fails the middleware,
+like raising an exception. Subclasses of `TaskDistributionBaseClass` that
+override `_set_tes_urls()` get the task as `task=` instead of `request=`.
+Port custom middlewares before upgrading: old-style ones still load, but
+fail on every task (a warning in the log for each), so that, with no other
+alternative, task creation fails with `500` ("No middleware could be
+applied").
+
 ## Middleware management API
 
 The middleware management API is no longer registered, as its controllers

@@ -138,7 +138,8 @@ class TaskRuns:
                 the inputs of the task exceed the limit, before or after the
                 middlewares.
             pro_tes.exceptions.MiddlewareException: A middleware step could
-                not be applied.
+                not be applied, or no middleware left a list of URL strings
+                in `tes_urls`; the task is not kept.
             pro_tes.exceptions.NoTesInstancesAvailable: No TES instance
                 accepted the task; the task is not kept.
             pro_tes.exceptions.Unauthorized: The user of the request could
