@@ -6,8 +6,6 @@ import importlib
 import logging
 from typing import Any
 
-import flask
-
 from pro_tes.exceptions import InvalidMiddleware, MiddlewareException
 from pro_tes.middleware.abstract_middleware import AbstractMiddleware
 
@@ -15,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 class MiddlewareHandler:
-    """Manage middlewares and apply them to a request.
+    """Manage middlewares and apply them to a task.
 
     Attributes:
         middlewares: List of middleware classes with up to one level of
@@ -49,72 +47,54 @@ class MiddlewareHandler:
             else:
                 self.middlewares.append([self._import_middleware_class(item)])
 
-    def apply_middlewares(
-        self,
-        request: flask.Request,
-        *args: Any,
-        **kwargs: Any,
-    ) -> flask.Request:
-        """Apply middlewares to a request.
+    def apply_middlewares(self, task: dict[str, Any]) -> dict[str, Any]:
+        """Apply middlewares to a task.
 
         This method iterates through the list of available middlewares and
         attempts to apply them in order. Each middleware can be a single class
         or a list of classes. The latter provides a fallback mechanism in case
         a middleware fails to be applied. In that case, the next middleware in
-        the list is attempted, with the JSON body of the request as it was
-        before the failed one: changes that a failed middleware made to it
-        are undone.
+        the list is attempted.
+
+        Each alternative gets its own copy of the task, which is kept only if
+        the alternative succeeds: changes of failed alternatives are
+        discarded, so every alternative gets the task as it was before the
+        step. Alternatives fail if they raise an exception, or return
+        something other than a task (an object).
 
         Args:
-            request: Incoming request.
-            *args: Additional positional arguments to pass to the middleware.
-            **kwargs: Additional keyword arguments to pass to the middleware.
+            task: Task (a TES task, as a JSON object); not changed.
 
         Returns:
-            Request object modified by middlewares.
+            The task, as changed by the middlewares.
 
         Raises:
             MiddlewareException: If a middleware (a single class or all classes
                 in a list of alternatives) could not be applied.
         """
         for middleware in self.middlewares:
-            # the body before this step, restored after failed alternatives
-            # that have a next one (steps with a single middleware need none)
-            snapshot = deepcopy(request.json) if len(middleware) > 1 else None
-            for index, mw_class in enumerate(middleware):
+            for mw_class in middleware:
                 logger.info("Applying middleware: %s", mw_class)
                 instance = mw_class()
                 try:
-                    request = instance.apply_middleware(request, *args, **kwargs)
+                    result = instance.apply_middleware(deepcopy(task))
                 except Exception as exc:
                     logger.warning(
                         "Error occurred in middleware class '%s': %s", mw_class, exc
                     )
-                    if index < len(middleware) - 1:
-                        self._restore_body(request=request, snapshot=snapshot)
                     continue
+                if not isinstance(result, dict):
+                    logger.warning(
+                        "Middleware class '%s' returned no task, but: %s",
+                        mw_class,
+                        type(result).__name__,
+                    )
+                    continue
+                task = result
                 break
             else:
                 raise MiddlewareException("No middleware could be applied.")
-        return request
-
-    @staticmethod
-    def _restore_body(request: flask.Request, snapshot: Any) -> None:
-        """Restore the JSON body of a request, in place.
-
-        Middlewares change the body in place (`request.json`, which Flask
-        parses once per request), so it is restored in place, too.
-
-        Args:
-            request: Request whose body a failed middleware may have changed.
-            snapshot: Copy of the body before the middleware; not changed.
-                Bodies that are not objects are left as they are.
-        """
-        body = request.json
-        # task bodies are objects (validated by Connexion)
-        if isinstance(body, dict) and isinstance(snapshot, dict):
-            body.clear()
-            body.update(deepcopy(snapshot))
+        return task
 
     @staticmethod
     def _import_middleware_class(import_path: str) -> type[AbstractMiddleware]:

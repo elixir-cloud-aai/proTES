@@ -346,10 +346,10 @@ def test_owner_unidentified(app: FlaskApp, monkeypatch: pytest.MonkeyPatch) -> N
     """Tasks are not created if the user can't be identified (`401`)."""
     monkeypatch.setattr(ownership, "get_current_subject", lambda: None)
     with (
-        app.app.test_request_context(json=TASK),
+        app.app.test_request_context(),
         pytest.raises(Unauthorized, match="could not be identified"),
     ):
-        task_runs.TaskRuns().create_task()
+        task_runs.TaskRuns().create_task(task=TASK, collection="/tasks")
 
 
 @pytest.mark.parametrize(

@@ -36,12 +36,16 @@ def CancelTask(
 def CreateTask(*args: Any, **kwargs: Any) -> dict[str, Any]:
     """Create task.
 
+    The request is read here only: the task processing gets the task and the
+    request path, not the request.
+
     Args:
         *args: Variable length argument list.
-        **kwargs: Arbitrary keyword arguments.
+        **kwargs: Arbitrary keyword arguments, with the task as `body`.
     """
     task_runs = TaskRuns()
-    response = task_runs.create_task(request=request, **kwargs)
+    task = kwargs.pop("body", None)
+    response = task_runs.create_task(task=task, collection=request.path, **kwargs)
     return response
 
 
@@ -70,5 +74,5 @@ def ListTasks(*args: Any, **kwargs: Any) -> dict[str, Any]:
         **kwargs: Arbitrary keyword arguments.
     """
     tasks_run = TaskRuns()
-    response = tasks_run.list_tasks(**kwargs)
+    response = tasks_run.list_tasks(collection=request.path, **kwargs)
     return response

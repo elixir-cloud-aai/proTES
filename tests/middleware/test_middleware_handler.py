@@ -2,7 +2,6 @@
 
 from typing import Any
 
-import flask
 import pytest
 
 from pro_tes.exceptions import InvalidMiddleware, MiddlewareException
@@ -13,29 +12,26 @@ MODULE = __name__
 
 
 class AddA(AbstractMiddleware):
-    """Middleware appending `A` to `steps` of the request body."""
+    """Middleware appending `A` to `steps` of the task."""
 
-    def apply_middleware(self, request: flask.Request) -> flask.Request:
+    def apply_middleware(self, task: dict[str, Any]) -> dict[str, Any]:
         """Append `A`."""
-        assert request.json is not None
-        request.json["steps"].append("A")
-        return request
+        task["steps"].append("A")
+        return task
 
 
 class AddB(AbstractMiddleware):
-    """Middleware appending `B` to `steps` of the request body."""
+    """Middleware appending `B` to `steps` of the task, in a new task."""
 
-    def apply_middleware(self, request: flask.Request) -> flask.Request:
+    def apply_middleware(self, task: dict[str, Any]) -> dict[str, Any]:
         """Append `B`."""
-        assert request.json is not None
-        request.json["steps"].append("B")
-        return request
+        return {**task, "steps": [*task["steps"], "B"]}
 
 
 class Failing(AbstractMiddleware):
     """Middleware that fails."""
 
-    def apply_middleware(self, request: flask.Request) -> flask.Request:
+    def apply_middleware(self, task: dict[str, Any]) -> dict[str, Any]:
         """Fail.
 
         Raises:
@@ -45,60 +41,60 @@ class Failing(AbstractMiddleware):
 
 
 class ChangeThenFail(AbstractMiddleware):
-    """Middleware that changes the request body, then fails."""
+    """Middleware that changes the task, then fails."""
 
-    def apply_middleware(self, request: flask.Request) -> flask.Request:
+    def apply_middleware(self, task: dict[str, Any]) -> dict[str, Any]:
         """Append `X` and add a field, then fail.
 
         Raises:
             MiddlewareException: Always.
         """
-        assert request.json is not None
-        request.json["steps"].append("X")
-        request.json["added"] = True
+        task["steps"].append("X")
+        task["added"] = True
         raise MiddlewareException("failed")
 
 
-class Noop(AbstractMiddleware):
-    """Middleware that changes nothing."""
+class NoTask(AbstractMiddleware):
+    """Middleware that changes the task, but returns no task."""
 
-    def apply_middleware(self, request: flask.Request) -> flask.Request:
-        """Return the request as it is."""
-        return request
+    def apply_middleware(self, task: dict[str, Any]) -> Any:
+        """Append `X`, return `None`."""
+        task["steps"].append("X")
+        return None
 
 
 class NotAMiddleware:
     """Class that is not a middleware."""
 
 
-def apply_body(paths: list[str | list[str]], body: Any) -> Any:
-    """Apply middlewares to a request, returning its body.
+def apply_task(paths: list[str | list[str]], task: dict[str, Any]) -> dict[str, Any]:
+    """Apply middlewares to a task, checking that it is not changed.
 
     Args:
         paths: Import paths of the middlewares, as in the config.
-        body: JSON body of the request.
+        task: Task.
 
     Returns:
-        The request body after the middlewares.
+        The task after the middlewares.
     """
     handler = MiddlewareHandler()
     handler.set_middlewares(paths=paths)
-    app = flask.Flask(__name__)
-    with app.test_request_context(json=body):
-        request = handler.apply_middlewares(request=flask.request)
-        return request.json
+    original = repr(task)
+    result = handler.apply_middlewares(task=task)
+    assert repr(task) == original
+    return result
 
 
 def apply(paths: list[str | list[str]]) -> list[str]:
-    """Apply middlewares to a request, returning the steps they added.
+    """Apply middlewares to a task, returning the steps they added.
 
     Args:
         paths: Import paths of the middlewares, as in the config.
 
     Returns:
-        The steps that the middlewares added to the request body.
+        The steps that the middlewares added to the task.
     """
-    steps: list[str] = apply_body(paths=paths, body={"steps": []})["steps"]
+    steps: list[str] = apply_task(paths=paths, task={"steps": []})["steps"]
     return steps
 
 
@@ -112,7 +108,7 @@ def test_set_middlewares() -> None:
 
 
 def test_apply_middlewares() -> None:
-    """Middlewares are applied in order."""
+    """Middlewares are applied in order, to copies of the task."""
     assert apply([f"{MODULE}.AddB", f"{MODULE}.AddA"]) == ["B", "A"]
 
 
@@ -121,24 +117,23 @@ def test_apply_middlewares_fallback() -> None:
     assert apply([[f"{MODULE}.Failing", f"{MODULE}.AddA", f"{MODULE}.AddB"]]) == ["A"]
 
 
-def test_apply_middlewares_fallback_isolated() -> None:
-    """Changes of failed alternatives are undone before the next one."""
+@pytest.mark.parametrize("failing", ["ChangeThenFail", "NoTask"])
+def test_apply_middlewares_fallback_isolated(failing: str) -> None:
+    """Changes of failed alternatives are discarded before the next one.
+
+    Alternatives that return no task fail, too.
+    """
     paths: list[str | list[str]] = [
         f"{MODULE}.AddA",
-        [f"{MODULE}.ChangeThenFail", f"{MODULE}.ChangeThenFail", f"{MODULE}.AddB"],
+        [f"{MODULE}.{failing}", f"{MODULE}.{failing}", f"{MODULE}.AddB"],
     ]
-    assert apply_body(paths=paths, body={"steps": []}) == {"steps": ["A", "B"]}
-
-
-def test_apply_middlewares_fallback_not_object() -> None:
-    """Bodies that are not objects are passed on as they are."""
-    assert apply_body(paths=[[f"{MODULE}.Failing", f"{MODULE}.Noop"]], body=[1]) == [1]
+    assert apply_task(paths=paths, task={"steps": []}) == {"steps": ["A", "B"]}
 
 
 def test_apply_middlewares_all_fail() -> None:
     """Requests fail if all alternatives of a middleware fail."""
     with pytest.raises(MiddlewareException, match="No middleware could be applied"):
-        apply([f"{MODULE}.AddA", [f"{MODULE}.Failing"]])
+        apply([f"{MODULE}.AddA", [f"{MODULE}.Failing", f"{MODULE}.NoTask"]])
 
 
 @pytest.mark.parametrize(

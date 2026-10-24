@@ -18,9 +18,8 @@ import tes
 
 from pro_tes.config_models import ListTasks, PostTask
 from pro_tes.exceptions import BackendAuthError, BackendOutcomeUnknown, BadRequest
-from pro_tes.ga4gh.tes import ownership, task_runs
+from pro_tes.ga4gh.tes import ownership, server, task_runs
 from pro_tes.ga4gh.tes.models import DbDocument, TesTask
-from pro_tes.middleware.middleware_handler import MiddlewareHandler
 from pro_tes.plugins.middlewares.task_distribution.random import (
     TaskDistributionRandom,
 )
@@ -122,6 +121,37 @@ def test_create_task_no_backend(
     assert mongo_client[DB]["policy_rules"].count_documents({"ptype": "g2"}) == 0
 
 
+def test_create_task_no_backend_selected(
+    app: FlaskApp,
+    client: FlaskClient,
+    backend: type[FakeBackend],
+    tracked: list[dict[str, Any]],
+    mongo_client: MongoClient[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Tasks without backends fail (`500`) as if none accepted them.
+
+    They are rejected before they are stored, so no task, no owner's roles
+    and no task in a state such as `SYSTEM_ERROR` are left.
+    """
+    stores: list[Any] = []
+    monkeypatch.setattr(
+        task_runs.TaskRuns,
+        "_update_task",
+        lambda self, **kwargs: stores.append(kwargs),
+    )
+    with app.app.app_context():
+        get_custom_config().tes.service_list = []
+    response = client.post(f"{BASE_PATH}/tasks", json=TASK)
+    assert response.status_code == 500
+    assert response.get_json()["detail"] == "No TES instance accepted the task."
+    assert not stores
+    assert not relayed(backend)
+    assert not tracked
+    assert mongo_client[DB]["tasks"].count_documents({}) == 0
+    assert mongo_client[DB]["policy_rules"].count_documents({"ptype": "g2"}) == 0
+
+
 @pytest.mark.parametrize("served", ["none", "invalid"])
 def test_create_task_state_unavailable(
     client: FlaskClient,
@@ -197,7 +227,7 @@ def test_create_task_unknown_backend(
     """
 
     def unknown_first(
-        self: TaskDistributionRandom, tes_urls: list[str], request: Any
+        self: TaskDistributionRandom, tes_urls: list[str], task: Any
     ) -> None:
         """Try an unknown backend first."""
         self.tes_urls = ["https://unknown.example.org", *tes_urls]
@@ -703,13 +733,11 @@ def test_create_task_inline_content_middleware(
     """Inline contents that middlewares add count, too; the task isn't kept."""
     apply = TaskDistributionRandom.apply_middleware
 
-    def add_content(self: TaskDistributionRandom, request: Any) -> Any:
+    def add_content(self: TaskDistributionRandom, task: Any) -> Any:
         """Add a large inline content."""
-        request = apply(self, request)
-        request.json["inputs"] = [
-            {"content": "x" * 32, "path": "/added", "type": "FILE"}
-        ]
-        return request
+        task = apply(self, task)
+        task["inputs"] = [{"content": "x" * 32, "path": "/added", "type": "FILE"}]
+        return task
 
     monkeypatch.setattr(TaskDistributionRandom, "apply_middleware", add_content)
     with app.app.app_context():
@@ -762,9 +790,7 @@ def test_views_logs(
 def in_order(monkeypatch: pytest.MonkeyPatch) -> None:
     """Tasks are relayed to the backends in the configured order."""
 
-    def ordered(
-        self: TaskDistributionRandom, tes_urls: list[str], request: Any
-    ) -> None:
+    def ordered(self: TaskDistributionRandom, tes_urls: list[str], task: Any) -> None:
         """Keep the order."""
         self.tes_urls = list(tes_urls)
 
@@ -838,11 +864,11 @@ def test_create_task_url_credentials_middleware(
     """Credentials that middlewares add to URLs are removed, too."""
     apply = TaskDistributionRandom.apply_middleware
 
-    def add_credentials(self: TaskDistributionRandom, request: Any) -> Any:
+    def add_credentials(self: TaskDistributionRandom, task: Any) -> Any:
         """Add credentials to the URL of the input."""
-        request = apply(self, request)
-        request.json["inputs"][0]["url"] = "s3://key:secret@bucket/in"
-        return request
+        task = apply(self, task)
+        task["inputs"][0]["url"] = "s3://key:secret@bucket/in"
+        return task
 
     monkeypatch.setattr(TaskDistributionRandom, "apply_middleware", add_credentials)
     response = client.post(f"{BASE_PATH}/tasks", json=TASK_FILES)
@@ -1282,24 +1308,139 @@ def test_list_tasks_no_original(
 def test_create_task_no_body(app: FlaskApp, backend: type[FakeBackend]) -> None:
     """Requests without a JSON body are rejected (connexion rejects them first)."""
     with (
-        app.app.test_request_context(data="null", content_type="application/json"),
+        app.app.test_request_context(),
         pytest.raises(BadRequest, match="body is missing"),
     ):
-        task_runs.TaskRuns().create_task()
+        task_runs.TaskRuns().create_task(task=None, collection=f"{BASE_PATH}/tasks")
 
 
-def test_create_task_body_removed(
-    client: FlaskClient, backend: type[FakeBackend], monkeypatch: pytest.MonkeyPatch
+def test_controllers_pass_request_data(
+    client: FlaskClient,
+    backend: type[FakeBackend],
+    mongo_client: MongoClient[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Middlewares that remove the request body fail the request (`500`)."""
+    """The controllers pass the task and the request path to `TaskRuns`.
+
+    The owner's policies are on the request path of the task, and tasks are
+    listed from the request path, too.
+    """
+    collections: list[str] = []
+    for method in ("create_task", "list_tasks"):
+        original = getattr(task_runs.TaskRuns, method)
+
+        def record(
+            self: task_runs.TaskRuns,
+            *args: Any,
+            original: Any = original,
+            **kwargs: Any,
+        ) -> Any:
+            """Record the collection, then call the method."""
+            collections.append(kwargs["collection"])
+            return original(self, *args, **kwargs)
+
+        monkeypatch.setattr(task_runs.TaskRuns, method, record)
+    response = client.post(f"{BASE_PATH}/tasks", json=TASK)
+    assert response.status_code == 200
+    task_id = response.get_json()["id"]
+    assert stored(mongo_client, task_id)["task"]["name"] == TASK["name"]
+    rules = mongo_client[DB]["policy_rules"].find({"ptype": "g2"})
+    assert {rule["v2"] for rule in rules} == {
+        f"{BASE_PATH}/tasks/{task_id}",
+        f"{BASE_PATH}/tasks/{task_id}:cancel",
+    }
+    assert [task["id"] for task in list_tasks(client)["tasks"]] == [task_id]
+    assert collections == [f"{BASE_PATH}/tasks"] * 2
+
+
+def test_controllers_pass_request_path(
+    app: FlaskApp, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The controllers pass the path of the request, whatever it is."""
+    calls: list[tuple[str, Any, str]] = []
+
+    def record(method: str) -> Any:
+        """Get a stand-in for a method of `TaskRuns` that records its call."""
+
+        def recorded(
+            self: task_runs.TaskRuns, task: Any = None, *, collection: str, **_: Any
+        ) -> dict[str, Any]:
+            """Record the call."""
+            calls.append((method, task, collection))
+            return {}
+
+        return recorded
+
+    for method in ("create_task", "list_tasks"):
+        monkeypatch.setattr(task_runs.TaskRuns, method, record(method))
+    path = "/other/base/tasks"
+    with app.app.test_request_context(path, method="POST", json=TASK):
+        server.CreateTask(body=TASK)
+    with app.app.test_request_context(path):
+        server.ListTasks()
+    assert calls == [("create_task", TASK, path), ("list_tasks", None, path)]
+
+
+def test_controller_no_body(
+    client: FlaskClient,
+    app: FlaskApp,
+    backend: type[FakeBackend],
+    mongo_client: MongoClient[dict[str, Any]],
+) -> None:
+    """Requests without a body are rejected (`400`), also by the controller.
+
+    Connexion rejects them first; the controller passes no task then.
+    """
+    response = client.post(f"{BASE_PATH}/tasks")
+    assert response.status_code == 400
+    assert not relayed(backend)
+    assert mongo_client[DB]["tasks"].count_documents({}) == 0
+    with (
+        app.app.test_request_context(f"{BASE_PATH}/tasks", method="POST"),
+        pytest.raises(BadRequest, match="body is missing"),
+    ):
+        server.CreateTask()
+
+
+def test_create_task_body_unchanged(
+    app: FlaskApp, backend: type[FakeBackend], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The task of the request is not changed, e.g., by the middlewares."""
+    monkeypatch.setattr(task_runs, "get_owner", lambda: USER)
+    task = deepcopy(TASK_CREDENTIALS)
+    with app.app.test_request_context():
+        get_custom_config().controllers.post_task.url_credentials = "strip"
+        task_runs.TaskRuns().create_task(task=task, collection=f"{BASE_PATH}/tasks")
+    assert task == TASK_CREDENTIALS
+
+
+@pytest.mark.parametrize("tes_urls", [None, "https://tes.example.org", [1]])
+def test_create_task_no_tes_urls(
+    client: FlaskClient,
+    backend: type[FakeBackend],
+    mongo_client: MongoClient[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+    tes_urls: Any,
+) -> None:
+    """Middlewares that select no list of TES backends fail the request."""
+
+    def select(self: TaskDistributionRandom, task: Any) -> Any:
+        """Select `tes_urls`, or remove them if `None`."""
+        task.pop("tes_urls", None)
+        if tes_urls is not None:
+            task["tes_urls"] = tes_urls
+        return task
+
+    apply = TaskDistributionRandom.apply_middleware
     monkeypatch.setattr(
-        MiddlewareHandler,
-        "apply_middlewares",
-        lambda self, request: SimpleNamespace(json=None),
+        TaskDistributionRandom,
+        "apply_middleware",
+        lambda self, task: select(self, apply(self, task)),
     )
     response = client.post(f"{BASE_PATH}/tasks", json=TASK)
     assert response.status_code == 500
     assert not relayed(backend)
+    assert mongo_client[DB]["tasks"].count_documents({}) == 0
 
 
 def test_invalid_view(app: FlaskApp) -> None:

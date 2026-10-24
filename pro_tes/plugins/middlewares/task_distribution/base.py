@@ -1,8 +1,7 @@
 """Task distribution middleware base class."""
 
-import flask
+from typing import Any
 
-from pro_tes.exceptions import MiddlewareException
 from pro_tes.ga4gh.tes.discovery import get_backends
 from pro_tes.middleware.abstract_middleware import AbstractMiddleware
 
@@ -18,31 +17,27 @@ class TaskDistributionBaseClass(AbstractMiddleware):
         """Class constructor."""
         self.tes_urls: list[str] = []
 
-    def apply_middleware(self, request: flask.Request) -> flask.Request:
-        """Apply middleware to reque object.
+    def apply_middleware(self, task: dict[str, Any]) -> dict[str, Any]:
+        """Add the TES backends to a task (`tes_urls`).
 
         Args:
-            request: Request object to be modified.
+            task: Task to be modified.
 
         Returns:
-            Modified request object.
-
-        Raises:
-            MiddlewareException: If request has no JSON payload.
+            The task, with the URLs of the backends that it is forwarded to,
+            in order, as `tes_urls`.
         """
-        if request.json is None:
-            raise MiddlewareException("Request has no JSON payload.")
         self._set_tes_urls(
             tes_urls=[backend.url for backend in get_backends()],
-            request=request,
+            task=task,
         )
-        request.json["tes_urls"] = self.tes_urls
-        return request
+        task["tes_urls"] = self.tes_urls
+        return task
 
     def _set_tes_urls(
         self,
         tes_urls: list[str],
-        request: flask.Request,
+        task: dict[str, Any],
     ) -> None:
         """Set TES URIs, once each, in the given order.
 
@@ -51,6 +46,6 @@ class TaskDistributionBaseClass(AbstractMiddleware):
 
         Args:
             tes_urls: List of TES URIs.
-            request: Request object to be modified.
+            task: Task to be modified.
         """
         self.tes_urls = list(dict.fromkeys(tes_urls))

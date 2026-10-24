@@ -71,7 +71,15 @@ The checks are configured in
 and
 [`pyproject.toml`](https://github.com/elixir-cloud-aai/proTES/blob/dev/pyproject.toml).
 Project-specific rules are in `.semgrep/` (security) and `.ast-grep/`
-(anti-patterns such as HTTP status codes as strings).
+(anti-patterns such as HTTP status codes as strings). The ast-grep rule
+`framework-free-tasks` forbids imports of Flask, Werkzeug, Connexion and
+Starlette in the task processing (`pro_tes/ga4gh/tes/task_runs.py`) and
+the middlewares (`pro_tes/middleware/`, `pro_tes/plugins/`): they get
+plain data (the task, the request path) from the controllers
+(`pro_tes/ga4gh/tes/server.py`), so that the move to Connexion 3 without
+Flask touches them as little as possible. They still raise the exceptions
+of `pro_tes.exceptions`, which derive from Connexion's and Werkzeug's, so
+those change with that move.
 [actionlint](https://github.com/rhysd/actionlint) checks the workflows in
 `.github/workflows/`, and their shell scripts with
 [ShellCheck](https://www.shellcheck.net/) if it is installed (as on

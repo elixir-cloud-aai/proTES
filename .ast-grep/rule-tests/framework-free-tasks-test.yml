@@ -1,0 +1,18 @@
+id: framework-free-tasks
+valid:
+  - from copy import deepcopy
+  - import requests
+  - from foca import get_collection
+  - import flasky
+  - from foca import flask
+  - import os.path as flask
+invalid:
+  - import flask
+  - from flask import request
+  - from connexion import request
+  - from werkzeug.exceptions import BadRequest
+  - import starlette.requests
+  - import flask as f
+  - import os, flask
+  - import os, werkzeug.exceptions as wexc
+  - from connexion.exceptions import ProblemException
