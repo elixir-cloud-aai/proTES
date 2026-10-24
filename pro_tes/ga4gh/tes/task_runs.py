@@ -23,6 +23,7 @@ from pro_tes.exceptions import (
     BadRequest,
     MiddlewareException,
     NoTesInstancesAvailable,
+    TaskNotCancelable,
     TaskNotFound,
 )
 from pro_tes.ga4gh.tes.backends import create_client
@@ -238,11 +239,12 @@ class TaskRuns:
                 url,
                 remote_task_id,
             )
+            state: TesState | None = None
             try:
                 task: Task = cli.get_task(remote_task_id)
                 task_model_converter = TaskModelConverter(task=task)
                 task_converted: TesTask = task_model_converter.convert_task()
-                db_document.task.state = task_converted.state
+                state = task_converted.state
             except (requests.RequestException, BackendAuthError) as exc:
                 logger.error(
                     "Task '%s' info could not be retrieved from TES endpoint"
@@ -257,6 +259,7 @@ class TaskRuns:
                 db_connector=db_connector,
                 tes_url=tes_url,
                 remote_task_id=remote_task_id,
+                state=state,
             )
             task__track_task_progress.apply_async(
                 None,
@@ -368,6 +371,9 @@ class TaskRuns:
         """Cancel task.
 
         Only owners of the task may cancel it (enforced by the policies).
+        Tasks that have not finished (also those in state `UNKNOWN`, e.g.,
+        not tracked yet) are canceled at their TES instance; finished tasks
+        and tasks being canceled are left as they are.
 
         Args:
             id: Task identifier.
@@ -377,10 +383,11 @@ class TaskRuns:
             Task identifier.
 
         Raises:
+            pro_tes.exceptions.TaskNotCancelable: The task has not
+                finished, but its identifier at its TES instance is unknown
+                (e.g., it was not forwarded yet).
             pro_tes.exceptions.TaskNotFound: The requested task is not
                 available.
-            ValueError: The task is cancelable, but its identifier at its
-                TES instance is unknown.
         """
         document = self.db_client.find_one(
             filter={"task.id": id},
@@ -391,7 +398,7 @@ class TaskRuns:
             raise TaskNotFound
         db_document: DbDocument = DbDocument(**document)
 
-        if db_document.task.state in States.CANCELABLE:
+        if db_document.task.state in States.CANCELABLE + States.UNDEFINED:
             db_connector = DbDocumentConnector(
                 collection=self.db_client,
                 worker_id=db_document.worker_id,
@@ -403,9 +410,12 @@ class TaskRuns:
 
             task_id = self._remote_task_id(document=document, db_document=db_document)
             if task_id is None:
-                # tasks get cancelable states only from the TES instance they
-                # were forwarded to, which proTES records
-                raise ValueError(f"No remote identifier of task '{id}'")
+                # e.g., tasks that are being forwarded, or that a TES
+                # instance may have accepted without confirming it
+                raise TaskNotCancelable(
+                    f"Task '{id}' can't be canceled: its identifier at its TES"
+                    " instance is unknown"
+                )
 
             logger.info(
                 "Trying to cancel task with task identifier '%s' and worker job"
@@ -610,6 +620,7 @@ class TaskRuns:
         db_connector: DbDocumentConnector,
         tes_url: str,
         remote_task_id: str,
+        state: TesState | None = None,
     ) -> DbDocument:
         """Set end time, task metadata in `TesTask.logs`, and update document.
 
@@ -617,6 +628,9 @@ class TaskRuns:
             db_connector: The database connector.
             tes_url: The TES URL where the task if forwarded.
             remote_task_id: Task identifier at the remote TES instance.
+            state: State of the task at the remote TES instance, if known;
+                stored as the task's state (else the state is kept, i.e.,
+                `UNKNOWN`, until the task is tracked).
 
         Returns:
             The updated database document.
@@ -634,6 +648,8 @@ class TaskRuns:
             root="tes_endpoint",
             **tes_endpoint_dict,
         )
+        if state is not None:
+            db_document.task.state = state
         if db_document.task.logs is None:
             raise ValueError(f"Task '{db_document.task.id}' has no logs")
         task_logs = db_document.task.logs

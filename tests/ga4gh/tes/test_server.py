@@ -305,6 +305,37 @@ def test_cancel_task(
     assert response.get_json()["state"] == "CANCELED"
 
 
+def test_create_task_state_stored(
+    task_id: str, mongo_client: MongoClient[dict[str, Any]]
+) -> None:
+    """New tasks are stored with the state their backend reported."""
+    assert stored(mongo_client, task_id)["task"]["state"] == "QUEUED"
+
+
+def test_cancel_task_after_create(
+    client: FlaskClient, task_id: str, backend: type[FakeBackend]
+) -> None:
+    """Tasks are canceled at their backend right after creation."""
+    response = client.post(f"{BASE_PATH}/tasks/{task_id}:cancel")
+    assert response.status_code == 200
+    assert backend.canceled == ["remote-1"]
+    response = client.get(f"{BASE_PATH}/tasks/{task_id}")
+    assert response.get_json()["state"] == "CANCELED"
+
+
+def test_cancel_task_unknown_state(
+    client: FlaskClient,
+    task_id: str,
+    backend: type[FakeBackend],
+    mongo_client: MongoClient[dict[str, Any]],
+) -> None:
+    """Tasks in state `UNKNOWN` (e.g., state unavailable) are canceled too."""
+    set_state(mongo_client, task_id, "UNKNOWN")
+    assert client.post(f"{BASE_PATH}/tasks/{task_id}:cancel").status_code == 200
+    assert backend.canceled == ["remote-1"]
+    assert stored(mongo_client, task_id)["task"]["state"] == "CANCELED"
+
+
 @pytest.mark.parametrize("state", ["COMPLETE", "EXECUTOR_ERROR", "CANCELED"])
 def test_cancel_task_finished(
     client: FlaskClient,
@@ -762,23 +793,30 @@ def test_cancel_task_legacy(
     assert backend.canceled == ["remote-1", "remote-2"]
 
 
+@pytest.mark.parametrize("state", ["RUNNING", "UNKNOWN"])
 def test_cancel_task_no_remote_id(
     client: FlaskClient,
     task_id: str,
     backend: type[FakeBackend],
     mongo_client: MongoClient[dict[str, Any]],
+    state: str,
 ) -> None:
-    """Cancelable tasks without a remote identifier can't be canceled (`500`)."""
+    """Unfinished tasks without a remote identifier can't be canceled (`409`).
+
+    E.g., tasks that are being forwarded.
+    """
     mongo_client[DB]["tasks"].update_one(
         {"task.id": task_id},
         {
             "$unset": {"tes_endpoint.task_id": ""},
-            "$set": {"task.logs.0.metadata": {}, "task.state": "RUNNING"},
+            "$set": {"task.logs.0.metadata": {}, "task.state": state},
         },
     )
-    assert client.post(f"{BASE_PATH}/tasks/{task_id}:cancel").status_code == 500
+    response = client.post(f"{BASE_PATH}/tasks/{task_id}:cancel")
+    assert response.status_code == 409
+    assert "identifier at its TES instance" in response.get_json()["detail"]
     assert backend.canceled == []
-    assert stored(mongo_client, task_id)["task"]["state"] == "RUNNING"
+    assert stored(mongo_client, task_id)["task"]["state"] == state
 
 
 def test_cancel_task_backend_not_configured(
