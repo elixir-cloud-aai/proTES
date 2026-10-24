@@ -243,7 +243,11 @@ custom:
       max_inline_content: 131072
     # Tasks per page of `GET /tasks` if the request sets no `page_size`, and
     # at most (the TES specification requires fewer than 2048); at most
-    # `max_page_size_full` of the view `FULL`, whose tasks may be large
+    # `max_page_size_full` of the view `FULL`, whose tasks may be large: a
+    # task may be as large as `server.max_content_length` (plus its logs), so
+    # a page of the view `FULL` may be about `max_page_size_full` MiB (64 MiB
+    # by default), held in memory while it is served; lower it for small
+    # memory limits (see `docs/configuration.md`)
     list_tasks:
       default_page_size: 256
       max_page_size: 2047

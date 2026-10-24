@@ -96,6 +96,15 @@ mapping of exceptions to problem details is
 `exceptions` in
 [`pro_tes.exceptions`](reference.md#pro_tes.exceptions).
 
+The TES specification declares only the successful responses. The served
+specification adds, as proTES extensions, `413 Content Too Large` to
+`POST /tasks` and `409 Conflict` to `POST /tasks/{id}:cancel`, with the
+schema `ProblemDetails` (cf.
+[`additions.openapi.yaml`](https://github.com/elixir-cloud-aai/proTES/blob/dev/pro_tes/api/additions.openapi.yaml)),
+as clients don't get these from TES servers in general; the operations are
+otherwise those of the TES specification. The other errors are those of
+any HTTP API, and are not declared.
+
 ## Middleware management API
 
 The [middleware management API](middlewares.md#middleware-management-api) is
