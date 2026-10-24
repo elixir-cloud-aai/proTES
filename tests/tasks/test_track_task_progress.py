@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 import time
 from typing import Any, ClassVar
 
+from bson.objectid import ObjectId
 from celery.exceptions import Reject
 from connexion import FlaskApp
 from foca import get_collection
@@ -20,7 +21,7 @@ import tes
 
 from pro_tes.app import init_app
 from pro_tes.celery_worker import celery
-from pro_tes.config_models import Discovery, Polling, PostTask, TesBackend
+from pro_tes.config_models import Discovery, Polling, TesBackend
 from pro_tes.ga4gh.tes import backends
 from pro_tes.tasks import track_task_progress
 from pro_tes.utils.db import DbDocumentConnector
@@ -646,16 +647,18 @@ def test_failures_resumed(
     assert call["kwargs"]["failures"] == 5
 
 
-def iso_time(seconds_ago: float) -> str:
-    """Get a past time, in the format of `creation_time`.
+def stored_since(seconds: float) -> ObjectId:
+    """Get the document identifier of a task stored a while ago.
 
     Args:
-        seconds_ago: Seconds before now.
+        seconds: Seconds since the task was stored.
 
     Returns:
-        The time, in UTC, in RFC 3339 format.
+        A new document identifier with that time, as MongoDB sets them.
     """
-    return datetime.fromtimestamp(time.time() - seconds_ago, UTC).isoformat()
+    stored = ObjectId.from_datetime(datetime.fromtimestamp(time.time() - seconds, UTC))
+    # the time, and the unique rest of a new identifier
+    return ObjectId(stored.binary[:4] + ObjectId().binary[4:])
 
 
 def test_cut_off_creates_failed(
@@ -665,41 +668,38 @@ def test_cut_off_creates_failed(
     """Tasks whose creation was cut off are set to `SYSTEM_ERROR`.
 
     I.e., tasks still in state `UNKNOWN` without identifier at a backend,
-    created more than `max_create_time` seconds ago (e.g., if proTES stopped
-    while forwarding them); not tasks being created, tasks with a remote
-    identifier (also in the logs, of earlier versions), tasks in other
-    states, or tasks without creation time.
+    stored more than `max_create_time` seconds ago (e.g., if proTES stopped
+    while forwarding them), also by earlier versions (without creation
+    time); not tasks being created, tasks with a remote identifier (also in
+    the logs, of earlier versions), or tasks in other states.
     """
     max_create_time = get_custom_config().controllers.post_task.max_create_time
-    old = iso_time(max_create_time + 60)
+    old = max_create_time + 60
     endpoint = {"host": ARGS["remote_host"], "base_path": "", "task_id": "remote-1"}
     tasks.delete_many({})
 
-    def insert(worker_id: str, created: str | None = old, **fields: Any) -> None:
-        """Store a task in state `UNKNOWN`, with its creation time.
+    def insert(worker_id: str, stored: float = old, **fields: Any) -> None:
+        """Store a task in state `UNKNOWN`.
 
         Args:
             worker_id: Worker identifier of the task.
-            created: Creation time of the task; none if `None`.
-            **fields: Further fields of the document, or of its task
-                (`task`, merged into it).
+            stored: Seconds since the task was stored.
+            **fields: Further fields of the document.
         """
-        insert_task(tasks, worker_id, state="UNKNOWN", **fields)
-        if created is not None:
-            tasks.update_one(
-                {"worker_id": worker_id}, {"$set": {"task.creation_time": created}}
-            )
+        insert_task(
+            tasks, worker_id, state="UNKNOWN", _id=stored_since(stored), **fields
+        )
 
     insert("cut-off")
     insert("cut-off-host", tes_endpoint={"host": ARGS["remote_host"], "base_path": ""})
+    insert("cut-off-no-remote-id", tes_endpoint={"host": "x", "task_id": None})
     insert("cut-off-empty-forwards")
     tasks.update_one(
         {"worker_id": "cut-off-empty-forwards"},
         {"$set": {"task.logs.0.metadata": {"forwarded_to": []}}},
     )
-    insert("being-created", created=iso_time(60))
+    insert("being-created", stored=60)
     insert("forwarded", tes_endpoint=endpoint)
-    insert("no-creation-time", created=None)
     insert("queued")
     tasks.update_one({"worker_id": "queued"}, {"$set": {"task.state": "QUEUED"}})
     legacy = {
@@ -716,7 +716,12 @@ def test_cut_off_creates_failed(
     states = {
         document["worker_id"]: document["task"]["state"] for document in tasks.find()
     }
-    failed = {"cut-off", "cut-off-host", "cut-off-empty-forwards"}
+    failed = {
+        "cut-off",
+        "cut-off-host",
+        "cut-off-no-remote-id",
+        "cut-off-empty-forwards",
+    }
     assert {key for key, state in states.items() if state == "SYSTEM_ERROR"} == failed
     assert states["queued"] == "QUEUED"
     assert {state for key, state in states.items() if key not in failed} == {
@@ -728,10 +733,63 @@ def test_cut_off_creates_failed(
     assert call["kwargs"]["worker_id"] == "forwarded"
 
 
-def test_max_create_time_positive() -> None:
-    """The maximum duration of creating a task is positive."""
-    with pytest.raises(ValidationError):
-        PostTask(max_create_time=0)
+def test_cut_off_create_logged(
+    tasks: Collection[dict[str, Any]], caplog: pytest.LogCaptureFixture
+) -> None:
+    """Tasks set to `SYSTEM_ERROR` are counted and logged.
+
+    Not tasks that changed after they were read (e.g., forwarded since).
+    """
+    max_create_time = 60
+    tasks.delete_many({})
+    for worker_id in ("cut-off", "changed"):
+        insert_task(
+            tasks,
+            worker_id,
+            state="UNKNOWN",
+            _id=stored_since(max_create_time + 1),
+        )
+
+    class Forwarding:
+        """Collection whose task `changed` is forwarded once it is read.
+
+        Attributes:
+            collection: Collection of the tasks.
+        """
+
+        def __init__(self, collection: Collection[dict[str, Any]]) -> None:
+            """Wrap the collection."""
+            self.collection = collection
+
+        def find(self, *args: Any, **kwargs: Any) -> list[dict[str, Any]]:
+            """Find the tasks, then forward task `changed`."""
+            found = list(self.collection.find(*args, **kwargs))
+            self.collection.update_one(
+                {"worker_id": "changed"}, {"$set": {"tes_endpoint.task_id": "r-1"}}
+            )
+            return found
+
+        def update_one(self, *args: Any, **kwargs: Any) -> Any:
+            """Update a task."""
+            return self.collection.update_one(*args, **kwargs)
+
+    with caplog.at_level("WARNING", logger=track_task_progress.logger.name):
+        failed = track_task_progress._fail_cut_off(
+            collection=Forwarding(tasks),  # type: ignore[arg-type]
+            max_create_time=max_create_time,
+        )
+    assert failed == 1
+    states = {
+        document["worker_id"]: document["task"]["state"] for document in tasks.find()
+    }
+    assert states == {"cut-off": "SYSTEM_ERROR", "changed": "UNKNOWN"}
+    (record,) = [
+        record
+        for record in caplog.records
+        if record.name == track_task_progress.logger.name
+    ]
+    assert record.getMessage().startswith("[cut-off] SYSTEM_ERROR")
+    assert "within 60 seconds" in record.getMessage()
 
 
 @pytest.mark.parametrize("field", ["wait", "max_wait"])

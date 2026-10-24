@@ -275,10 +275,11 @@ instance too (canceling them returned `200` without effect); tasks that
 have not finished, but whose identifier at their TES instance is unknown,
 can't be canceled (`409 Conflict`; was `500`, or `200` without effect
 for tasks in state `UNKNOWN`). Tasks in state `UNKNOWN` without
-identifier at a TES instance (also none in their logs) that were created
-more than an hour ago (`custom.controllers.post_task.max_create_time`) are
-set to `SYSTEM_ERROR` by the Celery workers, also those stored by earlier
-versions (see [Task tracking](operations.md#task-tracking)).
+identifier at a TES instance (also none in their logs) that were stored
+more than `custom.controllers.post_task.max_create_time` seconds ago
+(default 3600) are set to `SYSTEM_ERROR` by the Celery workers, also those
+stored by earlier versions (see [Task
+tracking](operations.md#task-tracking)).
 
 ## Task listing
 

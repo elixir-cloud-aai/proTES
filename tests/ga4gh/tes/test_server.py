@@ -594,10 +594,17 @@ def test_page_size_config() -> None:
 
 
 def test_post_task_config() -> None:
-    """Inline contents are limited to 128 KiB by default (cf. TES)."""
+    """Inline contents are limited to 128 KiB by default (cf. TES).
+
+    Tasks still being created are set to `SYSTEM_ERROR` after an hour by
+    default.
+    """
     assert PostTask().max_inline_content == 131072
+    assert PostTask().max_create_time == 3600
     with pytest.raises(ValidationError):
         PostTask(max_inline_content=0)
+    with pytest.raises(ValidationError):
+        PostTask(max_create_time=0)
 
 
 def test_default_view(client: FlaskClient, task_id: str) -> None:

@@ -27,6 +27,7 @@ import time
 from typing import Any
 from uuid import uuid4
 
+from bson.objectid import ObjectId
 from celery.exceptions import Reject
 from celery.signals import worker_ready
 from foca import get_collection
@@ -443,8 +444,9 @@ def _fail_cut_off(collection: Collection[dict[str, Any]], max_create_time: int) 
 
     That is, tasks still in state `UNKNOWN` without identifier at a TES
     instance (also none in their logs, as stored by earlier versions) that
-    were created more than `max_create_time` seconds ago, e.g., if proTES
-    stopped while forwarding them. They can be neither tracked nor
+    were stored more than `max_create_time` seconds ago (by the time of
+    their document identifier, as set by MongoDB for all versions), e.g., if
+    proTES stopped while forwarding them. They can be neither tracked nor
     canceled; as their TES instance may run them, they are kept, as are
     tasks that a TES instance did not confirm (cf.
     :py:class:`~pro_tes.exceptions.BackendOutcomeUnknown`).
@@ -457,15 +459,14 @@ def _fail_cut_off(collection: Collection[dict[str, Any]], max_create_time: int) 
     Returns:
         Number of tasks set to `SYSTEM_ERROR`.
     """
-    cutoff = datetime.fromtimestamp(time.time() - max_create_time, UTC).isoformat()
+    cutoff = datetime.fromtimestamp(time.time() - max_create_time, UTC)
     unconfirmed = {
         "task.state": TesState.UNKNOWN.value,
         "tes_endpoint.task_id": {"$not": {"$type": "string"}},
     }
     failed = 0
     for document in collection.find(
-        # creation times are in the same format (cf. `utc_now`)
-        {**unconfirmed, "task.creation_time": {"$type": "string", "$lt": cutoff}},
+        {**unconfirmed, "_id": {"$lt": ObjectId.from_datetime(cutoff)}},
         projection=["worker_id", "task.logs"],
     ):
         if _logged_remote_task_id(document):
