@@ -97,7 +97,7 @@ conduct](CODE_OF_CONDUCT.md).
 [badge-coverage]: <https://codecov.io/gh/elixir-cloud-aai/proTES/branch/dev/graph/badge.svg?branch=dev>
 [badge-docker]: <https://img.shields.io/docker/v/elixircloud/protes?sort=semver&label=image&color=C39BD3>
 [badge-doi]: <https://zenodo.org/badge/DOI/10.5281/zenodo.23619646.svg>
-[badge-docs]: <https://app.readthedocs.org/projects/protes/badge/>
+[badge-docs]: <https://img.shields.io/readthedocs/protes>
 [badge-github-tag]: <https://img.shields.io/github/v/tag/elixir-cloud-aai/proTES?color=C39BD3>
 [badge-license]: <https://img.shields.io/badge/license-Apache%202.0-blue.svg>
 [badge-url-build-status]: <https://github.com/elixir-cloud-aai/proTES/actions/workflows/ci.yml?query=branch%3Adev>
