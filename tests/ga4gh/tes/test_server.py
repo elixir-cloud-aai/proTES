@@ -132,6 +132,30 @@ def test_create_task_state_unavailable(
     assert len(tracked) == 1
 
 
+def test_create_task_state_invalid(
+    client: FlaskClient,
+    backend: type[FakeBackend],
+    tracked: list[dict[str, Any]],
+    mongo_client: MongoClient[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Tasks are stored with their backend if it serves them invalid.
+
+    E.g., with an unknown state: the backend accepted the task, so it is
+    tracked (and not created again by clients retrying after errors).
+    """
+    monkeypatch.setattr(
+        backend,
+        "get_task",
+        lambda self, task_id, **kwargs: tes.Task(id=task_id, state="DONE"),
+    )
+    response = client.post(f"{BASE_PATH}/tasks", json=TASK)
+    assert response.status_code == 200
+    document = stored(mongo_client, response.get_json()["id"])
+    assert document["tes_endpoint"]["task_id"] == "remote-1"
+    assert len(tracked) == 1
+
+
 def test_create_task_files(client: FlaskClient, backend: type[FakeBackend]) -> None:
     """Backends get the inputs and outputs as they are."""
     response = client.post(f"{BASE_PATH}/tasks", json=TASK_FILES)

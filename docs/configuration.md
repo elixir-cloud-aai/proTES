@@ -82,12 +82,17 @@ connection was lost after the request was sent, or it answered with a
 server error (5xx; gateways answer `502`, `503` or `504` also when the TES
 instance behind them got the request), the task is not sent to other TES
 instances, as it may run already: it fails with `SYSTEM_ERROR` (see
-[Tasks](api.md#tasks)). Set the timeout long enough for slow TES instances,
-but shorter than the timeouts of requests to proTES (Gunicorn's graceful
-timeout, 20 seconds in the chart, and the read timeout of a reverse proxy,
-e.g., 60 seconds by default for ingress-nginx), as a request to create a
-task may wait for several TES instances: clients that retry requests that
-timed out may create tasks twice.
+[Tasks](api.md#tasks)). Other failures of TLS handshakes (e.g., an `https`
+URL of a plain HTTP port) and of proxies count as unknown outcomes too, so
+they stop the failover: check the URLs of the TES instances. Set the
+timeout long enough for slow TES instances, but keep the duration of a
+request to create a task (per TES instance tried, up to 5 seconds to
+connect, and up to the timeout each to create the task and to get its
+state) below the read timeout of a reverse proxy in front of proTES (e.g.,
+60 seconds by default for ingress-nginx): clients that retry requests that
+timed out may create tasks twice. Requests in flight when an instance of
+proTES stops are cut off after Gunicorn's graceful timeout (20 seconds in
+the chart).
 
 ### Discovery in a service registry
 

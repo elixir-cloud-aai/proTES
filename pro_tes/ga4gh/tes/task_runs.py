@@ -272,7 +272,9 @@ class TaskRuns:
                 task_model_converter = TaskModelConverter(task=task)
                 task_converted: TesTask = task_model_converter.convert_task()
                 db_document.task.state = task_converted.state
-            except (requests.RequestException, BackendAuthError) as exc:
+            except Exception as exc:
+                # the task is stored with its backend and tracked anyway, also
+                # if its backend serves it invalid (e.g., with an unknown state)
                 logger.error(
                     "Task '%s' info could not be retrieved from TES endpoint"
                     " hosted at: %s. Original error message: '%s: %s'",

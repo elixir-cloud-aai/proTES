@@ -437,9 +437,9 @@ class Tes(BaseModel):
         timeout: Timeout of requests to TES backends, in seconds (of
             connecting, at most 5 seconds); requests to create or cancel
             tasks are not sent again after timeouts, so it should be long
-            enough for slow backends, but shorter than the timeouts of
-            requests to proTES (e.g., Gunicorn's graceful timeout, and the
-            read timeout of a reverse proxy).
+            enough for slow backends, but short enough that requests to
+            create tasks (which may try several backends) stay below the
+            read timeout of a reverse proxy in front of proTES.
 
     Attributes:
         service_list: TES backends that tasks may be forwarded to.
