@@ -95,8 +95,8 @@ all values of the library chart, and `values.schema.json` is the library's
 `$comment` names its version, `foca-common X.Y.Z`, as the release pin check
 requires, see [Versioning and releases](#versioning-and-releases)). The
 tests in `tests/test_chart.py` render the chart with `helm template` and need
-[Helm](https://helm.sh/docs/intro/install/) (the version of the `helm` job
-of `.github/workflows/checks.yaml`) and the library chart in
+[Helm](https://helm.sh/docs/intro/install/) (the version of the `chart` job
+of `.github/workflows/ci.yml`) and the library chart in
 `deployment/charts/`; they are skipped if Helm is not installed:
 
 ```bash
@@ -229,7 +229,7 @@ Tags can't be moved or deleted (see the repository settings below), and the
 release workflow checks the tagged commit, so a check that fails after the
 tag is pushed fails again on re-runs: the release then needs a new patch
 version, with its own citation metadata and notes. Run these checks before
-tagging, therefore. The CI job "Check release readiness" runs the pin and
+tagging, therefore. The CI job "Release readiness" runs the pin and
 the notes checks, too, for the version in `CITATION.cff` while it has no
 tag (or its tag is on the checked commit): on pull requests as warnings, on
 pushes to `dev` as errors, which fail the CI run that the release workflow
@@ -240,12 +240,12 @@ tagging.
 
 The tag must be annotated and signed (`git tag -s`), with a key that GitHub can
 verify (added to the tagger's GitHub account). The [release
-workflow](https://github.com/elixir-cloud-aai/proTES/blob/dev/.github/workflows/release.yaml),
+workflow](https://github.com/elixir-cloud-aai/proTES/blob/dev/.github/workflows/release.yml),
 triggered by the tag, checks that GitHub verified the signature, that the
 tag's commit is on `main` and its `CITATION.cff` has the release version and
 a date that is not in the future (UTC), that the dependencies are releases
 (see below), and that the [CI
-workflow](https://github.com/elixir-cloud-aai/proTES/blob/dev/.github/workflows/checks.yaml)
+workflow](https://github.com/elixir-cloud-aai/proTES/blob/dev/.github/workflows/ci.yml)
 passed for it (a run for the push of the commit to `dev`; if CI hasn't
 finished, failed or was cancelled, e.g., the image job of a commit that a
 later one superseded, re-run CI, then the release workflow). It packages
@@ -359,7 +359,7 @@ that move (the latest docs, `/en/latest/`, or files on branch `dev`,
 `blob/dev/`; link the release's, e.g., `/en/vX.Y.Z/`, `blob/vX.Y.Z/`, as the
 published notes don't change) (`scripts/release_notes.py check`, tested in
 `tests/test_release_notes.py`, which also checks the notes in
-`docs/releases/`), and so does the CI job "Check release readiness" on
+`docs/releases/`), and so does the CI job "Release readiness" on
 pushes (see above); on re-runs, it replaces the notes of an existing release
 (also overwriting manual edits). Detailed upgrade steps belong on the
 [Upgrading](upgrading.md) page, linked from the intro.
@@ -383,7 +383,7 @@ exist.
 
 The CI workflow builds the image of every pull request and scans it with
 [Trivy](https://trivy.dev/) (`.github/actions/scan-image`), and a weekly
-workflow (`scan.yaml`) scans `latest`. For pushes to `dev` and for releases,
+workflow (`scan.yml`) scans `latest`. For pushes to `dev` and for releases,
 the workflows push the image by digest, untagged, scan exactly that digest
 in a job without credentials or signing identity, and only if the scan
 passes attest, sign and tag it, so that the published images are the
@@ -394,7 +394,7 @@ not for pull requests from forks, nor in the release workflow); findings
 without a fix appear there once a fix is released. The weekly scan also
 uploads a full report, findings without a fix included, as the workflow
 artifact `trivy-report-release-image` of each run (`trivy-report.json` and
-`trivy-report.txt`, a table; Actions tab, "Scan release image"); it is not
+`trivy-report.txt`, a table; Actions tab, "Scan"); it is not
 uploaded to code scanning. Accepted findings are left out of all results. To
 accept a finding (e.g., if it doesn't affect the app), add it to
 `.trivyignore.yaml` with the affected package versions (`purls`), the reason
@@ -412,5 +412,5 @@ stays signed. Re-running only the failed jobs reuses the digest already
 pushed.
 
 The release workflow installs a fixed Helm version (`version:` of
-`azure/setup-helm` in `release.yaml`). Dependabot updates the action, but not
+`azure/setup-helm` in `release.yml`). Dependabot updates the action, but not
 that version: bump it by hand.

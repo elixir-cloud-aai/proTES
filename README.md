@@ -93,14 +93,14 @@ Contributions are welcome! See [`CONTRIBUTING.md`](CONTRIBUTING.md) and
 [Contributing][docs-contributing] in the documentation, and mind our [code of
 conduct](CODE_OF_CONDUCT.md).
 
-[badge-build-status]: <https://github.com/elixir-cloud-aai/proTES/actions/workflows/checks.yaml/badge.svg?branch=dev>
+[badge-build-status]: <https://github.com/elixir-cloud-aai/proTES/actions/workflows/ci.yml/badge.svg?branch=dev>
 [badge-coverage]: <https://codecov.io/gh/elixir-cloud-aai/proTES/branch/dev/graph/badge.svg?branch=dev>
 [badge-docker]: <https://img.shields.io/docker/v/elixircloud/protes?sort=semver&label=image&color=C39BD3>
 [badge-doi]: <https://zenodo.org/badge/DOI/10.5281/zenodo.23619646.svg>
 [badge-docs]: <https://img.shields.io/readthedocs/protes>
 [badge-github-tag]: <https://img.shields.io/github/v/tag/elixir-cloud-aai/proTES?color=C39BD3>
 [badge-license]: <https://img.shields.io/badge/license-Apache%202.0-blue.svg>
-[badge-url-build-status]: <https://github.com/elixir-cloud-aai/proTES/actions/workflows/checks.yaml?query=branch%3Adev>
+[badge-url-build-status]: <https://github.com/elixir-cloud-aai/proTES/actions/workflows/ci.yml?query=branch%3Adev>
 [badge-url-coverage]: <https://codecov.io/gh/elixir-cloud-aai/proTES?branch=dev>
 [badge-url-docker]: <https://hub.docker.com/r/elixircloud/protes/tags>
 [badge-url-doi]: <https://doi.org/10.5281/zenodo.23619646>

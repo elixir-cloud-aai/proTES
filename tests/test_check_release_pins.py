@@ -593,7 +593,7 @@ def test_release_checkout() -> None:
     pre-release, unless it is a development version or has a local part
     (commits after the tag, or changes). Tests of a release checkout fail
     while it pins development versions, as does the release workflow
-    (`release.yaml`); other checkouts may pin them.
+    (`release.yml`); other checkouts may pin them.
     """
     try:
         checkout = Version(setuptools_scm.get_version(root=str(ROOT)))

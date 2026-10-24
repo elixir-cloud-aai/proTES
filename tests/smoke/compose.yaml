@@ -1,5 +1,5 @@
-# Compose override for the smoke test in CI (job `smoke_test` of
-# `.github/workflows/checks.yaml`): proTES and the Celery worker relay tasks
+# Compose override for the smoke test in CI (job `smoke` of
+# `.github/workflows/ci.yml`): proTES and the Celery worker relay tasks
 # to a fake TES backend (`fake_tes.py`) instead of the TES instances of
 # `config.yaml` (overlay `config.yaml` of this directory). Use it with
 # `docker compose -f docker-compose.yaml -f tests/smoke/compose.yaml up -d

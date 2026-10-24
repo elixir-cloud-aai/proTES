@@ -1,6 +1,6 @@
 [build-system]
 # CI installs setuptools-scm with the same bound to compute the version of
-# images (`.github/workflows/checks.yaml`)
+# images (`.github/workflows/ci.yml`)
 requires = ["setuptools>=77", "setuptools-scm>=8"]
 build-backend = "setuptools.build_meta"
 

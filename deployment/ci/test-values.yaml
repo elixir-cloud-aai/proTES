@@ -1,5 +1,5 @@
 # Values for rendering the chart in CI (`helm lint`, see
-# `.github/workflows/checks.yaml`): the settings each deployment must make
+# `.github/workflows/ci.yml`): the settings each deployment must make
 hostName: tes.example.org
 mongodb:
   auth:

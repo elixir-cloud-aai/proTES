@@ -1,5 +1,5 @@
 # Scan the image of the latest release (`latest`) weekly for known
-# vulnerabilities with Trivy, as the `scan` job of `checks.yaml` scans the
+# vulnerabilities with Trivy, as the `scan` job of `ci.yml` scans the
 # images of pull requests and pushes, so that vulnerabilities found after a
 # release are reported: the findings that have a fix are uploaded to code
 # scanning, a full report (findings without a fix included) is uploaded as the
@@ -13,10 +13,10 @@
 # release on (dismiss their alerts in code scanning until then). The image is
 # public, so no Docker Hub secrets are needed; its organization is the
 # repository variable `DOCKERHUB_ORG` (by default `elixircloud`, as in
-# `checks.yaml` and `release.yaml`; forks set it to the organization they
+# `ci.yml` and `release.yml`; forks set it to the organization they
 # publish to).
 
-name: Scan release image
+name: Scan
 
 on:
   schedule:
@@ -29,7 +29,7 @@ permissions:
 
 jobs:
   scan:
-    name: Scan release image
+    name: Scheduled scan
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:

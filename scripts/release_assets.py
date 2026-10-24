@@ -1,6 +1,6 @@
 """Find the GitHub release of a tag and check the assets of a published one.
 
-Used by the release workflow (`.github/workflows/release.yaml`), which
+Used by the release workflow (`.github/workflows/release.yml`), which
 creates the release as a draft, uploads the assets and publishes it last:
 assets of a published immutable release can't be added, replaced or
 deleted. Prints a `GITHUB_OUTPUT` line (`state=<state>`) to standard

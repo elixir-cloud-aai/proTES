@@ -1,8 +1,12 @@
-# Build the project, lint, run tests, scan the Docker image for known
-# vulnerabilities, and, on pushes, push the Docker image by digest (with SBOM
-# and provenance attestations), scan exactly that digest, then attest, sign
-# (Sigstore) and tag it
-name: proTES checks
+# Everything that must pass on pull requests and pushes to `dev`: lint,
+# build, test (the app and the chart), build the docs, run the app with
+# Docker Compose, scan the Docker image for known vulnerabilities, and, on
+# pushes, push the Docker image by digest (with SBOM and provenance
+# attestations), scan exactly that digest, then attest, sign (Sigstore) and
+# tag it. The gate `passed` ("CI passed") is the only required check. No
+# `paths:` filters, so that the gate always reports; skip jobs with `if:`
+# instead (and allow the skip in the gate)
+name: CI
 
 on:
   push:
@@ -15,7 +19,7 @@ permissions:
 
 # Fully qualified (`docker.io/`), as the attestation needs it. The Docker Hub
 # organization is the repository variable `DOCKERHUB_ORG` (by default
-# `elixircloud`), as in `scan.yaml`, so that the scan job, which has no
+# `elixircloud`), as in `scan.yml`, so that the scan job, which has no
 # secrets, scans the image that is published
 env:
   IMAGE_NAME: docker.io/${{ vars.DOCKERHUB_ORG || 'elixircloud' }}/protes
@@ -27,8 +31,8 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  analyze_code:
-    name: Static code analysis
+  lint:
+    name: Lint
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -73,60 +77,30 @@ jobs:
           grep -qx 'pro_tes/config.yaml' wheel-contents.txt
           grep -Eqx 'pro_tes-[^/]+\.dist-info/licenses/LICENSE' wheel-contents.txt
           grep -q '^pro_tes/api/.*\.yaml$' wheel-contents.txt
-  # Job names don't name the Python version (that of the base image in the
-  # Dockerfile), so that the required checks stay the same when it changes
-  test:
-    name: Run tests (mongomock)
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.13"
-          cache: pip
-          cache-dependency-path: pyproject.toml
-      - name: Install dependencies
-        run: |
-          pip install --upgrade pip==24.0
-          pip install -e ".[dev]"
-      # The chart tests (run if Helm is installed, as on GitHub's runners)
-      # need the library chart, the version locked in `Chart.lock`;
-      - name: Build chart dependencies
-        run: |
-          helm dependency build deployment
-          # The library chart as checked when it was pinned: OCI tags can
-          # be pushed again
-          (cd deployment && sha256sum -c charts.sha256)
-      - name: Calculate unit test coverage
-        run: |
-          coverage run -m pytest -W ignore::DeprecationWarning
-          coverage xml
-      # Upload errors fail the workflow only on pushes, because pull requests
-      # from forks and Dependabot get no access to the Codecov token
-      - name: Submit Report to Codecov
-        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          files: ./coverage.xml
-          fail_ci_if_error: ${{ github.event_name == 'push' }}
-          verbose: true
-  # The `test` job uses mongomock; this one runs all tests against
-  # MongoDB (`MONGODB_TEST_URI`, see `tests/conftest.py`), the version of
+  # Job names don't name the Python version, so that they stay the same
+  # when it changes. The `mongomock` entry uses mongomock and reports
+  # coverage; the MongoDB entry runs all tests against MongoDB
+  # (`MONGODB_TEST_URI`, see `tests/conftest.py`), the version of
   # `docker-compose.yaml` (8.0 doesn't start on some kernels of the runners:
-  # https://jira.mongodb.org/browse/SERVER-121912); coverage is reported by
-  # `test`
-  test_mongodb:
-    name: Run tests (MongoDB 7.0)
+  # https://jira.mongodb.org/browse/SERVER-121912)
+  test:
+    name: Test (${{ matrix.database }})
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - database: mongomock
+            image: ""
+            uri: ""
+          - database: MongoDB 7.0
+            image: mongo:7.0
+            uri: mongodb://localhost:27017
     services:
+      # Not started for an empty image (the `mongomock` entry)
       mongodb:
-        image: mongo:7.0
+        image: ${{ matrix.image }}
         ports: ["27017:27017"]
         options: >-
           --health-cmd "mongosh --quiet --eval 'db.adminCommand({ping: 1}).ok'"
@@ -134,7 +108,7 @@ jobs:
           --health-timeout 5s
           --health-retries 20
     env:
-      MONGODB_TEST_URI: mongodb://localhost:27017
+      MONGODB_TEST_URI: ${{ matrix.uri }}
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -151,31 +125,36 @@ jobs:
           pip install --upgrade pip==24.0
           pip install -e ".[dev]"
       # The chart tests (run if Helm is installed, as on GitHub's runners)
-      # need the library chart, the version locked in `Chart.lock`;
+      # need the library chart, the version locked in `Chart.lock`
       - name: Build chart dependencies
         run: |
           helm dependency build deployment
           # The library chart as checked when it was pinned: OCI tags can
           # be pushed again
           (cd deployment && sha256sum -c charts.sha256)
+      - name: Calculate unit test coverage
+        if: ${{ matrix.uri == '' }}
+        run: |
+          coverage run -m pytest -W ignore::DeprecationWarning
+          coverage xml
+      # Upload errors fail the workflow only on pushes, because pull requests
+      # from forks and Dependabot get no access to the Codecov token
+      - name: Submit Report to Codecov
+        if: ${{ matrix.uri == '' }}
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage.xml
+          fail_ci_if_error: ${{ github.event_name == 'push' }}
+          verbose: true
       # Fails instead of falling back to mongomock if the URI is missing
-      - name: Run tests
+      - name: Run tests against MongoDB
+        if: ${{ matrix.uri != '' }}
         run: |
           test -n "${MONGODB_TEST_URI}"
           pytest -W ignore::DeprecationWarning
-  # Stable check name for branch protection, independent of the test jobs
-  tests_passed:
-    name: Run tests
-    runs-on: ubuntu-latest
-    if: always()
-    needs: [test, test_mongodb]
-    steps:
-      - name: Check that all test jobs passed
-        run: |
-          test "${{ needs.test.result }}" = "success"
-          test "${{ needs.test_mongodb.result }}" = "success"
-  helm:
-    name: Check Helm chart
+  chart:
+    name: Chart
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -218,7 +197,7 @@ jobs:
           helm version
           pytest -W ignore::DeprecationWarning tests/test_chart.py
   docs:
-    name: Build documentation
+    name: Docs
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -241,12 +220,12 @@ jobs:
   # The release workflow's checks of pins and curated notes, before the
   # immutable tag exists: for the version in `CITATION.cff` (set before a
   # release, see "Versioning and releases" in `docs/development.md`) while
-  # it has no tag, or its tag is on this commit. Not a required check, and
-  # not needed for publishing; on pull requests, findings are warnings. On
-  # pushes, findings fail the run, which the release workflow requires to
-  # pass for the release commit
-  release_readiness:
-    name: Check release readiness
+  # it has no tag, or its tag is on this commit. Not needed for publishing;
+  # on pull requests, findings are warnings (so that they don't fail the
+  # gate). On pushes, findings fail the run, which the release workflow
+  # requires to pass for the release commit
+  readiness:
+    name: Release readiness
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -299,8 +278,8 @@ jobs:
   # Runs the app as deployed with Docker Compose (app, Celery worker,
   # MongoDB, RabbitMQ), relaying tasks to a fake TES backend instead of the
   # public TES instances of the config (`tests/smoke/`)
-  smoke_test:
-    name: Run app with Docker Compose
+  smoke:
+    name: Smoke test
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -336,12 +315,12 @@ jobs:
         run: docker compose logs
   # On pushes, builds the image once and pushes it by digest only (untagged,
   # with SBOM and provenance attestations, `mode=max`), for `scan` to scan and
-  # `publish` to sign and tag, as in `release.yaml`. Runs alongside the tests,
+  # `publish` to sign and tag, as in `release.yml`. Runs alongside the tests,
   # so that the scan starts early; digests of runs that fail (or fail the
   # scan) are never signed or tagged, but stay on Docker Hub, untagged
   # (pullable by digest only)
   push:
-    name: Push app image
+    name: Push image
     runs-on: ubuntu-latest
     timeout-minutes: 30
     if: ${{ github.event_name == 'push' }}
@@ -407,8 +386,8 @@ jobs:
   # cannot write them), and the job fails on critical and high
   # vulnerabilities that have a fix. Accepted findings are listed, with a
   # reason and an expiry date, in `.trivyignore.yaml`. The release workflow
-  # scans the release image the same way (`release.yaml`), and `latest` is
-  # scanned weekly (`scan.yaml`)
+  # scans the release image the same way (`release.yml`), and `latest` is
+  # scanned weekly (`scan.yml`)
   scan:
     name: Scan image
     # For pull requests, `push` is skipped
@@ -465,11 +444,11 @@ jobs:
   # exactly that digest, so that the published image is the scanned one; see
   # "Verifying images and charts" in `docs/operations.md`
   publish:
-    name: Publish app image
+    name: Publish image
     runs-on: ubuntu-latest
     timeout-minutes: 30
     if: ${{ github.event_name == 'push' }}
-    needs: [analyze_code, tests_passed, helm, docs, smoke_test, push, scan]
+    needs: [lint, test, chart, docs, smoke, push, scan]
     # Docker Hub secrets; the environment only allows branch `dev`
     environment: dev-images
     permissions:
@@ -547,3 +526,31 @@ jobs:
               exit 1
             fi
           done
+  # The only required check: passes if every other job passed, or was skipped
+  # where that is intended: `push` and `publish` on pull requests (they run
+  # on pushes only). Any other result (failure, cancelled, or an unintended
+  # skip) fails it. Add every new job to `needs`
+  passed:
+    name: CI passed
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: always()
+    needs: [lint, test, chart, docs, readiness, smoke, push, scan, publish]
+    steps:
+      - name: Check results of all jobs
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          failed="$(jq -r --arg event "${EVENT_NAME}" '
+            to_entries[]
+            | select(
+                .value.result == "success"
+                or (.value.result == "skipped" and $event == "pull_request"
+                    and (.key == "push" or .key == "publish"))
+                | not)
+            | "\(.key): \(.value.result)"' <<< "${NEEDS}")"
+          if [[ -n "${failed}" ]]; then
+            echo "::error::Jobs did not pass: ${failed//$'\n'/, }"
+            exit 1
+          fi

@@ -87,7 +87,7 @@ def test_python_version() -> None:
         if classifier.startswith(prefix)
     ]
     assert classifiers == [image]
-    workflows = sorted((ROOT / ".github" / "workflows").glob("*.yaml"))
+    workflows = sorted((ROOT / ".github" / "workflows").glob("*.yml"))
     assert workflows
     for workflow in workflows:
         for name, job in yaml.safe_load(workflow.read_text())["jobs"].items():

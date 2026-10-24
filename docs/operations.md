@@ -159,9 +159,12 @@ version to verify. `--source-ref` and the ref in
 `--certificate-identity` check that the workflow ran for the release tag,
 not for another branch. Images of commits on `dev` (`dev`, `sha-<commit>`)
 are signed and attested by the CI workflow instead: use `--signer-workflow
-elixir-cloud-aai/proTES/.github/workflows/checks.yaml`,
+elixir-cloud-aai/proTES/.github/workflows/ci.yml`,
 `--source-ref refs/heads/dev` and `--certificate-identity
-https://github.com/elixir-cloud-aai/proTES/.github/workflows/checks.yaml@refs/heads/dev`.
+https://github.com/elixir-cloud-aai/proTES/.github/workflows/ci.yml@refs/heads/dev`.
+The workflow files were renamed after 0.3.0: releases after 0.3.0 are
+signed by `release.yml` instead of `release.yaml`, and images of commits on
+`dev` built before the rename by `checks.yaml` instead of `ci.yml`.
 To show an image's SBOM or provenance, run:
 
 ```bash

@@ -34,7 +34,7 @@ permissions:
 
 # Fully qualified (`docker.io/`), as the attestation needs it. The Docker Hub
 # organization is the repository variable `DOCKERHUB_ORG` (by default
-# `elixircloud`), as in `scan.yaml`, so that the scan job, which has no
+# `elixircloud`), as in `scan.yml`, so that the scan job, which has no
 # secrets, scans the image that is published
 env:
   IMAGE_NAME: docker.io/${{ vars.DOCKERHUB_ORG || 'elixircloud' }}/protes
@@ -48,7 +48,7 @@ concurrency:
 
 jobs:
   prepare:
-    name: Check tag and package chart
+    name: Prepare release
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -68,7 +68,7 @@ jobs:
           fetch-depth: 0
       # For `scripts/release_version.py`, `scripts/citation.py`,
       # `scripts/check_release_pins.py` and `scripts/chart_readme.py`
-      # (standard library only); the Python version of `checks.yaml`
+      # (standard library only); the Python version of `ci.yml`
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
@@ -141,10 +141,10 @@ jobs:
           REPOSITORY: ${{ github.repository }}
           SHA: ${{ steps.version.outputs.sha }}
         run: |
-          runs="$(gh api "repos/${REPOSITORY}/actions/workflows/checks.yaml/runs?head_sha=${SHA}&event=push&status=success&per_page=1" \
+          runs="$(gh api "repos/${REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${SHA}&event=push&status=success&per_page=1" \
               --jq .total_count)"
           if [[ ! "${runs}" =~ ^[0-9]+$ || "${runs}" -lt 1 ]]; then
-              echo "::error::No successful run of the CI workflow (checks.yaml) for a push of ${SHA}; once CI passed for it (re-run it if it failed or was cancelled), re-run this workflow"
+              echo "::error::No successful run of the CI workflow (ci.yml) for a push of ${SHA}; once CI passed for it (re-run it if it failed or was cancelled), re-run this workflow"
               exit 1
           fi
       # Dependabot updates the action, but not this version: bump it by hand
@@ -205,7 +205,7 @@ jobs:
   # version. Digests of runs that fail (or fail the scan) are never signed or
   # tagged, but stay on Docker Hub, untagged (pullable by digest only)
   push:
-    name: Push image
+    name: Push release image
     needs: prepare
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -272,7 +272,7 @@ jobs:
   # the `contents: write` token and the signing identity. CI uploads the
   # results to code scanning
   scan:
-    name: Scan image
+    name: Scan release image
     needs: [prepare, push]
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -300,7 +300,7 @@ jobs:
           upload: "false"
 
   publish:
-    name: Publish image and release
+    name: Publish release
     needs: [prepare, push, scan]
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -327,7 +327,7 @@ jobs:
           fetch-depth: 0
       # For `scripts/release_version.py`, `scripts/release_notes.py` and
       # `scripts/release_assets.py` (standard library only); the Python
-      # version of `checks.yaml`
+      # version of `ci.yml`
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:

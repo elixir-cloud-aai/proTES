@@ -1,6 +1,6 @@
 """Derive the version and the kind of a release from its tag.
 
-Used by the release workflow (`.github/workflows/release.yaml`); prints
+Used by the release workflow (`.github/workflows/release.yml`); prints
 `GITHUB_OUTPUT` lines (`<name>=<value>`) to standard output, and errors as
 GitHub annotations to standard error. See "Versioning and releases" in
 `docs/development.md`.
