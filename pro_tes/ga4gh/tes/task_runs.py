@@ -421,7 +421,9 @@ class TaskRuns:
         Only owners of the task may cancel it (enforced by the policies).
         Tasks that have not finished (also those in state `UNKNOWN`, e.g.,
         not tracked yet) are canceled at their TES instance; finished tasks
-        and tasks being canceled are left as they are.
+        and tasks being canceled are left as they are, also if their state
+        changed while they were canceled (e.g., a final state stored by
+        their tracking).
 
         Args:
             id: Task identifier.
@@ -482,12 +484,24 @@ class TaskRuns:
                 base_path=db_document.tes_endpoint.base_path,
             )
             cli.cancel_task(task_id=task_id)
-            db_connector.update_task_state(
+            # unless tracking stored a final state meanwhile: the backend
+            # may accept cancels of finished tasks (as no-ops)
+            if db_connector.update_task_state(
                 state="CANCELED",
-            )
-            logger.info(
-                "Task '%s' with worker ID '%s' canceled.", id, db_document.worker_id
-            )
+                if_state=States.TO_CANCEL,
+            ):
+                logger.info(
+                    "Task '%s' with worker ID '%s' canceled.",
+                    id,
+                    db_document.worker_id,
+                )
+            else:
+                logger.info(
+                    "Task '%s' with worker ID '%s' not canceled: its state"
+                    " changed meanwhile.",
+                    id,
+                    db_document.worker_id,
+                )
         return {}
 
     def _find_task(self, id: str) -> tuple[dict[str, Any], DbDocument]:
