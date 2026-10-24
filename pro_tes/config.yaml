@@ -241,6 +241,11 @@ custom:
       # a task (`inputs[].content`); larger tasks are rejected (`413`). The
       # minimum that TES recommends; all are limited by `max_content_length`
       max_inline_content: 131072
+      # Seconds after which tasks still being created (`UNKNOWN`, without
+      # identifier at a TES instance; e.g., if proTES stopped while
+      # forwarding them) are set to `SYSTEM_ERROR` by the Celery workers;
+      # longer than creating a task may take (see `docs/configuration.md`)
+      max_create_time: 3600
     # Tasks per page of `GET /tasks` if the request sets no `page_size`, and
     # at most (the TES specification requires fewer than 2048); at most
     # `max_page_size_full` of the view `FULL`, whose tasks may be large: a
