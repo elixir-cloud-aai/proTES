@@ -1,4 +1,4 @@
-"""Random task distribution middleware."""
+"""Task distribution middleware base class."""
 
 import flask
 
@@ -44,10 +44,13 @@ class TaskDistributionBaseClass(AbstractMiddleware):
         tes_urls: list[str],
         request: flask.Request,
     ) -> None:
-        """Set TES URIs.
+        """Set TES URIs, once each, in the given order.
+
+        The order is that of `custom.tes.service_list`, followed by the
+        discovered backends (cf. :py:func:`pro_tes.ga4gh.tes.discovery.get_backends`).
 
         Args:
             tes_urls: List of TES URIs.
             request: Request object to be modified.
         """
-        self.tes_urls = list(set(tes_urls))
+        self.tes_urls = list(dict.fromkeys(tes_urls))

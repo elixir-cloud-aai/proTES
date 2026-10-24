@@ -18,7 +18,8 @@ ways of distributing tasks. Both forward to the TES instances of
   `pro_tes.plugins.middlewares.task_distribution.distance.TaskDistributionDistance`
   orders the TES instances by the distance that the task's input data has to
   travel to them: the sum of the geodesic distances between the instance and
-  each input (`inputs[].url`). Locations are looked up for each task, from
+  each input (`inputs[].url`); instances at the same distance keep the order
+  of the base class (see below). Locations are looked up for each task, from
   the IP addresses of the hosts: the free API of [DB-IP](https://db-ip.com/)
   gives the place of an IP address (city, region and country), and
   [Nominatim](https://nominatim.org/) of
@@ -57,18 +58,9 @@ replaced instead of changing it in place. The task distribution middlewares
 derive from
 [`TaskDistributionBaseClass`](reference.md#pro_tes.plugins.middlewares.task_distribution.base.TaskDistributionBaseClass),
 which sets `tes_urls` from the URLs of `custom.tes.service_list` and the
-discovered TES instances; override its `_set_tes_urls()` to order them
-differently.
+discovered TES instances, once each, in that order; override its
+`_set_tes_urls()` to order them differently.
 
 Middlewares are imported by their import path, so they can live in any
 package installed next to proTES, e.g., in a custom image based on the proTES
 image. List them in `custom.middlewares`.
-
-## Middleware management API
-
-The middleware management API is to manage the stack of middlewares at
-runtime, without restarting the service. Its [OpenAPI
-specification](https://github.com/elixir-cloud-aai/proTES/blob/dev/pro_tes/api/middleware_management.yaml)
-is in the repository, but the API is not served yet: its controllers are not
-implemented
-([#194](https://github.com/elixir-cloud-aai/proTES/issues/194)).
