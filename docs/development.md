@@ -174,6 +174,29 @@ Images on Docker Hub (`elixircloud/protes`) are tagged:
   `dev` (full SHA), to deploy a fixed commit. Only commits that are still the
   head of `dev` when their CI run reaches the image job get images.
 
+The current release version is taken from one source, so that a release
+doesn't need to bump it in many places: the release tag and, on `dev`, the
+`version` in `CITATION.cff` (set before tagging, see below; from then on, the
+latest docs show the upcoming version, and before the first release, they
+show `X.Y.Z`). The docs and the chart's README (`deployment/README.md`) write
+it as a placeholder, `version` in double curly braces with a space inside
+each pair, and the chart version (e.g., `1.2.3-rc1` for `1.2.3rc1`, as in the
+names of the packaged charts) as `chart_version` in the same braces
+(`VARIABLE` and `CHART_VARIABLE` in `scripts/chart_readme.py`; this page
+can't show them, as they would be replaced), also in commands and links. The
+docs hooks (`docs/hooks.py`) replace them with the version of `CITATION.cff`,
+and `scripts/chart_readme.py` with the release version when the chart is
+packaged; files read on GitHub (e.g., `deployment/README.md`) show the
+placeholders, and sections of `README.md` included as snippets can't use
+them. Comments, templates and tests use placeholders (e.g., `1.2.3`) and
+refer to sections by anchor. `tests/test_version_mentions.py` fails if the
+current release version is mentioned as a release of the app (as a tag,
+image or chart, or as "release" or "version" in prose; not, e.g., as the
+version of a dependency) anywhere else than in `CITATION.cff`,
+`docs/releases/`, the tests of the release tooling, links to the notes and
+assets of a release, and migration headings (e.g., "From versions before
+X"), which are about that release itself.
+
 Features and fixes are merged into `dev`. Branch `main` only ever moves
 forward to commits on `dev` that are released. First, shortly before the
 release, set its version and date in the citation metadata, which Zenodo

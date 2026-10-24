@@ -71,7 +71,7 @@ config: {}
 
 protes:
   # Image repository; may include a tag or digest instead of setting `tag`
-  # (e.g., `elixircloud/protes:0.3.0`). The image of the app also runs the
+  # (e.g., `elixircloud/protes:1.2.3`). The image of the app also runs the
   # Celery worker (`worker`)
   image: elixircloud/protes
   # Image tag; defaults to the chart's `appVersion`, i.e., the release
