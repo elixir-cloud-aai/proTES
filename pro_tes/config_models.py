@@ -557,14 +557,14 @@ class CustomConfig(ConfigModel):
         access_control: Access control settings of the app.
         controllers: All controller-related config.
         tes: TES service list and defaults.
-        store_logs: Logging preferences.
+        storeLogs: Logging preferences (camelCase, unlike other keys).
         middlewares: Middleware class paths.
 
     Attributes:
         access_control: Access control settings of the app.
         controllers: All controller-related config.
         tes: TES service list and defaults.
-        store_logs: Logging preferences.
+        storeLogs: Logging preferences (camelCase, unlike other keys).
         middlewares: Middleware class paths.
     """
 

@@ -92,9 +92,7 @@ def test_examples_collected() -> None:
 @pytest.mark.parametrize("custom", EXAMPLES)
 def test_tes_examples_valid(custom: dict[str, Any]) -> None:
     """The examples, merged into the base config, validate."""
-    base_config = (ROOT / "pro_tes/config.yaml").read_text(encoding="utf-8")
-    base = yaml.safe_load(base_config)["custom"]
-    config = CustomConfig.model_validate(deep_merge(base, custom))
+    config = CustomConfig.model_validate(deep_merge(base_custom(), custom))
     backends = custom["tes"]["service_list"]
     assert [backend.url for backend in config.tes.service_list] == [
         backend["url"] for backend in backends
