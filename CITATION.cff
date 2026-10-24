@@ -47,3 +47,5 @@ keywords:
   - REST API
   - FOCA
 license: Apache-2.0
+version: "0.3.0"
+date-released: "2026-10-24"
