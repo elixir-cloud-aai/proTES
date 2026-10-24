@@ -99,6 +99,9 @@ class PostTask(ConfigModel):
             of their inputs or outputs (`https://user:password@host/...`):
             they are rejected (`reject`), or the credentials are removed
             (`strip`); credentials are never stored or forwarded.
+        max_inline_content: Maximum size of the inline contents of the
+            inputs of a task (`inputs[].content`), together, in bytes
+            (UTF-8); tasks with larger contents are rejected.
 
     Attributes:
         db: DB insert behavior.
@@ -108,12 +111,15 @@ class PostTask(ConfigModel):
             of their inputs or outputs (`https://user:password@host/...`):
             they are rejected (`reject`), or the credentials are removed
             (`strip`); credentials are never stored or forwarded.
+        max_inline_content: Maximum size of the inline contents of the
+            inputs of a task, together, in bytes (UTF-8).
     """
 
     db: DB = DB()
     task_id: TaskID = TaskID()
     polling: Polling = Polling()
     url_credentials: Literal["reject", "strip"] = "reject"
+    max_inline_content: PositiveInt = 131072
 
 
 class ListTasks(ConfigModel):
@@ -127,17 +133,24 @@ class ListTasks(ConfigModel):
             page size.
         max_page_size: Maximum number of tasks per page, at most 2047;
             larger requested page sizes are reduced to it.
+        max_page_size_full: Maximum number of tasks per page of the view
+            `FULL` (with the logs and the contents of inputs); larger page
+            sizes are reduced to it (and to `max_page_size`).
 
     Attributes:
         default_page_size: Number of tasks per page if the request sets no
             page size.
         max_page_size: Maximum number of tasks per page; larger requested
             page sizes are reduced to it.
+        max_page_size_full: Maximum number of tasks per page of the view
+            `FULL`.
     """
 
     default_page_size: PositiveInt = 256
     # the TES specification allows pages of fewer than 2048 tasks
     max_page_size: PositiveInt = Field(default=2047, le=2047)
+    # full tasks may be large (e.g., with inline contents of inputs)
+    max_page_size_full: PositiveInt = 64
 
     @model_validator(mode="after")
     def check_default_page_size(self) -> "ListTasks":

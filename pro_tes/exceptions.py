@@ -60,6 +60,13 @@ class IdsUnavailableProblem(PyMongoError):
     """Raised when task identifier is unavailable."""
 
 
+class InlineContentTooLarge(RequestEntityTooLarge):
+    """Raised when the inline contents of the inputs of a task are too large.
+
+    Cf. `custom.controllers.post_task.max_inline_content`.
+    """
+
+
 class InputUriError(ValueError):
     """Raised when input URI cannot be parsed."""
 
@@ -170,6 +177,13 @@ exceptions = {
         "detail": "The request body exceeds the size limit.",
         "status": 413,
     },
+    InlineContentTooLarge: {
+        "title": "Content Too Large",
+        "detail": (
+            "The inline content of an input of the task exceeds the size limit."
+        ),
+        "status": 413,
+    },
     InternalServerError: {
         "title": "Internal server error",
         "detail": "An unexpected error occurred.",
@@ -182,7 +196,7 @@ exceptions = {
     },
     NoTesInstancesAvailable: {
         "title": "Internal server error",
-        "detail": "No valid TES instances available.",
+        "detail": "No TES instance accepted the task.",
         "status": 500,
     },
     BackendAuthError: {

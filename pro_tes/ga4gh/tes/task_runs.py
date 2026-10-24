@@ -1,5 +1,6 @@
 """Class implementing TES API-server-side controller methods."""
 
+from contextlib import suppress
 from copy import deepcopy
 import logging
 import re
@@ -22,6 +23,7 @@ from pro_tes.exceptions import (
     BackendAuthError,
     BackendOutcomeUnknown,
     BadRequest,
+    InlineContentTooLarge,
     MiddlewareException,
     NoTesInstancesAvailable,
     TaskNotCancelable,
@@ -103,8 +105,10 @@ class TaskRuns:
         """Start task.
 
         The user of the request becomes the owner of the task (cf.
-        :py:mod:`pro_tes.ga4gh.tes.ownership`), also if it can't be
-        forwarded.
+        :py:mod:`pro_tes.ga4gh.tes.ownership`). Tasks that fail validation,
+        and tasks that no TES instance accepts, are not kept: they are
+        deleted, with the owner's roles on them. Tasks that a TES instance
+        may have accepted are kept (as `SYSTEM_ERROR`).
 
         Tasks are sent to the TES instances in turn, until one accepts the
         task. They are sent to the next one only if a TES instance certainly
@@ -122,11 +126,16 @@ class TaskRuns:
                 have accepted the task, but did not confirm it; the task is
                 stored with the state `SYSTEM_ERROR`, and with the TES
                 instance, without remote identifier.
-            pro_tes.exceptions.BadRequest: The request has no JSON body.
+            pro_tes.exceptions.BadRequest: The request has no JSON body,
+                or the task is invalid (e.g., after the middlewares changed
+                it; the task is then not kept).
+            pro_tes.exceptions.InlineContentTooLarge: The inline contents of
+                the inputs of the task exceed the limit, before or after the
+                middlewares.
             pro_tes.exceptions.MiddlewareException: The middlewares removed
                 the JSON body.
             pro_tes.exceptions.NoTesInstancesAvailable: No TES instance
-                accepted the task.
+                accepted the task; the task is not kept.
             pro_tes.exceptions.Unauthorized: The user of the request could
                 not be identified.
         """
@@ -144,6 +153,8 @@ class TaskRuns:
             payload=request.json,
             mode=self.custom_config.controllers.post_task.url_credentials,
         )
+        max_inline_content = self.custom_config.controllers.post_task.max_inline_content
+        self._check_inline_content(payload=request.json, limit=max_inline_content)
         payload_original: dict[str, Any] = deepcopy(request.json)
         db_document.task_original = TesTask(**payload_original)
 
@@ -157,8 +168,9 @@ class TaskRuns:
         if request_modified.json is None:
             raise MiddlewareException("Middlewares removed the request body")
         payload: dict[str, Any] = request_modified.json
-        # also credentials that middlewares added
+        # also credentials and contents that middlewares added
         self._handle_url_credentials(payload=payload, mode="strip")
+        self._check_inline_content(payload=payload, limit=max_inline_content)
         tes_urls = deepcopy(payload["tes_urls"])
         del payload["tes_urls"]
         # set by the server (TES), not by clients
@@ -188,11 +200,13 @@ class TaskRuns:
         # clients can't set them, but middlewares could
         for field in ("creation_time", "logs"):
             payload.pop(field, None)
-        payload = self._sanitize_request(payload=payload)
         try:
+            payload = self._sanitize_request(payload=payload)
             payload_marshalled = tes.Task(**payload)
-        except TypeError as exc:
-            db_connector.update_task_state(state=TesState.SYSTEM_ERROR.value)
+        except (TypeError, ValueError) as exc:
+            self._discard_task(
+                db_document=db_document, owner=owner, collection=collection
+            )
             raise BadRequest(
                 f"Task '{db_document.task.id}' could not be "
                 f"validated. Original error message: '{type(exc).__name__}: "
@@ -307,10 +321,9 @@ class TaskRuns:
             )
             return {"id": db_document.task.id}
 
-        db_connector.update_task_state(state=TesState.SYSTEM_ERROR.value)
+        self._discard_task(db_document=db_document, owner=owner, collection=collection)
         raise NoTesInstancesAvailable(
-            "Could not forward the task request to any TES instance. Task"
-            " state set to 'SYSTEM_ERROR'."
+            "Could not forward the task request to any TES instance"
         )
 
     def list_tasks(self, **kwargs: Any) -> dict[str, Any]:
@@ -329,7 +342,8 @@ class TaskRuns:
             pro_tes.exceptions.BadRequest: The page size is not positive, or
                 the page token is invalid.
         """
-        page_size = self._page_size(page_size=kwargs.get("page_size"))
+        view = kwargs.get("view", DEFAULT_VIEW)
+        page_size = self._page_size(page_size=kwargs.get("page_size"), view=view)
         filter_dict: dict[str, Any] = {**owned_tasks_filter(collection=request.path)}
 
         # an empty token (of the last page) is taken as no token
@@ -339,7 +353,6 @@ class TaskRuns:
                 filter_dict["_id"] = {"$lt": ObjectId(page_token)}
             except (InvalidId, TypeError) as exc:
                 raise BadRequest(f"Invalid page token: {page_token!r}") from exc
-        view = kwargs.get("view", DEFAULT_VIEW)
         projection = self._set_projection(view=view)
 
         # matched literally, as a prefix
@@ -351,30 +364,30 @@ class TaskRuns:
             pattern = "^" + re.escape(name_prefix)
             filter_dict["task_original.name"] = {"$regex": pattern}
 
+        # one more task than the page size tells whether there is a next
+        # page; documents are processed one by one, as the cursor yields them
         cursor = (
             self.db_client.find(filter=filter_dict, projection=projection)
             .sort("_id", -1)
             .limit(page_size + 1)
         )
-        tasks_list = list(cursor)
-
-        logger.debug("Tasks list: %s", tasks_list)
+        tasks: list[dict[str, Any]] = []
         next_page_token = ""
-        if len(tasks_list) > page_size:
-            tasks_list = tasks_list[:page_size]
-            next_page_token = str(tasks_list[-1]["_id"])
-
-        tasks_lists = []
-        for task in tasks_list:
-            del task["_id"]
+        last_id: Any = None
+        for document in cursor:
+            if len(tasks) == page_size:
+                next_page_token = str(last_id)
+                break
+            last_id = document["_id"]
             if view == "MINIMAL":
-                tasks_lists.append(
-                    {"id": task["task"]["id"], "state": task["task"]["state"]}
+                tasks.append(
+                    {"id": document["task"]["id"], "state": document["task"]["state"]}
                 )
             else:
-                tasks_lists.append(flatten_forwards(task["task"]))
-
-        return {"next_page_token": next_page_token, "tasks": tasks_lists}
+                tasks.append(flatten_forwards(document["task"]))
+        cursor.close()
+        logger.debug("Listed %s tasks", len(tasks))
+        return {"next_page_token": next_page_token, "tasks": tasks}
 
     def get_task(self, id: str, **kwargs: Any) -> dict[str, Any]:
         """Return detailed information about a task.
@@ -564,6 +577,37 @@ class TaskRuns:
             return task_id, document.worker_id
         raise DuplicateKeyError("Could not find an unused task identifier")
 
+    def _discard_task(
+        self, db_document: DbDocument, owner: str, collection: str
+    ) -> None:
+        """Delete a stored task that was not forwarded, with its owner roles.
+
+        The task is deleted first, as roles left on deleted tasks give no
+        access (cf. :py:meth:`_write_doc_to_db`). Errors are logged, not
+        raised, so that the error of the request is raised; tasks that
+        could not be deleted are marked as `SYSTEM_ERROR`, if possible.
+
+        Args:
+            db_document: The stored task.
+            owner: Owner of the task.
+            collection: Request path of the tasks (e.g.,
+                `/ga4gh/tes/v1/tasks`).
+        """
+        try:
+            self.db_client.delete_one({"worker_id": db_document.worker_id})
+            remove_task_owner(
+                collection=collection, task_id=str(db_document.task.id), owner=owner
+            )
+        except Exception:
+            logger.exception("Task '%s' could not be discarded", db_document.task.id)
+            with suppress(Exception):
+                self.db_client.update_one(
+                    {"worker_id": db_document.worker_id},
+                    {"$set": {"task.state": TesState.SYSTEM_ERROR.value}},
+                )
+            return
+        logger.info("Task '%s' not kept: it was not forwarded", db_document.task.id)
+
     def _sanitize_request(self, payload: dict[str, Any]) -> dict[str, Any]:
         """Sanitize request for use with py-tes.
 
@@ -612,10 +656,12 @@ class TaskRuns:
                 "task.logs.system_logs": False,
                 "task.logs.logs.stdout": False,
                 "task.logs.logs.stderr": False,
+                "task_original": False,
                 "tes_endpoint": False,
             }
         elif view == "FULL":
             projection = {
+                "task_original": False,
                 "worker_id": False,
                 "tes_endpoint": False,
             }
@@ -763,26 +809,30 @@ class TaskRuns:
             log.metadata.forwarded_to.append(forward)
         return db_document
 
-    def _page_size(self, page_size: int | None) -> int:
+    def _page_size(self, page_size: int | None, view: str = DEFAULT_VIEW) -> int:
         """Get the size of a page of tasks.
 
         Args:
             page_size: Page size of the request, if any.
+            view: View of the tasks.
 
         Returns:
-            The page size of the request, at most the maximum page size of
-            the config; the default page size of the config if none is
-            requested.
+            The page size of the request, or the default page size of the
+            config if none is requested; at most the maximum page size of
+            the config, of the view `FULL` for that view.
 
         Raises:
             pro_tes.exceptions.BadRequest: The page size is not positive.
         """
         config = self.custom_config.controllers.list_tasks
+        maximum = config.max_page_size
+        if view == "FULL":
+            maximum = min(maximum, config.max_page_size_full)
         if page_size is None:
-            return config.default_page_size
+            return min(config.default_page_size, maximum)
         if page_size < 1:
             raise BadRequest(f"Page size must be positive: {page_size}")
-        return min(page_size, config.max_page_size)
+        return min(page_size, maximum)
 
     @staticmethod
     def _handle_url_credentials(
@@ -824,6 +874,38 @@ class TaskRuns:
                         " names or passwords)"
                     )
                 item["url"] = strip_auth(url)
+
+    @staticmethod
+    def _check_inline_content(payload: dict[str, Any], limit: int) -> None:
+        """Check the size of the inline contents of the inputs of a task.
+
+        Each input's, as the TES specification recommends a minimum size per
+        field; all together are limited by the size of request bodies.
+
+        Args:
+            payload: Task (JSON).
+            limit: Maximum size of the content of an input
+                (`inputs[].content`), in bytes (UTF-8).
+
+        Raises:
+            pro_tes.exceptions.InlineContentTooLarge: A content is larger.
+        """
+        inputs = payload.get("inputs")
+        if not isinstance(inputs, list):
+            return
+        size = max(
+            (
+                len(item["content"].encode("utf-8", errors="surrogatepass"))
+                for item in inputs
+                if isinstance(item, dict) and isinstance(item.get("content"), str)
+            ),
+            default=0,
+        )
+        if size > limit:
+            raise InlineContentTooLarge(
+                f"Inline content of an input (`inputs[].content`) exceeds"
+                f" {limit} bytes: {size}"
+            )
 
     @staticmethod
     def _relayed_task(task: tes.Task) -> tes.Task:
