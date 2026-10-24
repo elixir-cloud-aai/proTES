@@ -1,7 +1,8 @@
-"""Tests of the config examples in the docs and the chart's values.
+"""Tests of the custom config, and its examples in the docs and the chart.
 
 Examples of TES backends (`custom.tes`) must validate against the config
-model, so that deployments copying them get a config the app accepts.
+model, so that deployments copying them get a config the app accepts; the
+model rejects unknown keys.
 """
 
 from pathlib import Path
@@ -10,6 +11,7 @@ import textwrap
 from typing import Any
 
 from foca.config.config_parser import deep_merge
+import pydantic
 import pytest
 import yaml
 
@@ -90,10 +92,43 @@ def test_examples_collected() -> None:
 @pytest.mark.parametrize("custom", EXAMPLES)
 def test_tes_examples_valid(custom: dict[str, Any]) -> None:
     """The examples, merged into the base config, validate."""
-    base_config = (ROOT / "pro_tes/config.yaml").read_text(encoding="utf-8")
-    base = yaml.safe_load(base_config)["custom"]
-    config = CustomConfig.model_validate(deep_merge(base, custom))
+    config = CustomConfig.model_validate(deep_merge(base_custom(), custom))
     backends = custom["tes"]["service_list"]
     assert [backend.url for backend in config.tes.service_list] == [
         backend["url"] for backend in backends
     ]
+
+
+def base_custom() -> dict[str, Any]:
+    """Get the custom config of the base config (`pro_tes/config.yaml`).
+
+    Returns:
+        The custom config.
+    """
+    base_config = (ROOT / "pro_tes/config.yaml").read_text(encoding="utf-8")
+    custom: dict[str, Any] = yaml.safe_load(base_config)["custom"]
+    return custom
+
+
+def test_base_config_valid() -> None:
+    """The custom config of the base config validates, without unknown keys."""
+    CustomConfig.model_validate(base_custom())
+
+
+@pytest.mark.parametrize(
+    "overlay",
+    [
+        {"celery": {"monitor": {"timeout": 0.1}}},
+        {"controllers": {"celery": {"message_maxsize": 1}}},
+        {"tes": {"servce_list": [{"url": "https://tes.example.org"}]}},
+        {"tes": {"service_list": [{"url": "https://tes.example.org", "ath": "none"}]}},
+        {"tes": {"discovery": {"registry": "https://registry.example.org"}}},
+        {"controllers": {"post_task": {"task_id": {"lenght": 8}}}},
+        {"access_control": {"require_admins": False}},
+        {"storeLogs": {"execution_traces": False}},
+    ],
+)
+def test_unknown_keys_rejected(overlay: dict[str, Any]) -> None:
+    """Unknown (e.g., misspelled or removed) keys are rejected, at any level."""
+    with pytest.raises(pydantic.ValidationError, match="Extra inputs"):
+        CustomConfig.model_validate(deep_merge(base_custom(), overlay))
