@@ -44,11 +44,9 @@ components:
         title:
           type: string
           description: 'Short summary of the problem type.'
-          example: 'Conflict'
         status:
           type: integer
           description: 'HTTP status code.'
-          example: 409
         detail:
           type: string
           description: 'Explanation of this occurrence of the problem.'

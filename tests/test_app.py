@@ -105,7 +105,8 @@ def test_spec_extensions(client: FlaskClient) -> None:
     assert set(create["responses"]) == {"200", "413"}
     assert set(cancel["responses"]) == {"200", "409"}
     assert create["operationId"] == "CreateTask"
-    assert "requestBody" in create
+    body = create["requestBody"]["content"]["application/json"]["schema"]
+    assert body == {"$ref": "#/components/schemas/tesTask"}
     assert cancel["operationId"] == "CancelTask"
     assert cancel["parameters"][0]["name"] == "id"
     assert spec["paths"]["/tasks"]["get"]["operationId"] == "ListTasks"
