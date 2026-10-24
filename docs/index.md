@@ -61,6 +61,10 @@ deployments on Kubernetes and for development, respectively.
 
 ![proTES overview](images/overview.svg)
 
+## Citation
+
+--8<-- "README.md:citation"
+
 ## License
 
 This project is covered by the [Apache License
