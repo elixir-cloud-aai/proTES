@@ -241,7 +241,15 @@ charts](operations.md#verifying-images-and-charts)), tags exactly that image
 `X.Y.Z` (and `latest`, if it is the highest stable release on `main`),
 attests and signs the chart, and creates a GitHub release with the chart
 (`.tgz`), its Sigstore bundle (`.tgz.sigstore.json`) and the release notes
-(see below). Add curated notes to the
+(see below). Releases are immutable (see the repository settings below):
+once published, their assets can't be added, replaced or deleted. The
+workflow therefore creates the release as a draft, uploads the assets and
+publishes it last. A re-run finishes a draft left by an earlier attempt; if
+the release is already published (e.g., by hand), it uploads nothing and
+fails unless the release has exactly the assets that the run built
+(only the Sigstore bundles may differ, as every attempt signs anew). The
+error says what to do: a new patch version, or, if releases are not
+immutable, deleting the release and re-running. Add curated notes to the
 [changelog](changelog.md) in `mkdocs.yml` (`nav`; the docs build fails
 otherwise), and refer to pages of the docs by name rather than by relative
 links, which don't work in GitHub releases. No packages are published to
@@ -257,7 +265,9 @@ release (stable, GitHub pre-release), whether the image is tagged `latest`
 and the previous release (for the generated notes) from the tag with
 `scripts/release_version.py`, which is tested over a table of tags
 (`tests/test_release_version.py`) and checked like the app (ruff, mypy,
-coverage); change these rules there, not in the workflow.
+coverage); change these rules there, not in the workflow. It finds the
+GitHub release of the tag, if any, and checks the assets of a published one
+with `scripts/release_assets.py` (tested in `tests/test_release_assets.py`).
 
 To test unreleased changes of FOCA, `pyproject.toml` may pin a FOCA commit
 (`foca @ git+https://github.com/elixir-cloud-aai/foca@<sha>`), with FOCA's
@@ -327,10 +337,10 @@ pushes (see above); on re-runs, it replaces the notes of an existing release
 Maintainers: the workflows rely on these repository settings: environment
 `dev-images` limited to branch `dev`; environment `release` with a required
 reviewer; a tag ruleset for `v*` that restricts who may create them and
-prevents moving or deleting them; `main` protected against non-fast-forward
-pushes; and the Docker Hub secrets (`DOCKERHUB_LOGIN`, `DOCKERHUB_TOKEN`)
-only in the two environments, not as repository secrets. The Docker Hub
-organization is the repository variable `DOCKERHUB_ORG` (by default
+prevents moving or deleting them; immutable releases; `main` protected
+against non-fast-forward pushes; and the Docker Hub secrets
+(`DOCKERHUB_LOGIN`, `DOCKERHUB_TOKEN`) only in the two environments, not
+as repository secrets. The Docker Hub organization is the repository variable `DOCKERHUB_ORG` (by default
 `elixircloud`; forks set it to the organization they publish to), so that
 the scan jobs, which have no secrets, know the image name too, and the
 released chart's default image (`protes.image`) is the published one (the
