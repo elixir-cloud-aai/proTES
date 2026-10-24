@@ -1204,7 +1204,7 @@ def test_forward_state_changed_while_stored(
         """Cancel the task after its backend was stored."""
         document = upsert(self, root, **kwargs)
         if root == "tes_endpoint":
-            set_state(mongo_client, document.task.id, "CANCELED")
+            set_state(mongo_client, str(document.task.id), "CANCELED")
         return document
 
     monkeypatch.setattr(
