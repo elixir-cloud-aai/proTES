@@ -16,6 +16,15 @@ The service info is configured in `service_info.service` (see [Service
 info](configuration.md#service-info)); it is no longer stored in the
 database, so the `service_info` collection can be dropped.
 
+Unknown keys in `custom` are errors: the app and the Celery worker refuse
+to start with them, naming them, instead of ignoring them (e.g., a
+misspelled `service_list`, which left the list of TES instances empty).
+Remove the keys that had no effect from config overlays: all of
+`custom.celery` (`custom.celery.monitor.timeout` and
+`custom.celery.message_maxsize`) and of `custom.controllers.celery`
+(`custom.controllers.celery.monitor.timeout` and
+`custom.controllers.celery.message_maxsize`).
+
 API specifications (`api.specs`) and access control rules
 (`security.access_control.policies`) of the base config are named entries
 (the spec `tes`; rules `users-create-list-tasks`,
