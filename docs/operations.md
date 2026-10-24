@@ -61,6 +61,16 @@ stop the tracking of tasks; they only delay their next polls. Canceled
 tasks are not resumed: if their tracking is lost before their TES instance
 has finished them, they stay `CANCELED`, without their final logs.
 
+Tasks whose creation was cut off (e.g., if a Gunicorn worker was stopped
+while it forwarded them, during an upgrade) stay in state `UNKNOWN`
+without identifier at a TES instance: they can be neither tracked nor
+canceled. The workers set them to `SYSTEM_ERROR` when they resume the
+tracking of tasks, once the tasks are older than
+`post_task.max_create_time` seconds (default 3600; see
+[Tasks](configuration.md#tasks)). As for tasks that a TES instance did not
+confirm, the task may run at a TES instance: it is kept, and the logs of
+the API name the TES instances that were tried.
+
 ## Task owners
 
 Only the owner of a task can read and cancel it through the API, not admins
@@ -135,16 +145,17 @@ CLI](https://cli.github.com/) or
 later, which reads the signatures in the Sigstore bundle format):
 
 ```bash
-gh attestation verify oci://docker.io/elixircloud/protes:X.Y.Z \
+gh attestation verify oci://docker.io/elixircloud/protes:{{ version }} \
     --repo elixir-cloud-aai/proTES \
     --signer-workflow elixir-cloud-aai/proTES/.github/workflows/release.yaml \
-    --source-ref refs/tags/vX.Y.Z
-cosign verify docker.io/elixircloud/protes:X.Y.Z \
+    --source-ref refs/tags/v{{ version }}
+cosign verify docker.io/elixircloud/protes:{{ version }} \
     --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-    --certificate-identity https://github.com/elixir-cloud-aai/proTES/.github/workflows/release.yaml@refs/tags/vX.Y.Z
+    --certificate-identity https://github.com/elixir-cloud-aai/proTES/.github/workflows/release.yaml@refs/tags/v{{ version }}
 ```
 
-Replace `X.Y.Z` with the version to verify. `--source-ref` and the ref in
+These are the commands for release `{{ version }}`: replace it with the
+version to verify. `--source-ref` and the ref in
 `--certificate-identity` check that the workflow ran for the release tag,
 not for another branch. Images of commits on `dev` (`dev`, `sha-<commit>`)
 are signed and attested by the CI workflow instead: use `--signer-workflow
@@ -154,27 +165,27 @@ https://github.com/elixir-cloud-aai/proTES/.github/workflows/checks.yaml@refs/he
 To show an image's SBOM or provenance, run:
 
 ```bash
-docker buildx imagetools inspect docker.io/elixircloud/protes:X.Y.Z \
+docker buildx imagetools inspect docker.io/elixircloud/protes:{{ version }} \
     --format '{{ json .SBOM }}'
-docker buildx imagetools inspect docker.io/elixircloud/protes:X.Y.Z \
+docker buildx imagetools inspect docker.io/elixircloud/protes:{{ version }} \
     --format '{{ json .Provenance }}'
 ```
 
-The Helm chart attached to a release (`protes-X.Y.Z.tgz`) has a GitHub
+The Helm chart attached to a release (`protes-{{ chart_version }}.tgz`) has a GitHub
 artifact attestation of its provenance and a Sigstore bundle with its
-signature (`protes-X.Y.Z.tgz.sigstore.json`, attached too):
+signature (`protes-{{ chart_version }}.tgz.sigstore.json`, attached too):
 
 ```bash
-gh release download vX.Y.Z --repo elixir-cloud-aai/proTES \
-    --pattern 'protes-X.Y.Z.tgz*'
-gh attestation verify protes-X.Y.Z.tgz \
+gh release download v{{ version }} --repo elixir-cloud-aai/proTES \
+    --pattern 'protes-{{ chart_version }}.tgz*'
+gh attestation verify protes-{{ chart_version }}.tgz \
     --repo elixir-cloud-aai/proTES \
     --signer-workflow elixir-cloud-aai/proTES/.github/workflows/release.yaml \
-    --source-ref refs/tags/vX.Y.Z
-cosign verify-blob protes-X.Y.Z.tgz \
-    --bundle protes-X.Y.Z.tgz.sigstore.json \
+    --source-ref refs/tags/v{{ version }}
+cosign verify-blob protes-{{ chart_version }}.tgz \
+    --bundle protes-{{ chart_version }}.tgz.sigstore.json \
     --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-    --certificate-identity https://github.com/elixir-cloud-aai/proTES/.github/workflows/release.yaml@refs/tags/vX.Y.Z
+    --certificate-identity https://github.com/elixir-cloud-aai/proTES/.github/workflows/release.yaml@refs/tags/v{{ version }}
 ```
 
 Images are scanned for known vulnerabilities with [Trivy](https://trivy.dev/)

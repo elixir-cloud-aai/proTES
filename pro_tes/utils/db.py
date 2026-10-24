@@ -1,6 +1,6 @@
 """Utility class for common MongoDB operations."""
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 import logging
 from typing import Any
 
@@ -257,14 +257,14 @@ class DbDocumentConnector:
     def update_task_state(
         self,
         state: str = "UNKNOWN",
-        if_state: str | None = None,
+        if_state: str | Sequence[str] | None = None,
     ) -> bool:
         """Update task status.
 
         Args:
             state: New task status; one of `pro_tes.ga4gh.tes.models.TesState`.
-            if_state: Update the status only if it is this one (atomically);
-                in any case if `None`.
+            if_state: Update the status only if it is this one, or one of
+                these (atomically); in any case if `None`.
 
         Returns:
             Whether the status was updated.
@@ -277,8 +277,10 @@ class DbDocumentConnector:
         except Exception as exc:
             raise ValueError(f"Unknown state: {state}") from exc
         filter_dict: dict[str, Any] = {"worker_id": self.worker_id}
-        if if_state is not None:
+        if isinstance(if_state, str):
             filter_dict["task.state"] = if_state
+        elif if_state is not None:
+            filter_dict["task.state"] = {"$in": list(if_state)}
         document = self.collection.find_one_and_update(
             filter_dict,
             {"$set": {"task.state": state}},

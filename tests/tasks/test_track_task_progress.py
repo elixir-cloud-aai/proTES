@@ -1,9 +1,11 @@
 """Tests of the Celery tasks tracking tasks at TES backends."""
 
 from collections.abc import Iterator
+from datetime import UTC, datetime
 import time
 from typing import Any, ClassVar
 
+from bson.objectid import ObjectId
 from celery.exceptions import Reject
 from connexion import FlaskApp
 from foca import get_collection
@@ -643,6 +645,161 @@ def test_failures_resumed(
     track_task_progress.task__resume_tracking.run()
     (call,) = scheduled
     assert call["kwargs"]["failures"] == 5
+
+
+def stored_since(seconds: float) -> ObjectId:
+    """Get the document identifier of a task stored a while ago.
+
+    Args:
+        seconds: Seconds since the task was stored.
+
+    Returns:
+        A new document identifier with that time, as MongoDB sets them.
+    """
+    stored = ObjectId.from_datetime(datetime.fromtimestamp(time.time() - seconds, UTC))
+    # the time, and the unique rest of a new identifier
+    return ObjectId(stored.binary[:4] + ObjectId().binary[4:])
+
+
+def test_cut_off_creates_failed(
+    tasks: Collection[dict[str, Any]],
+    scheduled: list[dict[str, Any]],
+) -> None:
+    """Tasks whose creation was cut off are set to `SYSTEM_ERROR`.
+
+    I.e., tasks still in state `UNKNOWN` without identifier at a backend,
+    stored more than `max_create_time` seconds ago (e.g., if proTES stopped
+    while forwarding them), also by earlier versions (without creation
+    time); not tasks being created, tasks with a remote identifier (also in
+    the logs, of earlier versions), or tasks in other states.
+    """
+    max_create_time = get_custom_config().controllers.post_task.max_create_time
+    old = max_create_time + 60
+    endpoint = {"host": ARGS["remote_host"], "base_path": "", "task_id": "remote-1"}
+    tasks.delete_many({})
+
+    def insert(worker_id: str, stored: float = old, **fields: Any) -> None:
+        """Store a task in state `UNKNOWN`.
+
+        Args:
+            worker_id: Worker identifier of the task.
+            stored: Seconds since the task was stored.
+            **fields: Further fields of the document.
+        """
+        insert_task(
+            tasks, worker_id, state="UNKNOWN", _id=stored_since(stored), **fields
+        )
+
+    insert("cut-off")
+    insert("cut-off-host", tes_endpoint={"host": ARGS["remote_host"], "base_path": ""})
+    insert("cut-off-no-remote-id", tes_endpoint={"host": "x", "task_id": None})
+    insert("cut-off-empty-forwards")
+    tasks.update_one(
+        {"worker_id": "cut-off-empty-forwards"},
+        {"$set": {"task.logs.0.metadata": {"forwarded_to": []}}},
+    )
+    insert("being-created", stored=60)
+    insert("forwarded", tes_endpoint=endpoint)
+    insert("queued")
+    tasks.update_one({"worker_id": "queued"}, {"$set": {"task.state": "QUEUED"}})
+    legacy = {
+        "legacy-forwards": {"forwarded_to": [{"id": "remote-2", "url": "x"}]},
+        "legacy-nested": {"forwarded_to": {"id": "remote-3", "url": "x"}},
+        "legacy-remote-id": {"remote_task_id": "remote-4"},
+    }
+    for worker_id, metadata in legacy.items():
+        insert(worker_id)
+        tasks.update_one(
+            {"worker_id": worker_id}, {"$set": {"task.logs.0.metadata": metadata}}
+        )
+    assert track_task_progress.task__resume_tracking.run() == 1
+    states = {
+        document["worker_id"]: document["task"]["state"] for document in tasks.find()
+    }
+    assert states == {
+        **dict.fromkeys(
+            [
+                "cut-off",
+                "cut-off-host",
+                "cut-off-no-remote-id",
+                "cut-off-empty-forwards",
+            ],
+            "SYSTEM_ERROR",
+        ),
+        **dict.fromkeys(["being-created", "forwarded", *legacy], "UNKNOWN"),
+        "queued": "QUEUED",
+    }
+    # the task with a remote identifier is resumed instead
+    (call,) = scheduled
+    assert call["kwargs"]["worker_id"] == "forwarded"
+
+
+def test_cut_off_create_logged(
+    tasks: Collection[dict[str, Any]], caplog: pytest.LogCaptureFixture
+) -> None:
+    """Tasks set to `SYSTEM_ERROR` are counted and logged.
+
+    Not tasks that changed after they were read (e.g., forwarded since, also
+    by earlier versions, which log the remote identifier).
+    """
+    max_create_time = 60
+    tasks.delete_many({})
+    for worker_id in ("cut-off", "changed", "changed-legacy"):
+        insert_task(
+            tasks,
+            worker_id,
+            state="UNKNOWN",
+            _id=stored_since(max_create_time + 1),
+        )
+
+    class Forwarding:
+        """Collection whose tasks `changed*` are forwarded once read.
+
+        Attributes:
+            collection: Collection of the tasks.
+        """
+
+        def __init__(self, collection: Collection[dict[str, Any]]) -> None:
+            """Wrap the collection."""
+            self.collection = collection
+
+        def find(self, *args: Any, **kwargs: Any) -> list[dict[str, Any]]:
+            """Find the tasks, then forward the tasks `changed*`."""
+            found = list(self.collection.find(*args, **kwargs))
+            self.collection.update_one(
+                {"worker_id": "changed"}, {"$set": {"tes_endpoint.task_id": "r-1"}}
+            )
+            self.collection.update_one(
+                {"worker_id": "changed-legacy"},
+                {"$set": {"task.logs.0.metadata": {"remote_task_id": "r-2"}}},
+            )
+            return found
+
+        def update_one(self, *args: Any, **kwargs: Any) -> Any:
+            """Update a task."""
+            return self.collection.update_one(*args, **kwargs)
+
+    with caplog.at_level("WARNING", logger=track_task_progress.logger.name):
+        failed = track_task_progress._fail_cut_off(
+            collection=Forwarding(tasks),  # type: ignore[arg-type]
+            max_create_time=max_create_time,
+        )
+    assert failed == 1
+    states = {
+        document["worker_id"]: document["task"]["state"] for document in tasks.find()
+    }
+    assert states == {
+        "cut-off": "SYSTEM_ERROR",
+        "changed": "UNKNOWN",
+        "changed-legacy": "UNKNOWN",
+    }
+    (record,) = [
+        record
+        for record in caplog.records
+        if record.name == track_task_progress.logger.name
+    ]
+    assert record.getMessage().startswith("[cut-off] SYSTEM_ERROR")
+    assert "within 60 seconds" in record.getMessage()
 
 
 @pytest.mark.parametrize("field", ["wait", "max_wait"])

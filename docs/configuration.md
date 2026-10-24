@@ -223,6 +223,17 @@ custom:
   per input; all contents together are limited by the [request size
   limit](#request-size-limit)); tasks with larger contents are rejected
   with `413 Content Too Large`, also if middlewares added the contents;
+- `post_task.max_create_time`: the number of seconds (default 3600, at
+  most 31536000, i.e., a year) after which tasks that are still being
+  created, i.e., in state `UNKNOWN` without identifier at a TES instance
+  (e.g., because proTES stopped while forwarding them, as in a rolling
+  upgrade), are set to `SYSTEM_ERROR` by the Celery workers (see [Task
+  tracking](operations.md#task-tracking)).
+  It must be longer than creating a task may take: the middlewares, the
+  requests to MongoDB, the connect timeout (currently 5 seconds) of each TES
+  instance that is tried, the token requests
+  (`client_credentials.timeout`), and `tes.timeout`, for the TES instance
+  that accepts the task;
 - `list_tasks.default_page_size`: the number of tasks per page of
   `GET /tasks` if the request sets no `page_size` (default 256, as in the
   TES specification);
@@ -232,7 +243,15 @@ custom:
 - `list_tasks.max_page_size_full`: the maximum number of tasks per page of
   the view `FULL` (default 64), whose tasks may be large (e.g., with inline
   contents of inputs and logs); larger `page_size`s, and the default page
-  size, are reduced to it.
+  size, are reduced to it. Only the number of tasks is limited, not the
+  size of a page: a task may be as large as the [request size
+  limit](#request-size-limit) (1 MiB by default), plus the logs that its
+  TES instance reports, so a page of the view `FULL` may be about
+  `max_page_size_full` times that size (64 MiB with the defaults), which a
+  Gunicorn worker holds in memory while serving it (for each request that
+  it serves at once). For small memory limits (e.g., the 256 MiB of the
+  [Helm chart](deployment.md)), lower `max_page_size_full` (e.g., to 8) or
+  raise the memory, if users may store large tasks.
 
 `custom.storeLogs.execution_trace` sets whether proTES records the TES
 instance and the remote task identifier of each forwarded task in the task's

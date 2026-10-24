@@ -274,7 +274,12 @@ worker tracks them. Tasks in state `UNKNOWN` are canceled at their TES
 instance too (canceling them returned `200` without effect); tasks that
 have not finished, but whose identifier at their TES instance is unknown,
 can't be canceled (`409 Conflict`; was `500`, or `200` without effect
-for tasks in state `UNKNOWN`).
+for tasks in state `UNKNOWN`). Tasks in state `UNKNOWN` without
+identifier at a TES instance (also none in their logs) that were stored
+more than `custom.controllers.post_task.max_create_time` seconds ago
+(default 3600) are set to `SYSTEM_ERROR` by the Celery workers, also those
+stored by earlier versions (see [Task
+tracking](operations.md#task-tracking)).
 
 ## Task listing
 
@@ -323,8 +328,8 @@ gone, and the environment variables `GUNICORN_PROCESSES` and
 `GUNICORN_THREADS` are replaced by `GUNICORN_CMD_ARGS` (see
 [Server](configuration.md#server)). The Helm chart of this version needs
 images of this version, and the legacy chart (versions 2 and 3.0.0) needs
-earlier images. Released charts have the version of their release (e.g.,
-0.3.0), so chart versions restart below 3.0.0.
+earlier images. Released charts have the version of their release, so chart versions
+restart below 3.0.0.
 
 Images are tagged `dev` and `sha-<commit>` for commits on `dev`, and `X.Y.Z`
 for releases; `latest` is the highest stable release, no longer the latest
@@ -333,7 +338,7 @@ releases](development.md#versioning-and-releases)). The Helm chart takes
 the image tag from `protes.tag`, which defaults to the chart's `appVersion`:
 `dev` in the repository, the release version in released charts (see
 [Image](deployment.md#image)). `protes.image` may still include a tag (e.g.,
-`elixircloud/protes:0.3.0`); the Celery worker runs the app's image.
+`elixircloud/protes:{{ version }}`); the Celery worker runs the app's image.
 
 ## Helm chart
 

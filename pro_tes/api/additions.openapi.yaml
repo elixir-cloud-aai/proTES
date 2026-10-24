@@ -7,8 +7,49 @@ paths:
       x-openapi-router-controller: foca.api.service_info
       # public
       security: []
+  # proTES extensions of the TES specification: further responses of its
+  # operations, which FOCA merges into them (the operations stay as they are)
+  /tasks:
+    post:
+      responses:
+        413:
+          description: >-
+            proTES extension: the request body exceeds the request size limit,
+            or the inline content of an input (`inputs[].content`) exceeds
+            the configured maximum (`max_inline_content`); the task is not
+            kept.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /tasks/{id}:cancel:
+    post:
+      responses:
+        409:
+          description: >-
+            proTES extension: the task has not finished, but its identifier
+            at its TES instance is unknown (e.g., while it is being forwarded),
+            so it can't be canceled.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
 components:
   schemas:
+    # Errors (RFC 9457), as proTES sends them
+    ProblemDetails:
+      description: 'Problem details of an error (RFC 9457).'
+      type: object
+      properties:
+        title:
+          type: string
+          description: 'Short summary of the problem type.'
+        status:
+          type: integer
+          description: 'HTTP status code.'
+        detail:
+          type: string
+          description: 'Explanation of this occurrence of the problem.'
     # GA4GH service info schemas (version 1.0.0), as in
     # https://raw.githubusercontent.com/ga4gh-discovery/ga4gh-service-info/v1.0.0/service-info.yaml
     Service:

@@ -71,7 +71,7 @@ config: {}
 
 protes:
   # Image repository; may include a tag or digest instead of setting `tag`
-  # (e.g., `elixircloud/protes:0.3.0`). The image of the app also runs the
+  # (e.g., `elixircloud/protes:1.2.3`). The image of the app also runs the
   # Celery worker (`worker`)
   image: elixircloud/protes
   # Image tag; defaults to the chart's `appVersion`, i.e., the release
@@ -175,6 +175,11 @@ protes:
     capabilities:
       drop: ["ALL"]
     readOnlyRootFilesystem: true
+  # Each request of a page of tasks with `view=FULL` may hold about
+  # `max_page_size_full` times the request size limit in memory (64 MiB
+  # with the app's defaults), once per thread; lower
+  # `config.custom.controllers.list_tasks.max_page_size_full`, or raise the
+  # memory, if users store large tasks (see docs/configuration.md, Tasks)
   resources:
     limits:
       cpu: 200m
