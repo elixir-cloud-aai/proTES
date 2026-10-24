@@ -107,16 +107,6 @@ db:
             - keys:
                 task.state: 1
                 tracking.polled_at: 1
-        middlewares:
-          indexes:
-            - keys:
-                name: 1
-              options:
-                "unique": True
-            - keys:
-                class_path: 1
-              options:
-                "unique": True
 
 # API configuration
 # Cf. https://foca.readthedocs.io/en/latest/configuration/api/
@@ -144,8 +134,6 @@ api:
         options:
           swagger_ui: True
           serve_spec: True
-    # The middleware management API (`api/middleware_management.yaml`) is
-    # not served until its controllers are implemented (#194)
 
 # Logging configuration
 # Cf. https://foca.readthedocs.io/en/latest/configuration/log/

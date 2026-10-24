@@ -16,8 +16,8 @@
   instances, the middlewares, the task settings, the request size limit, the
   server and the service info.
 - [API](api.md): the endpoints, how tasks are forwarded, and errors.
-- [Middlewares](middlewares.md): the built-in middlewares, how to write your
-  own, and the middleware management API.
+- [Middlewares](middlewares.md): the built-in middlewares and how to write
+  your own.
 - [Access control](access-control.md): authentication, roles, task
   ownership, the permissions API and credentials of TES instances.
 - [Deployment](deployment.md): the Helm chart for Kubernetes.
