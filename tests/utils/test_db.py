@@ -21,7 +21,7 @@ from pro_tes.utils.db import (
     find_duplicate_task_ids,
     remove_stored_credentials,
 )
-from tests.conftest import DB
+from tests.conftest import DB, set_overlays
 
 
 @pytest.fixture
@@ -271,15 +271,40 @@ def test_duplicate_task_ids(
     assert sorted(map(str, stored)) == sorted(map(str, documents))
 
 
+# Overlay with a collection with a unique index other than that of tasks
+OTHER_UNIQUE_INDEX = """
+db:
+  dbs:
+    taskStore:
+      collections:
+        others:
+          indexes:
+            - keys:
+                name: 1
+              options:
+                unique: true
+"""
+
+
+@pytest.fixture
+def other_unique_index(
+    app_env: None, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Apps get a collection `others`, with a unique index on `name`."""
+    overlay = tmp_path / "other_unique_index.yaml"
+    overlay.write_text(OTHER_UNIQUE_INDEX)
+    set_overlays(monkeypatch, overlay)
+
+
 @pytest.mark.parametrize(
     ("collection", "error", "message"),
     [
         ("tasks", RuntimeError, "share 1 identifiers"),
-        ("middlewares", ValueError, "conflicts with an existing index"),
+        ("others", ValueError, "conflicts with an existing index"),
     ],
 )
 def test_duplicate_keys_celery_worker(
-    app_env: None,
+    other_unique_index: None,
     mongo_client: MongoClient[dict[str, Any]],
     collection: str,
     error: type[Exception],
@@ -290,7 +315,7 @@ def test_duplicate_keys_celery_worker(
     Other failing unique indexes fail the start with FOCA's error.
     """
     mongo_client[DB][collection].insert_many(
-        [{"task": {"id": "A"}, "name": "a", "class_path": "x.A"} for _ in range(2)]
+        [{"task": {"id": "A"}, "name": "a"} for _ in range(2)]
     )
     foca = Foca(
         config_file=Path(celery_worker.__file__).parent / "config.yaml",
@@ -338,13 +363,11 @@ def test_legacy_task_index_dropped_concurrently(
     assert (LEGACY_TASK_INDEX in collection.index_information()) is not dropped
 
 
-def test_duplicate_middlewares(
-    app_env: None, mongo_client: MongoClient[dict[str, Any]]
+def test_duplicate_other_keys(
+    other_unique_index: None, mongo_client: MongoClient[dict[str, Any]]
 ) -> None:
     """Other unique indexes that fail fail the start with FOCA's error."""
-    mongo_client[DB]["middlewares"].insert_many(
-        [{"name": "a", "class_path": "x.A"}, {"name": "a", "class_path": "x.B"}]
-    )
+    mongo_client[DB]["others"].insert_many([{"name": "a"}, {"name": "a"}])
     with pytest.raises(ValueError, match="conflicts with an existing index"):
         init_app()
 
