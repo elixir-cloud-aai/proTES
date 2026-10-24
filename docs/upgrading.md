@@ -201,6 +201,26 @@ already, but their final logs are not. The upgrade ends this polling, as
 it ends all tracking by the old Celery worker; the logs of these tasks
 aren't fetched again.
 
+## Task tracking
+
+Tasks are tracked by short polls that schedule the next one, instead of one
+Celery task per task that held a worker process until the task finished (see
+[Task tracking](operations.md#task-tracking)), so a few worker processes
+track many tasks. Polls are acknowledged after they ran, and workers resume
+the tracking of stored unfinished tasks when they start: restarts and
+upgrades of the workers no longer stop the tracking of tasks. Only tasks
+with a remote identifier in `tes_endpoint.task_id` (see [Task times and
+remote identifiers](#task-times-and-remote-identifiers)) are resumed:
+unfinished tasks stored by earlier versions keep their last state.
+
+Failed polls no longer make a task fail: after
+`custom.controllers.post_task.polling.attempts` consecutive failed polls
+(not failed polls over the task's whole life), its state is `UNKNOWN` until
+the TES instance answers again, and polls back off up to
+`polling.max_wait` seconds (new, default 600); the first poll is retried,
+too. The workers no longer set `INITIALIZING` when they start tracking a
+task: the state is the one reported by its TES instance.
+
 ## Task times and remote identifiers
 
 Times of tasks (`creation_time`, and `start_time` and `end_time` of the

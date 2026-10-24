@@ -169,10 +169,15 @@ custom:
   with a newly generated identifier if the identifier exists already;
 - `post_task.task_id`: the characters (`charset`) and the length (`length`)
   of task identifiers;
-- `post_task.polling`: how the Celery worker tracks a forwarded task: it
-  polls the TES instance for the task's state every `wait` seconds until the
-  task has finished, and gives up (state `SYSTEM_ERROR`) after `attempts`
-  failed requests;
+- `post_task.polling`: how the Celery workers track a forwarded task: they
+  poll the TES instance for the task's state every `wait` seconds (default
+  3) until the task has finished. After `attempts` consecutive failed polls
+  (default 100; a successful poll resets the count), the task's state is
+  `UNKNOWN`, and the polls back off, doubling the interval up to `max_wait`
+  seconds (default 600; keep it below RabbitMQ's `consumer_timeout`, 30
+  minutes by default), until the TES instance answers again: failed polls
+  never make a task fail, as it may still be running (see [Task
+  tracking](operations.md#task-tracking));
 - `post_task.url_credentials`: what happens to tasks with credentials in the
   URLs of their inputs or outputs (`https://user:password@host/...`): they
   are rejected with `400 Bad Request` (`reject`, the default), or the

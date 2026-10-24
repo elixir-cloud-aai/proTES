@@ -327,9 +327,15 @@ protes:
 The worker (`worker`, enabled by default) runs the app's image with
 `worker.command` (`celery --app pro_tes.celery_worker worker`), with the
 app's config overlay, MongoDB credentials, `protes.extraEnv` and security
-contexts. Each of its processes tracks one task at a time
-(`--concurrency=2` by default): raise the concurrency, `worker.replicas` and
-`worker.resources` for more concurrent tasks. Without a worker (e.g., one
+contexts. It polls each unfinished task every few seconds, one short poll
+per process at a time (`--concurrency=2` by default), so a few processes
+track many tasks: raise the concurrency, `worker.replicas` and
+`worker.resources` if polls wait in the queue (see [Task
+tracking](https://protes.readthedocs.io/en/latest/operations/#task-tracking)).
+Restarts and upgrades of the worker don't stop the tracking: polls are
+acknowledged after they ran, so the broker delivers those of a killed worker
+again, and workers resume the tracking of all unfinished tasks when they
+start. Without a worker (e.g., one
 run elsewhere, connected to the same broker and MongoDB), the states of
 tasks are not tracked, and Helm's notes warn.
 

@@ -6,8 +6,7 @@ A deployment of proTES consists of:
 
 - the app (the TES API), served by Gunicorn;
 - one or more Celery workers, which track forwarded tasks at the TES
-  instances (scale them up for many concurrent tasks: each worker process
-  tracks one task at a time);
+  instances (see [Task tracking](#task-tracking));
 - RabbitMQ, the broker between the app and the workers;
 - MongoDB, which stores the tasks (database `taskStore`, collection
   `tasks`);
@@ -22,12 +21,39 @@ config): each request to the API, the middlewares applied, the TES instances
 that a task is forwarded to, and errors of the TES instances. Read them with
 `docker compose logs` or `kubectl logs`.
 
-## Task states
+## Task tracking
 
 The state of a task is the state last tracked from the TES instance that runs
-it (see [Tasks](api.md#tasks)). Tracking is not resumed after the workers or
-RabbitMQ restart: tasks that were being tracked keep their last recorded
-state.
+it (see [Tasks](api.md#tasks)). The Celery workers poll each unfinished task
+at its TES instance every `polling.wait` seconds (see
+[Tasks](configuration.md#tasks)): each poll is a short Celery task, which
+schedules the next one, so no worker process is held for the runtime of a
+task, and long tasks don't keep the others from being tracked. Once a task has
+finished, its logs and outputs are stored, and tracking ends. After
+`polling.attempts` consecutive failed polls (e.g., while the TES instance or
+the identity provider is down), the state of the task is `UNKNOWN` until the
+TES instance answers again, and polls back off to every `polling.max_wait`
+seconds; such tasks are not marked as failed, as they may still be running.
+
+The workers need little capacity per task: a worker process is busy only
+for the duration of a poll (one request to the TES instance). As a rule of
+thumb, one process tracks about as many tasks as polls fit into
+`polling.wait`; e.g., with polls of 0.1 seconds and the default `wait` of 3
+seconds, about 30 tasks. Raise `--concurrency` (processes per worker) or the
+number of workers for more unfinished tasks, and watch the queue length in
+Flower or RabbitMQ: if polls wait in the queue, tasks are polled less often
+than configured, but are still tracked.
+
+Polls are acknowledged after they ran (`acks_late`), so the broker delivers
+the poll of a worker that is lost (e.g., killed after its grace period)
+again, and polls that are scheduled but not yet due go back to the broker
+when a worker shuts down. Each task is tracked by one chain of polls (the
+stored task holds the identifier of its current poll, `tracking.poll`).
+When a worker starts, it resumes the tracking of all stored unfinished tasks
+that were forwarded to a TES instance, which also recovers tasks whose polls
+were lost: restart the workers if RabbitMQ lost its data. Upgrades and
+restarts of the workers therefore don't stop the tracking of tasks; they
+only delay their next polls.
 
 ## Task owners
 
