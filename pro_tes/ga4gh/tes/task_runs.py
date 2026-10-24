@@ -103,8 +103,10 @@ class TaskRuns:
         """Start task.
 
         The user of the request becomes the owner of the task (cf.
-        :py:mod:`pro_tes.ga4gh.tes.ownership`), also if it can't be
-        forwarded.
+        :py:mod:`pro_tes.ga4gh.tes.ownership`). Tasks that fail validation,
+        and tasks that no TES instance accepts, are not kept: they are
+        deleted, with the owner's roles on them. Tasks that a TES instance
+        may have accepted are kept (as `SYSTEM_ERROR`).
 
         Tasks are sent to the TES instances in turn, until one accepts the
         task. They are sent to the next one only if a TES instance certainly
@@ -195,7 +197,9 @@ class TaskRuns:
         try:
             payload_marshalled = tes.Task(**payload)
         except TypeError as exc:
-            db_connector.update_task_state(state=TesState.SYSTEM_ERROR.value)
+            self._discard_task(
+                db_document=db_document, owner=owner, collection=collection
+            )
             raise BadRequest(
                 f"Task '{db_document.task.id}' could not be "
                 f"validated. Original error message: '{type(exc).__name__}: "
@@ -304,10 +308,10 @@ class TaskRuns:
             )
             return {"id": db_document.task.id}
 
-        db_connector.update_task_state(state=TesState.SYSTEM_ERROR.value)
+        self._discard_task(db_document=db_document, owner=owner, collection=collection)
         raise NoTesInstancesAvailable(
-            "Could not forward the task request to any TES instance. Task"
-            " state set to 'SYSTEM_ERROR'."
+            "Could not forward the task request to any TES instance; the task"
+            " was not kept."
         )
 
     def list_tasks(self, **kwargs: Any) -> dict[str, Any]:
@@ -535,6 +539,26 @@ class TaskRuns:
                 raise
             return task_id, document.worker_id
         raise DuplicateKeyError("Could not find an unused task identifier")
+
+    def _discard_task(
+        self, db_document: DbDocument, owner: str, collection: str
+    ) -> None:
+        """Delete a stored task that was not forwarded, with its owner roles.
+
+        The task is deleted first, as roles left on deleted tasks give no
+        access (cf. :py:meth:`_write_doc_to_db`).
+
+        Args:
+            db_document: The stored task.
+            owner: Owner of the task.
+            collection: Request path of the tasks (e.g.,
+                `/ga4gh/tes/v1/tasks`).
+        """
+        self.db_client.delete_one({"worker_id": db_document.worker_id})
+        remove_task_owner(
+            collection=collection, task_id=str(db_document.task.id), owner=owner
+        )
+        logger.info("Task '%s' not kept: it was not forwarded", db_document.task.id)
 
     def _sanitize_request(self, payload: dict[str, Any]) -> dict[str, Any]:
         """Sanitize request for use with py-tes.

@@ -108,14 +108,18 @@ def test_create_task_no_backend(
     tracked: list[dict[str, Any]],
     mongo_client: MongoClient[dict[str, Any]],
 ) -> None:
-    """Tasks that no backend accepts fail (`500`); they are stored as such."""
+    """Tasks that no backend accepts fail (`500`); they are not kept.
+
+    Neither the task nor the owner's roles on it.
+    """
     backend.failing.update(BACKENDS)
     response = client.post(f"{BASE_PATH}/tasks", json=TASK)
     assert response.status_code == 500
     assert response.get_json()["status"] == 500
+    assert "not kept" in response.get_json()["detail"]
     assert not tracked
-    (document,) = mongo_client[DB]["tasks"].find()
-    assert document["task"]["state"] == "SYSTEM_ERROR"
+    assert mongo_client[DB]["tasks"].count_documents({}) == 0
+    assert mongo_client[DB]["policy_rules"].count_documents({"ptype": "g2"}) == 0
 
 
 def test_create_task_state_unavailable(
@@ -1050,7 +1054,7 @@ def test_create_task_not_relayable(
     mongo_client: MongoClient[dict[str, Any]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Tasks that py-tes can't represent fail (`400`); they are stored as such."""
+    """Tasks that py-tes can't represent fail (`400`); they are not kept."""
 
     def task(**kwargs: Any) -> tes.Task:
         """Reject the task, as py-tes does with unknown fields."""
@@ -1060,8 +1064,8 @@ def test_create_task_not_relayable(
     response = client.post(f"{BASE_PATH}/tasks", json=TASK)
     assert response.status_code == 400
     assert not relayed(backend)
-    (document,) = mongo_client[DB]["tasks"].find()
-    assert document["task"]["state"] == "SYSTEM_ERROR"
+    assert mongo_client[DB]["tasks"].count_documents({}) == 0
+    assert mongo_client[DB]["policy_rules"].count_documents({"ptype": "g2"}) == 0
 
 
 def test_create_task_no_body(app: FlaskApp, backend: type[FakeBackend]) -> None:

@@ -180,7 +180,7 @@ exceptions = {
     },
     NoTesInstancesAvailable: {
         "title": "Internal server error",
-        "detail": "No valid TES instances available.",
+        "detail": "No TES instance accepted the task; it was not kept.",
         "status": 500,
     },
     BackendAuthError: {

@@ -43,8 +43,9 @@ For `POST /tasks`, proTES:
    to try and their order (and may change the task);
 3. forwards the task to the first of these TES instances that accepts it,
    and returns its own identifier of the task; if no TES instance accepts
-   it, the task's state is set to `SYSTEM_ERROR`, and the request fails with
-   `500 Internal Server Error`. Each TES instance gets its own copy of the
+   it, the request fails with `500 Internal Server Error`, and the task is
+   not kept (it is deleted, with its owner's roles on it), as are tasks that
+   the middlewares made invalid (`400 Bad Request`). Each TES instance gets its own copy of the
    validated task, with the credentials of proTES for it (see [Credentials
    of TES instances](access-control.md#credentials-of-tes-instances)), in a
    single request; the next TES instance is tried only if a TES instance

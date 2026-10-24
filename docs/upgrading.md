@@ -224,6 +224,13 @@ already, but their final logs are not. The upgrade ends this polling, as
 it ends all tracking by the old Celery worker; the logs of these tasks
 aren't fetched again.
 
+Tasks that no TES instance accepts (`500`), and tasks that fail validation
+after the middlewares (`400`), are no longer kept: they are deleted, with
+their owner's roles on them, instead of being stored as `SYSTEM_ERROR`, so
+that failed requests don't fill the database. Tasks that a TES instance may
+have accepted (`502`) are still stored as `SYSTEM_ERROR`. Tasks stored as
+`SYSTEM_ERROR` by earlier versions are kept.
+
 ## Task times and remote identifiers
 
 Times of tasks (`creation_time`, and `start_time` and `end_time` of the
