@@ -17,6 +17,8 @@ from pro_tes.plugins.middlewares.task_distribution.random import (
 from pro_tes.utils.misc import get_custom_config
 
 TES_URLS = [f"https://tes{index}.example.org" for index in range(10)]
+# Order of `random.shuffle()` of 10 items after `random.seed(1)`
+SEED_1_ORDER = [6, 8, 9, 7, 5, 3, 0, 4, 1, 2]
 
 
 def backends(urls: list[str]) -> list[TesBackend]:
@@ -44,6 +46,30 @@ def test_tes_urls_added(
         assert request.json is not None
         assert request.json["name"] == "task"
         assert sorted(request.json["tes_urls"]) == TES_URLS
+
+
+def test_order_kept(app: FlaskApp) -> None:
+    """The base class keeps the order of the backends (first occurrences)."""
+    urls = list(reversed(TES_URLS))
+    with app.app.test_request_context(json={}):
+        get_custom_config().tes.service_list = backends([*urls, urls[0]])
+        request = TaskDistributionBaseClass().apply_middleware(flask.request)
+        assert request.json is not None
+        assert request.json["tes_urls"] == urls
+
+
+def test_shuffled_reproducibly(app: FlaskApp) -> None:
+    """The random order depends on the random state only.
+
+    It is a shuffle of the configured order, not of an order that depends on
+    hashes (`set()`), which differs between processes.
+    """
+    with app.app.test_request_context(json={}):
+        get_custom_config().tes.service_list = backends(TES_URLS)
+        random.seed(1)
+        middleware = TaskDistributionRandom()
+        middleware.apply_middleware(flask.request)
+    assert middleware.tes_urls == [TES_URLS[index] for index in SEED_1_ORDER]
 
 
 def test_shuffled(app: FlaskApp) -> None:
