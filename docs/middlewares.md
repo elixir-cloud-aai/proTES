@@ -65,12 +65,3 @@ discovered TES instances, once each, in that order; override its
 Middlewares are imported by their import path, so they can live in any
 package installed next to proTES, e.g., in a custom image based on the proTES
 image. List them in `custom.middlewares`.
-
-## Middleware management API
-
-The middleware management API is to manage the stack of middlewares at
-runtime, without restarting the service. Its [OpenAPI
-specification](https://github.com/elixir-cloud-aai/proTES/blob/dev/pro_tes/api/middleware_management.yaml)
-is in the repository, but the API is not served yet: its controllers are not
-implemented
-([#194](https://github.com/elixir-cloud-aai/proTES/issues/194)).
