@@ -110,3 +110,4 @@ nav:
   - API reference: reference.md
   - Changelog:
       - changelog.md
+      - "0.3.0": releases/0.3.0.md
