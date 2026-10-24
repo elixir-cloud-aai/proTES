@@ -224,6 +224,13 @@ already, but their final logs are not. The upgrade ends this polling, as
 it ends all tracking by the old Celery worker; the logs of these tasks
 aren't fetched again.
 
+Tasks that no TES instance accepts (`500`), and tasks that fail validation
+after the middlewares (`400`), are no longer kept: they are deleted, with
+their owner's roles on them, instead of being stored as `SYSTEM_ERROR`, so
+that failed requests don't fill the database. Tasks that a TES instance may
+have accepted (`502`) are still stored as `SYSTEM_ERROR`. Tasks stored as
+`SYSTEM_ERROR` by earlier versions are kept.
+
 ## Task tracking
 
 Tasks are tracked by short polls that schedule the next one, instead of one
@@ -279,6 +286,14 @@ most 2047 (`custom.controllers.list_tasks`, see
 [Tasks](configuration.md#tasks)). `name_prefix` is taken literally, not as a
 regular expression. proTES no longer starts if
 `custom.controllers.list_tasks.default_page_size` exceeds `max_page_size`.
+Pages of the view `FULL` have at most 64 tasks
+(`custom.controllers.list_tasks.max_page_size_full`), also by default:
+clients that list full tasks must follow `next_page_token`.
+
+Tasks with an inline content of an input (`inputs[].content`) of more than
+128 KiB (`custom.controllers.post_task.max_inline_content`) are rejected
+with `413 Content Too Large`; raise the limit (and
+`server.max_content_length`) if needed, or use inputs with URLs.
 
 ## Distance-based task distribution
 

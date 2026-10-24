@@ -285,13 +285,11 @@ def test_owner_stored(
 
 
 def test_owner_failed_task(client: FlaskClient, backend: type[FakeBackend]) -> None:
-    """Users own tasks that could not be forwarded, too."""
+    """Tasks that could not be forwarded are not kept, so users don't own them."""
     backend.failing.update(BACKENDS)
     response = client.post(f"{BASE_PATH}/tasks", json=TASK)
     assert response.status_code == 500
-    (task_id,) = list_ids(client, USER)
-    response = client.get(f"{BASE_PATH}/tasks/{task_id}")
-    assert response.get_json()["state"] == "SYSTEM_ERROR"
+    assert list_ids(client, USER) == []
 
 
 def test_unknown_task(client: FlaskClient) -> None:

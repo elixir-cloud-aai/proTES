@@ -13,7 +13,7 @@ control](access-control.md)).
 | --- | --- |
 | `GET /service-info` | The service info of the deployment (see [Service info](configuration.md#service-info)). |
 | `POST /tasks` | Create a task: proTES forwards it to a TES instance (see [Tasks](#tasks)) and returns its own identifier of the task. |
-| `GET /tasks` | List the caller's tasks, newest first, one page at a time (`page_size`, at most `max_page_size` of the [config](configuration.md#tasks); `page_token` from `next_page_token` of the previous page, which is empty on the last page), optionally only those whose name starts with `name_prefix` (taken literally). |
+| `GET /tasks` | List the caller's tasks, newest first, one page at a time (`page_size`, at most `max_page_size` of the [config](configuration.md#tasks), and `max_page_size_full` for the view `FULL`; `page_token` from `next_page_token` of the previous page, which is empty on the last page), optionally only those whose name starts with `name_prefix` (taken literally). |
 | `GET /tasks/{id}` | Get a task of the caller, with its state as last tracked from the TES instance. |
 | `POST /tasks/{id}:cancel` | Cancel a task of the caller that has not finished yet (also in state `UNKNOWN`, e.g., not tracked yet), at the TES instance that runs it; finished tasks are left as they are. Unfinished tasks whose identifier at their TES instance is unknown (e.g., while they are being forwarded, or if forwarding failed unexpectedly) can't be canceled (`409 Conflict`). |
 
@@ -38,16 +38,22 @@ For `POST /tasks`, proTES:
    `creation_time` (tasks that set `creation_time`, which the TES
    specification marks read-only, are rejected with `400 Bad Request`, as
    are tasks with credentials in the URLs of inputs or outputs, unless
-   proTES is configured to remove them: see [Tasks](configuration.md#tasks));
+   proTES is configured to remove them, and tasks with inline contents of
+   inputs over `max_inline_content`, with `413 Content Too Large`: see
+   [Tasks](configuration.md#tasks));
 2. applies the [middlewares](middlewares.md), which select the TES instances
-   to try and their order (and may change the task);
+   to try and their order (and may change the task; tasks that they make
+   invalid are rejected with `400 Bad Request`, and tasks whose inline
+   contents they make too large with `413 Content Too Large`, and neither is
+   kept);
 3. forwards the task to the first of these TES instances that accepts it,
    and returns its own identifier of the task; if no TES instance accepts
-   it, the task's state is set to `SYSTEM_ERROR`, and the request fails with
-   `500 Internal Server Error`. Each TES instance gets its own copy of the
-   validated task, with the credentials of proTES for it (see [Credentials
-   of TES instances](access-control.md#credentials-of-tes-instances)), in a
-   single request; the next TES instance is tried only if a TES instance
+   it, the request fails with `500 Internal Server Error`, and the task is
+   not kept (it is deleted, with its owner's roles on it). Each TES
+   instance gets its own copy of the validated task, with the credentials
+   of proTES for it (see [Credentials of TES
+   instances](access-control.md#credentials-of-tes-instances)), in a single
+   request; the next TES instance is tried only if a TES instance
    certainly did not accept the task (see [TES
    instances](configuration.md#tes-instances)). If a TES instance may have
    accepted it without confirming it (e.g., the response timed out), the
@@ -79,8 +85,11 @@ users without the required role and for tasks of others or unknown tasks
 caller deleted from the database, `409 Conflict` for unfinished tasks
 whose identifier at their TES instance is unknown, which can't be canceled,
 `413 Content Too Large` for request bodies over the [size
-limit](configuration.md#request-size-limit), `500 Internal Server Error`
-if a task could not be forwarded or no middleware could be applied, and
+limit](configuration.md#request-size-limit) and tasks with inline contents
+of inputs over `max_inline_content` (see
+[Tasks](configuration.md#tasks)), `500 Internal Server Error` if a task
+could not be forwarded (it is not kept) or no middleware could be applied,
+and
 `502 Bad Gateway` if a TES instance did not confirm a request to create or
 cancel a task, which it may have processed (see [Tasks](#tasks)). The
 mapping of exceptions to problem details is

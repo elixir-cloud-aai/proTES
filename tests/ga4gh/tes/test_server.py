@@ -16,7 +16,7 @@ import pytest
 import requests
 import tes
 
-from pro_tes.config_models import ListTasks
+from pro_tes.config_models import ListTasks, PostTask
 from pro_tes.exceptions import BackendAuthError, BackendOutcomeUnknown, BadRequest
 from pro_tes.ga4gh.tes import ownership, task_runs
 from pro_tes.ga4gh.tes.models import DbDocument, TesTask
@@ -109,14 +109,17 @@ def test_create_task_no_backend(
     tracked: list[dict[str, Any]],
     mongo_client: MongoClient[dict[str, Any]],
 ) -> None:
-    """Tasks that no backend accepts fail (`500`); they are stored as such."""
+    """Tasks that no backend accepts fail (`500`); they are not kept.
+
+    Neither the task nor the owner's roles on it.
+    """
     backend.failing.update(BACKENDS)
     response = client.post(f"{BASE_PATH}/tasks", json=TASK)
     assert response.status_code == 500
     assert response.get_json()["status"] == 500
     assert not tracked
-    (document,) = mongo_client[DB]["tasks"].find()
-    assert document["task"]["state"] == "SYSTEM_ERROR"
+    assert mongo_client[DB]["tasks"].count_documents({}) == 0
+    assert mongo_client[DB]["policy_rules"].count_documents({"ptype": "g2"}) == 0
 
 
 @pytest.mark.parametrize("served", ["none", "invalid"])
@@ -540,10 +543,45 @@ def test_list_tasks_page_sizes(
     assert len(list_tasks(client, page_size=100)["tasks"]) == 3
 
 
+def test_list_tasks_page_sizes_full(
+    app: FlaskApp, client: FlaskClient, backend: type[FakeBackend]
+) -> None:
+    """Pages of the view `FULL` have at most their own maximum size.
+
+    Also by default, and at most the maximum size of all views.
+    """
+    with app.app.app_context():
+        config = get_custom_config().controllers.list_tasks
+        config.default_page_size = 3
+        config.max_page_size = 4
+        config.max_page_size_full = 2
+    ids = create_tasks(client, ["a", "b", "c", "d", "e"])
+    page = list_tasks(client, view="FULL")
+    assert [task["id"] for task in page["tasks"]] == ids[:2]
+    assert len(list_tasks(client, view="FULL", page_size=100)["tasks"]) == 2
+    assert len(list_tasks(client, view="BASIC", page_size=100)["tasks"]) == 4
+    assert len(list_tasks(client, view="MINIMAL")["tasks"]) == 3
+    next_page = list_tasks(client, view="FULL", page_token=page["next_page_token"])
+    assert [task["id"] for task in next_page["tasks"]] == ids[2:4]
+    with app.app.app_context():
+        config.max_page_size_full = 10
+    assert len(list_tasks(client, view="FULL", page_size=100)["tasks"]) == 4
+
+
+def test_list_tasks_last_page_full(client: FlaskClient, task_id: str) -> None:
+    """Pages that hold the remaining tasks have no next page token."""
+    page = list_tasks(client, view="FULL")
+    assert [task["id"] for task in page["tasks"]] == [task_id]
+    assert page["next_page_token"] == ""
+
+
 def test_page_size_config() -> None:
     """The default page size must not exceed the maximum."""
     assert ListTasks().default_page_size == 256
     assert ListTasks().max_page_size == 2047
+    assert ListTasks().max_page_size_full == 64
+    with pytest.raises(ValidationError):
+        ListTasks(max_page_size_full=0)
     with pytest.raises(ValidationError, match="exceeds max_page_size"):
         ListTasks(default_page_size=10, max_page_size=5)
     assert ListTasks(default_page_size=5, max_page_size=5).max_page_size == 5
@@ -553,6 +591,13 @@ def test_page_size_config() -> None:
         ListTasks(max_page_size=0)
     with pytest.raises(ValidationError):
         ListTasks(max_page_size=2048)
+
+
+def test_post_task_config() -> None:
+    """Inline contents are limited to 128 KiB by default (cf. TES)."""
+    assert PostTask().max_inline_content == 131072
+    with pytest.raises(ValidationError):
+        PostTask(max_inline_content=0)
 
 
 def test_default_view(client: FlaskClient, task_id: str) -> None:
@@ -587,6 +632,85 @@ def test_list_tasks_name_prefix_null(client: FlaskClient) -> None:
     """Name prefixes with null characters are rejected."""
     response = client.get(f"{BASE_PATH}/tasks", query_string={"name_prefix": "a\x00"})
     assert response.status_code == 400
+
+
+@pytest.mark.parametrize(
+    "contents, accepted",
+    [
+        (["a" * 16, "b" * 16], True),
+        (["a" * 16, "b" * 17], False),
+        # bytes, not characters
+        (["\u00e4" * 8], True),
+        (["\u00e4" * 8 + "x"], False),
+    ],
+)
+def test_create_task_inline_content(
+    app: FlaskApp,
+    client: FlaskClient,
+    backend: type[FakeBackend],
+    mongo_client: MongoClient[dict[str, Any]],
+    contents: list[str],
+    accepted: bool,
+) -> None:
+    """Tasks with larger inline contents than the limit are rejected (`413`).
+
+    The content of each input counts, in bytes (UTF-8); rejected tasks are
+    neither stored nor relayed.
+
+    Args:
+        app: The app.
+        client: Client of the app.
+        backend: Fake backends.
+        mongo_client: Client of the database.
+        contents: Inline contents of the inputs.
+        accepted: Whether the task is accepted.
+    """
+    with app.app.app_context():
+        get_custom_config().controllers.post_task.max_inline_content = 16
+    task = {
+        **TASK,
+        "inputs": [
+            {"content": content, "path": f"/in{index}", "type": "FILE"}
+            for index, content in enumerate(contents)
+        ]
+        + [{"url": "s3://bucket/in", "path": "/in", "type": "FILE"}],
+    }
+    response = client.post(f"{BASE_PATH}/tasks", json=task)
+    if accepted:
+        assert response.status_code == 200
+        return
+    assert response.status_code == 413
+    assert "inline content" in response.get_json()["detail"]
+    assert not relayed(backend)
+    assert mongo_client[DB]["tasks"].count_documents({}) == 0
+
+
+def test_create_task_inline_content_middleware(
+    app: FlaskApp,
+    client: FlaskClient,
+    backend: type[FakeBackend],
+    mongo_client: MongoClient[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Inline contents that middlewares add count, too; the task isn't kept."""
+    apply = TaskDistributionRandom.apply_middleware
+
+    def add_content(self: TaskDistributionRandom, request: Any) -> Any:
+        """Add a large inline content."""
+        request = apply(self, request)
+        request.json["inputs"] = [
+            {"content": "x" * 32, "path": "/added", "type": "FILE"}
+        ]
+        return request
+
+    monkeypatch.setattr(TaskDistributionRandom, "apply_middleware", add_content)
+    with app.app.app_context():
+        get_custom_config().controllers.post_task.max_inline_content = 16
+    response = client.post(f"{BASE_PATH}/tasks", json=TASK)
+    assert response.status_code == 413
+    assert not relayed(backend)
+    assert mongo_client[DB]["tasks"].count_documents({}) == 0
+    assert mongo_client[DB]["policy_rules"].count_documents({"ptype": "g2"}) == 0
 
 
 @pytest.mark.parametrize("view", ["BASIC", "FULL"])
@@ -1016,7 +1140,7 @@ def test_create_task_not_relayable(
     mongo_client: MongoClient[dict[str, Any]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Tasks that py-tes can't represent fail (`400`); they are stored as such."""
+    """Tasks that py-tes can't represent fail (`400`); they are not kept."""
 
     def task(**kwargs: Any) -> tes.Task:
         """Reject the task, as py-tes does with unknown fields."""
@@ -1026,8 +1150,76 @@ def test_create_task_not_relayable(
     response = client.post(f"{BASE_PATH}/tasks", json=TASK)
     assert response.status_code == 400
     assert not relayed(backend)
+    assert mongo_client[DB]["tasks"].count_documents({}) == 0
+    assert mongo_client[DB]["policy_rules"].count_documents({"ptype": "g2"}) == 0
+
+
+@pytest.mark.parametrize("field", ["inputs", "executors"])
+def test_create_task_unknown_field(
+    client: FlaskClient,
+    backend: type[FakeBackend],
+    mongo_client: MongoClient[dict[str, Any]],
+    field: str,
+) -> None:
+    """Tasks with fields that py-tes doesn't know fail (`400`); not kept."""
+    task = deepcopy(TASK)
+    task.setdefault(field, [{"url": "s3://bucket/x", "path": "/x", "type": "FILE"}])
+    task[field][0]["unknown"] = 1
+    response = client.post(f"{BASE_PATH}/tasks", json=task)
+    assert response.status_code == 400
+    assert not relayed(backend)
+    assert mongo_client[DB]["tasks"].count_documents({}) == 0
+    assert mongo_client[DB]["policy_rules"].count_documents({"ptype": "g2"}) == 0
+
+
+def test_create_task_not_discarded(
+    client: FlaskClient,
+    backend: type[FakeBackend],
+    mongo_client: MongoClient[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Tasks that can't be deleted fail as `SYSTEM_ERROR`, with their error."""
+
+    def delete_one(*args: Any, **kwargs: Any) -> None:
+        """Fail to delete the task."""
+        raise PyMongoError("unavailable")
+
+    monkeypatch.setattr(type(mongo_client[DB]["tasks"]), "delete_one", delete_one)
+    backend.failing.update(BACKENDS)
+    response = client.post(f"{BASE_PATH}/tasks", json=TASK)
+    assert response.status_code == 500
+    assert response.get_json()["detail"] == "No TES instance accepted the task."
     (document,) = mongo_client[DB]["tasks"].find()
     assert document["task"]["state"] == "SYSTEM_ERROR"
+
+
+@pytest.mark.parametrize("view", ["MINIMAL", "BASIC", "FULL"])
+def test_list_tasks_no_original(
+    client: FlaskClient,
+    task_id: str,
+    mongo_client: MongoClient[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+    view: str,
+) -> None:
+    """Listings don't read the original tasks (e.g., with inline contents)."""
+    collection = type(mongo_client[DB]["tasks"])
+    find = collection.find
+    projections: list[Any] = []
+
+    def find_spied(self: Any, *args: Any, **kwargs: Any) -> Any:
+        """Record the projections of the queries."""
+        if self.name == "tasks":
+            projections.append(kwargs.get("projection"))
+        return find(self, *args, **kwargs)
+
+    monkeypatch.setattr(collection, "find", find_spied)
+    response = client.get(f"{BASE_PATH}/tasks?view={view}")
+    assert response.status_code == 200
+    (projection,) = projections
+    monkeypatch.undo()
+    (document,) = mongo_client[DB]["tasks"].find({}, projection)
+    assert "task" in document
+    assert "task_original" not in document
 
 
 def test_create_task_no_body(app: FlaskApp, backend: type[FakeBackend]) -> None:

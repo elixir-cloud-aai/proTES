@@ -322,6 +322,15 @@ protes:
       nginx.ingress.kubernetes.io/proxy-body-size: 8m
 ```
 
+The app has no rate limits of its own, and the chart sets none at the
+proxy. For production, limit the rate of requests per client at the
+ingress controller or Gateway (e.g., with the annotations
+`nginx.ingress.kubernetes.io/limit-rps` and `limit-connections` of
+ingress-nginx, or a rate-limit middleware of Traefik, in
+`protes.ingress.annotations`; see the library chart's documentation, linked
+above), with limits that suit the clients of the deployment (e.g., workflow
+engines that poll many tasks).
+
 ## Celery worker and broker
 
 The worker (`worker`, enabled by default) runs the app's image with
