@@ -1,0 +1,20 @@
+id: framework-free-tasks
+language: python
+severity: error
+message: Web framework import in task processing or middlewares
+note: |
+  Task processing and middlewares get plain data (the task, the request
+  path), so that they run unchanged after the move to Connexion 3 without
+  Flask (FOCA 1.0). Read the request in the controllers
+  (`pro_tes/ga4gh/tes/server.py`) and pass what is needed.
+files:
+  - pro_tes/ga4gh/tes/task_runs.py
+  - pro_tes/middleware/**
+  - pro_tes/plugins/**
+rule:
+  any:
+    - pattern: import $MOD
+    - pattern: from $MOD import $$$NAMES
+constraints:
+  MOD:
+    regex: ^(flask|werkzeug|connexion|starlette)(\.|$)

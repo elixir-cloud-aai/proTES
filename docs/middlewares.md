@@ -40,19 +40,20 @@ its fallback.
 
 A middleware is a class that inherits from
 [`AbstractMiddleware`](reference.md#pro_tes.middleware.abstract_middleware.AbstractMiddleware)
-and implements `apply_middleware()`, which receives the request (a
-`flask.Request`) and returns it, possibly changed. To select TES instances,
-set the key `tes_urls` of the request's JSON body to the list of their URLs,
-in the order in which they are tried; proTES removes the key before it
+and implements `apply_middleware()`, which receives the task (the JSON body
+of `POST /tasks`, as a `dict`) and returns it, possibly changed. Middlewares
+get the task, not the request: they don't depend on the web framework. Each
+middleware gets its own copy of the task, which it may change in place. To
+select TES instances, set the key `tes_urls` of the task to the list of their
+URLs, in the order in which they are tried; proTES removes the key before it
 forwards the task, and skips URLs that are neither in
 `custom.tes.service_list` nor discovered (it has no credentials for them).
 Credentials that middlewares add to the URLs of inputs and outputs are
 removed. Raise an exception if the middleware can't be applied, so that the
-next alternative of the step is tried; changes that the middleware made to
-the JSON body before are undone, so the next alternative gets the body as it
-was before the step. Change the body in place (`request.json`), and don't
-replace it. The task distribution middlewares
-derive from
+next alternative of the step is tried; returning something other than a
+task fails the middleware, too. The changes of a failed middleware are
+discarded: the next alternative gets the task as it was before the step.
+The task distribution middlewares derive from
 [`TaskDistributionBaseClass`](reference.md#pro_tes.plugins.middlewares.task_distribution.base.TaskDistributionBaseClass),
 which sets `tes_urls` from the URLs of `custom.tes.service_list` and the
 discovered TES instances; override its `_set_tes_urls()` to order them

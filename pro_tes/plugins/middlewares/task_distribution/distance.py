@@ -3,9 +3,9 @@
 from ipaddress import ip_address as ip_address_info
 import logging
 from socket import gaierror, gethostbyname
+from typing import Any
 from urllib.parse import quote, urlparse
 
-import flask
 from geopy.distance import geodesic
 from geopy.exc import GeopyError
 from geopy.geocoders import Nominatim
@@ -168,16 +168,16 @@ class TaskDistributionDistance(TaskDistributionBaseClass):
     def _set_tes_urls(
         self,
         tes_urls: list[str],
-        request: flask.Request,
+        task: dict[str, Any],
     ) -> None:
         """Set TES URIs.
 
         Args:
             tes_urls: List of TES URIs.
-            request: Request object to be modified.
+            task: Task to be modified.
         """
         self._set_tes_instances(tes_urls=tes_urls)
-        self._set_task_inputs(request=request)
+        self._set_task_inputs(task=task)
         self._set_locations()
         self._set_distances()
         self.tes_urls = self._rank_tes_instances()
@@ -191,22 +191,19 @@ class TaskDistributionDistance(TaskDistributionBaseClass):
         for url in list(set(tes_urls)):
             self.task_summary.tes_instances[url] = TesInstance()
 
-    def _set_task_inputs(self, request: flask.Request) -> None:
+    def _set_task_inputs(self, task: dict[str, Any]) -> None:
         """Set task inputs.
 
         Args:
-            request: Request object to be modified.
+            task: Task to be modified.
 
         Raises:
-            MiddlewareException: If request has no JSON payload or if no input
-                URIs are available.
+            MiddlewareException: If no input URIs are available.
         """
-        if request.json is None:
-            raise MiddlewareException("Request has no JSON payload.")
         input_uris = list(
             {
                 input_value.get("url")
-                for input_value in request.json.get("inputs", [])
+                for input_value in task.get("inputs", [])
                 if input_value.get("url") is not None
             }
         )

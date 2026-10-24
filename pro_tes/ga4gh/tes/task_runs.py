@@ -9,7 +9,6 @@ from typing import Any, Literal
 from bson.errors import InvalidId
 from bson.objectid import ObjectId
 from celery import uuid
-from flask import request
 from foca import get_collection
 from foca.utils.misc import generate_id
 from pymongo.collection import Collection
@@ -101,7 +100,9 @@ class TaskRuns:
         )
         self.store_logs = self.custom_config.storeLogs.execution_trace
 
-    def create_task(self, **kwargs: Any) -> dict[str, Any]:
+    def create_task(
+        self, task: dict[str, Any] | None, collection: str, **kwargs: Any
+    ) -> dict[str, Any]:
         """Start task.
 
         The user of the request becomes the owner of the task (cf.
@@ -116,6 +117,10 @@ class TaskRuns:
         :py:class:`pro_tes.ga4gh.tes.backends.TesClient`).
 
         Args:
+            task: Task of the request (its JSON body); not changed.
+            collection: Request path of the tasks (e.g.,
+                `/ga4gh/tes/v1/tasks`), the resource of the access control
+                policies of the task's owner.
             **kwargs: Additional keyword arguments passed along with request.
 
         Returns:
@@ -132,8 +137,8 @@ class TaskRuns:
             pro_tes.exceptions.InlineContentTooLarge: The inline contents of
                 the inputs of the task exceed the limit, before or after the
                 middlewares.
-            pro_tes.exceptions.MiddlewareException: The middlewares removed
-                the JSON body.
+            pro_tes.exceptions.MiddlewareException: A middleware step could
+                not be applied.
             pro_tes.exceptions.NoTesInstancesAvailable: No TES instance
                 accepted the task; the task is not kept.
             pro_tes.exceptions.Unauthorized: The user of the request could
@@ -142,37 +147,27 @@ class TaskRuns:
         # create task document
         start_time = utc_now()
         db_document: DbDocument = DbDocument()
-        if request.json is None:
+        if task is None:
             raise BadRequest("Request body is missing")
         owner = get_owner()
-        # request path of the tasks, before middlewares
-        collection = request.path
-        # credentials in URLs are neither stored nor forwarded; removed from
-        # the request itself, so that middlewares don't get them either
+        payload_original: dict[str, Any] = deepcopy(task)
+        # credentials in URLs are neither stored nor forwarded; removed before
+        # the middlewares, so that they don't get them either
         self._handle_url_credentials(
-            payload=request.json,
+            payload=payload_original,
             mode=self.custom_config.controllers.post_task.url_credentials,
         )
         max_inline_content = self.custom_config.controllers.post_task.max_inline_content
-        self._check_inline_content(payload=request.json, limit=max_inline_content)
-        payload_original: dict[str, Any] = deepcopy(request.json)
+        self._check_inline_content(payload=payload_original, limit=max_inline_content)
         db_document.task_original = TesTask(**payload_original)
 
         # apply middlewares
-        mw_handler = MiddlewareHandler()
-        mw_handler.set_middlewares(paths=self.custom_config.middlewares.root)
-        logger.debug("Middlewares registered: %s", mw_handler.middlewares)
-        request_modified = mw_handler.apply_middlewares(request=request)
+        payload, tes_urls = self._apply_middlewares(task=payload_original)
 
         # update task document
-        if request_modified.json is None:
-            raise MiddlewareException("Middlewares removed the request body")
-        payload: dict[str, Any] = request_modified.json
         # also credentials and contents that middlewares added
         self._handle_url_credentials(payload=payload, mode="strip")
         self._check_inline_content(payload=payload, limit=max_inline_content)
-        tes_urls = deepcopy(payload["tes_urls"])
-        del payload["tes_urls"]
         # set by the server (TES), not by clients
         payload["creation_time"] = start_time
         db_document.task = TesTask(**payload)
@@ -290,8 +285,8 @@ class TaskRuns:
                 remote_task_id=remote_task_id,
             )
             try:
-                task: Task = cli.get_task(remote_task_id)
-                task_model_converter = TaskModelConverter(task=task)
+                remote_task: Task = cli.get_task(remote_task_id)
+                task_model_converter = TaskModelConverter(task=remote_task)
                 task_converted: TesTask = task_model_converter.convert_task()
                 state = TesState(task_converted.state)
                 # unless a request to cancel the task changed it meanwhile
@@ -326,10 +321,13 @@ class TaskRuns:
             "Could not forward the task request to any TES instance"
         )
 
-    def list_tasks(self, **kwargs: Any) -> dict[str, Any]:
+    def list_tasks(self, collection: str, **kwargs: Any) -> dict[str, Any]:
         """Return list of the tasks of the user of the request.
 
         Args:
+            collection: Request path of the tasks (e.g.,
+                `/ga4gh/tes/v1/tasks`), the resource of the access control
+                policies of their owners.
             **kwargs: Keyword arguments passed along with request.
 
         Returns:
@@ -344,7 +342,7 @@ class TaskRuns:
         """
         view = kwargs.get("view", DEFAULT_VIEW)
         page_size = self._page_size(page_size=kwargs.get("page_size"), view=view)
-        filter_dict: dict[str, Any] = {**owned_tasks_filter(collection=request.path)}
+        filter_dict: dict[str, Any] = {**owned_tasks_filter(collection=collection)}
 
         # an empty token (of the last page) is taken as no token
         page_token = kwargs.get("page_token")
@@ -506,6 +504,37 @@ class TaskRuns:
                     db_document.worker_id,
                 )
         return {}
+
+    def _apply_middlewares(
+        self, task: dict[str, Any]
+    ) -> tuple[dict[str, Any], list[str]]:
+        """Apply the middlewares of the config to a task.
+
+        The middlewares select the TES backends that the task is forwarded
+        to, as `tes_urls` of the task (cf.
+        :py:class:`pro_tes.plugins.middlewares.task_distribution.base.TaskDistributionBaseClass`).
+
+        Args:
+            task: Task, after the checks of the request; not changed.
+
+        Returns:
+            The task as changed by the middlewares, without `tes_urls`, and
+            the URLs of the TES backends to try, in order.
+
+        Raises:
+            pro_tes.exceptions.MiddlewareException: A middleware step could
+                not be applied, or no middleware selected TES backends.
+        """
+        mw_handler = MiddlewareHandler()
+        mw_handler.set_middlewares(paths=self.custom_config.middlewares.root)
+        logger.debug("Middlewares registered: %s", mw_handler.middlewares)
+        payload = mw_handler.apply_middlewares(task=task)
+        tes_urls = payload.pop("tes_urls", None)
+        if not isinstance(tes_urls, list) or not all(
+            isinstance(url, str) for url in tes_urls
+        ):
+            raise MiddlewareException("Middlewares selected no TES backends")
+        return payload, tes_urls
 
     def _find_task(self, id: str) -> tuple[dict[str, Any], DbDocument]:
         """Get a stored task.

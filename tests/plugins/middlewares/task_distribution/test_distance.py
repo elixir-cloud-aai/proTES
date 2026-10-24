@@ -3,7 +3,6 @@
 import socket
 from typing import Any, ClassVar
 
-import flask
 from geopy.exc import GeocoderServiceError
 import pytest
 import requests
@@ -87,11 +86,9 @@ def rank(inputs: list[dict[str, Any]], tes_urls: list[str] = TES_URLS) -> list[s
     Returns:
         The backends, nearest first.
     """
-    app = flask.Flask(__name__)
-    with app.test_request_context(json={"inputs": inputs}):
-        middleware = TaskDistributionDistance()
-        middleware._set_tes_urls(tes_urls=tes_urls, request=flask.request)
-        return middleware.tes_urls
+    middleware = TaskDistributionDistance()
+    middleware._set_tes_urls(tes_urls=tes_urls, task={"inputs": inputs})
+    return middleware.tes_urls
 
 
 def test_rank(located: list[str]) -> None:
@@ -152,18 +149,6 @@ def test_missing_location() -> None:
         middleware._set_distances()
     with pytest.raises(MiddlewareException, match="Total distance not available"):
         middleware._rank_tes_instances()
-
-
-def test_no_json() -> None:
-    """Requests without a JSON body fail the middleware."""
-    app = flask.Flask(__name__)
-    with (
-        app.test_request_context(data="null", content_type="application/json"),
-        pytest.raises(MiddlewareException, match="no JSON payload"),
-    ):
-        TaskDistributionDistance()._set_tes_urls(
-            tes_urls=TES_URLS, request=flask.request
-        )
 
 
 # Places of IP addresses, as DB-IP's API returns them, and their coordinates,
