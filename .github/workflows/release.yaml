@@ -324,8 +324,9 @@ jobs:
           ref: ${{ needs.prepare.outputs.sha }}
           # All tags and `main`, to determine the highest release
           fetch-depth: 0
-      # For `scripts/release_version.py` and `scripts/release_notes.py`
-      # (standard library only); the Python version of `checks.yaml`
+      # For `scripts/release_version.py`, `scripts/release_notes.py` and
+      # `scripts/release_assets.py` (standard library only); the Python
+      # version of `checks.yaml`
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
@@ -429,6 +430,15 @@ jobs:
           git tag -l 'v*' --merged HEAD \
               | python scripts/release_version.py previous "${TAG}" \
                   --published "${published}" >> "${GITHUB_OUTPUT}"
+      # Assets of a published immutable release (a repository setting) can't
+      # be added, replaced or deleted, so the release is created as a draft,
+      # gets its assets, and is published (with its notes and flags) last.
+      # Re-runs finish a draft of an earlier attempt; a release that is
+      # already published (e.g., by hand) gets no uploads, but must have all
+      # assets, or the step fails, saying what to do (see
+      # `scripts/release_assets.py`); only its title, flags and (curated)
+      # notes are updated, which stay editable. The final edit is the only
+      # one that sets `latest`
       - name: Create release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -460,26 +470,37 @@ jobs:
           if [[ "${PRERELEASE}" == "true" ]]; then
               LATEST=false
           fi
-          # On reruns, complete an existing release instead of failing
-          if gh release view "${TAG}" > /dev/null 2>&1; then
-              gh release upload "${TAG}" dist/* --clobber
-              edit=(--prerelease="${PRERELEASE}" --latest="${LATEST}")
-              if [[ -n "${notes_file}" ]]; then
-                  edit+=(--notes-file "${notes_file}")
+          # All releases of the repository, drafts included, to find those of
+          # the tag
+          releases="$(mktemp)"
+          gh api --paginate --slurp "repos/${GH_REPO}/releases?per_page=100" \
+              > "${releases}"
+          state="$(python scripts/release_assets.py state "${TAG}" \
+              --releases "${releases}" dist/*)"
+          state="${state#state=}"
+          if [[ "${state}" == "none" ]]; then
+              notes=(--generate-notes)
+              if [[ -n "${PREVIOUS}" ]]; then
+                  notes+=(--notes-start-tag "${PREVIOUS}")
               fi
-              gh release edit "${TAG}" "${edit[@]}"
-              exit 0
+              if [[ -n "${notes_file}" ]]; then
+                  notes=(--notes-file "${notes_file}")
+              fi
+              gh release create "${TAG}" \
+                  --draft \
+                  --verify-tag \
+                  --title "${TAG}" \
+                  "${notes[@]}" \
+                  --prerelease="${PRERELEASE}"
+              state=draft
           fi
-          notes=(--generate-notes)
-          if [[ -n "${PREVIOUS}" ]]; then
-              notes+=(--notes-start-tag "${PREVIOUS}")
+          # Uploads to drafts may replace the assets of an earlier attempt
+          if [[ "${state}" == "draft" ]]; then
+              gh release upload "${TAG}" dist/* --clobber
           fi
+          edit=(--title "${TAG}" --prerelease="${PRERELEASE}" --latest="${LATEST}")
           if [[ -n "${notes_file}" ]]; then
-              notes=(--notes-file "${notes_file}")
+              edit+=(--notes-file "${notes_file}")
           fi
-          gh release create "${TAG}" dist/* \
-              --verify-tag \
-              --title "${TAG}" \
-              "${notes[@]}" \
-              --prerelease="${PRERELEASE}" \
-              --latest="${LATEST}"
+          # Publishes a draft
+          gh release edit "${TAG}" "${edit[@]}" --draft=false
