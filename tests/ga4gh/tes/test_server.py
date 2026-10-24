@@ -17,15 +17,14 @@ import requests
 import tes
 
 from pro_tes.config_models import ListTasks
-from pro_tes.exceptions import BackendAuthError, BadRequest
+from pro_tes.exceptions import BackendAuthError, BackendOutcomeUnknown, BadRequest
 from pro_tes.ga4gh.tes import ownership, task_runs
-from pro_tes.ga4gh.tes.models import DbDocument, TesState, TesTask
+from pro_tes.ga4gh.tes.models import DbDocument, TesTask
 from pro_tes.middleware.middleware_handler import MiddlewareHandler
 from pro_tes.plugins.middlewares.task_distribution.random import (
     TaskDistributionRandom,
 )
 from pro_tes.tasks import track_task_progress
-from pro_tes.utils.db import DbDocumentConnector
 from pro_tes.utils.misc import get_custom_config
 from tests.conftest import DB, OTHER_USER, USER
 from tests.ga4gh.tes.conftest import (
@@ -223,6 +222,35 @@ def test_create_task_backend_auth_error(
     response = client.post(f"{BASE_PATH}/tasks", json=TASK)
     assert response.status_code == 200
     assert [config.url for config in backend.clients] == BACKENDS
+
+
+def test_create_task_outcome_unknown(
+    client: FlaskClient,
+    backend: type[FakeBackend],
+    tracked: list[dict[str, Any]],
+    mongo_client: MongoClient[dict[str, Any]],
+    in_order: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Tasks that a backend may have accepted are not sent elsewhere (`502`).
+
+    They are stored as `SYSTEM_ERROR`, with the backend, without remote
+    identifier, and are not tracked.
+    """
+
+    def create_task(self: FakeBackend, task: tes.Task) -> str:
+        """Fail as if the response timed out."""
+        raise BackendOutcomeUnknown("timed out")
+
+    monkeypatch.setattr(backend, "create_task", create_task)
+    response = client.post(f"{BASE_PATH}/tasks", json=TASK)
+    assert response.status_code == 502
+    assert "may have processed it" in response.get_json()["detail"]
+    assert [config.url for config in backend.clients] == [BACKENDS[0]]
+    assert not tracked
+    (document,) = mongo_client[DB]["tasks"].find()
+    assert document["task"]["state"] == "SYSTEM_ERROR"
+    assert document["tes_endpoint"] == {"host": BACKENDS[0], "base_path": ""}
 
 
 def test_task_original_unchanged(
@@ -889,6 +917,35 @@ def test_cancel_task_backend_auth_error(
     assert stored(mongo_client, task_id)["task"]["state"] == "RUNNING"
 
 
+@pytest.mark.parametrize(
+    "error, status",
+    [(BackendOutcomeUnknown("timed out"), 502), (requests.HTTPError("400"), 500)],
+)
+def test_cancel_task_backend_error(
+    client: FlaskClient,
+    task_id: str,
+    backend: type[FakeBackend],
+    mongo_client: MongoClient[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+    error: Exception,
+    status: int,
+) -> None:
+    """Tasks stay as they are if their backend doesn't confirm the cancel.
+
+    If the backend may have canceled the task, the request fails with `502`.
+    """
+
+    def cancel_task(self: FakeBackend, task_id: str) -> None:
+        """Fail."""
+        raise error
+
+    monkeypatch.setattr(backend, "cancel_task", cancel_task)
+    set_state(mongo_client, task_id, "RUNNING")
+    response = client.post(f"{BASE_PATH}/tasks/{task_id}:cancel")
+    assert response.status_code == status
+    assert stored(mongo_client, task_id)["task"]["state"] == "RUNNING"
+
+
 def test_create_task_no_basic_auth(
     client: FlaskClient, backend: type[FakeBackend], tracked: list[dict[str, Any]]
 ) -> None:
@@ -1090,29 +1147,35 @@ def test_forward_stored_no_logs(app: FlaskApp) -> None:
 
 
 def test_forward_state_changed(
-    app: FlaskApp,
-    task_id: str,
+    client: FlaskClient,
     backend: type[FakeBackend],
     mongo_client: MongoClient[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """States of the backend don't replace states set in the meantime.
 
-    E.g., of a request that canceled the task while it was stored with its
-    backend.
+    E.g., of a request that canceled the task after it was stored with its
+    backend, while its state was got.
+
+    Args:
+        client: Client of the app.
+        backend: Fake backends.
+        mongo_client: Client of the database.
+        monkeypatch: Pytest fixture.
     """
-    set_state(mongo_client, task_id, "CANCELED")
-    worker_id = stored(mongo_client, task_id)["worker_id"]
-    with app.app.app_context():
-        document = task_runs.TaskRuns()._update_doc_in_db(
-            db_connector=DbDocumentConnector(
-                collection=mongo_client[DB]["tasks"], worker_id=worker_id
-            ),
-            tes_url=BACKENDS[0],
-            remote_task_id="remote-1",
-            state=TesState.QUEUED,
-        )
-    assert document.task.state == "CANCELED"
-    assert stored(mongo_client, task_id)["task"]["state"] == "CANCELED"
+
+    def get_task(self: FakeBackend, task_id: str, **kwargs: Any) -> tes.Task:
+        """Serve the task as queued, after it was canceled meanwhile."""
+        (document,) = mongo_client[DB]["tasks"].find()
+        assert document["tes_endpoint"]["task_id"] == task_id
+        set_state(mongo_client, document["task"]["id"], "CANCELED")
+        return tes.Task(id=task_id, state="QUEUED")
+
+    monkeypatch.setattr(backend, "get_task", get_task)
+    response = client.post(f"{BASE_PATH}/tasks", json=TASK)
+    assert response.status_code == 200
+    document = stored(mongo_client, response.get_json()["id"])
+    assert document["task"]["state"] == "CANCELED"
 
 
 def test_task_not_stored(

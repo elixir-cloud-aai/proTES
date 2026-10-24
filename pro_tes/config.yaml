@@ -221,10 +221,6 @@ custom:
       task_id:
         charset: ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789
         length: 6
-      timeout:
-        post: null
-        poll: 2
-        job: null
       polling:
         wait: 3
         attempts: 100
@@ -237,10 +233,6 @@ custom:
     list_tasks:
       default_page_size: 256
       max_page_size: 2047
-  celery:
-    monitor:
-      timeout: 0.1
-    message_maxsize: 16777216
 
   # TES backends that tasks may be forwarded to, and how proTES authenticates
   # at them: with its own access token (`auth: client_credentials`, the
@@ -298,6 +290,14 @@ custom:
       auth_method: client_secret_basic
       refresh_before: 60
       timeout: 10
+    # Timeout of requests to TES backends, in seconds (of connecting: at most
+    # 5 seconds). Tasks are created and canceled with a single request each:
+    # if a backend doesn't answer in time, the task is not sent to another
+    # backend (it may run already), but fails with `SYSTEM_ERROR`. Allow for
+    # slow backends, but keep requests to create tasks (which may try several
+    # backends) below the read timeout of a reverse proxy in front of proTES
+    # (see `docs/configuration.md`)
+    timeout: 15
 
   storeLogs:
     execution_trace: True

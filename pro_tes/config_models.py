@@ -6,6 +6,7 @@ from urllib.parse import SplitResult, urlsplit
 from foca.utils.urls import normalize_url
 from pydantic import (
     BaseModel,
+    ConfigDict,
     Field,
     PositiveInt,
     RootModel,
@@ -14,7 +15,17 @@ from pydantic import (
 )
 
 
-class DB(BaseModel):
+class ConfigModel(BaseModel):
+    """Base of the models of the custom configuration: unknown keys are errors.
+
+    So that misspelled or removed keys (e.g., in config overlays) stop the
+    app and the Celery worker on startup, instead of being ignored.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class DB(ConfigModel):
     """DB config for post_task.
 
     Args:
@@ -27,7 +38,7 @@ class DB(BaseModel):
     insert_attempts: int = 10
 
 
-class TaskID(BaseModel):
+class TaskID(ConfigModel):
     """Task ID config.
 
     Args:
@@ -43,26 +54,7 @@ class TaskID(BaseModel):
     length: int = 6
 
 
-class Timeout(BaseModel):
-    """Timeout config.
-
-    Args:
-        post: Timeout for POST requests (None disables timeout).
-        poll: Timeout for polling.
-        job: Timeout for job execution (None disables timeout).
-
-    Attributes:
-        post: Timeout for POST requests (None disables timeout).
-        poll: Timeout for polling.
-        job: Timeout for job execution (None disables timeout).
-    """
-
-    post: int | None = None
-    poll: int = 2
-    job: int | None = None
-
-
-class Polling(BaseModel):
+class Polling(ConfigModel):
     """Polling config.
 
     Args:
@@ -78,13 +70,12 @@ class Polling(BaseModel):
     attempts: int = 100
 
 
-class PostTask(BaseModel):
+class PostTask(ConfigModel):
     """Configuration for POST /task.
 
     Args:
         db: DB insert behavior.
         task_id: Task ID generation settings.
-        timeout: Timeout settings.
         polling: Polling behavior.
         url_credentials: What happens to tasks with credentials in the URLs
             of their inputs or outputs (`https://user:password@host/...`):
@@ -94,7 +85,6 @@ class PostTask(BaseModel):
     Attributes:
         db: DB insert behavior.
         task_id: Task ID generation settings.
-        timeout: Timeout settings.
         polling: Polling behavior.
         url_credentials: What happens to tasks with credentials in the URLs
             of their inputs or outputs (`https://user:password@host/...`):
@@ -104,12 +94,11 @@ class PostTask(BaseModel):
 
     db: DB = DB()
     task_id: TaskID = TaskID()
-    timeout: Timeout = Timeout()
     polling: Polling = Polling()
     url_credentials: Literal["reject", "strip"] = "reject"
 
 
-class ListTasks(BaseModel):
+class ListTasks(ConfigModel):
     """Configuration for GET /tasks.
 
     Defaults are those of the TES specification (pages of fewer than 2048
@@ -150,52 +139,20 @@ class ListTasks(BaseModel):
         return self
 
 
-class Monitor(BaseModel):
-    """Celery monitor settings.
-
-    Args:
-        timeout: Timeout to wait for Celery monitoring.
-
-    Attributes:
-        timeout: Timeout to wait for Celery monitoring.
-    """
-
-    timeout: float = 0.1
-
-
-class Celery(BaseModel):
-    """Celery configuration.
-
-    Args:
-        monitor: Monitor settings.
-        message_maxsize: Maximum allowed message size.
-
-    Attributes:
-        monitor: Monitor settings.
-        message_maxsize: Maximum allowed message size.
-    """
-
-    monitor: Monitor = Monitor()
-    message_maxsize: int = 16777216
-
-
-class Controllers(BaseModel):
+class Controllers(ConfigModel):
     """Controller configurations.
 
     Args:
         post_task: Settings for POST /task.
         list_tasks: Settings for GET /tasks.
-        celery: Celery background task settings.
 
     Attributes:
         post_task: Settings for POST /task.
         list_tasks: Settings for GET /tasks.
-        celery: Celery background task settings.
     """
 
     post_task: PostTask = PostTask()
     list_tasks: ListTasks = ListTasks()
-    celery: Celery = Celery()
 
 
 def split_server_url(url: str, name: str) -> SplitResult:
@@ -223,7 +180,7 @@ def split_server_url(url: str, name: str) -> SplitResult:
     return parts
 
 
-class BasicCredentials(BaseModel):
+class BasicCredentials(ConfigModel):
     """Names of the environment variables with HTTP Basic credentials.
 
     The credentials themselves are never part of the config.
@@ -241,7 +198,7 @@ class BasicCredentials(BaseModel):
     password_env: str = Field(min_length=1)
 
 
-class TesBackend(BaseModel):
+class TesBackend(ConfigModel):
     """TES backend that tasks may be forwarded to.
 
     Args:
@@ -296,7 +253,7 @@ class TesBackend(BaseModel):
         return self
 
 
-class ClientCredentials(BaseModel):
+class ClientCredentials(ConfigModel):
     """Client of proTES at its identity provider (OAuth 2.0 client credentials).
 
     proTES gets its own access tokens with the client credentials grant (RFC
@@ -362,7 +319,7 @@ class DiscoveredBackend(TesBackend):
     service_id: str
 
 
-class Discovery(BaseModel):
+class Discovery(ConfigModel):
     """Discovery of TES backends in a service registry.
 
     The registry implements the GA4GH Service Registry API, with the list of
@@ -444,7 +401,7 @@ class Discovery(BaseModel):
         return normalize_url(value, name="Registry URLs")
 
 
-class Tes(BaseModel):
+class Tes(ConfigModel):
     """TES backend configuration.
 
     Args:
@@ -456,6 +413,12 @@ class Tes(BaseModel):
             `https`.
         client_credentials: Client of proTES at its identity provider, for
             the backends with `auth: client_credentials`.
+        timeout: Timeout of requests to TES backends, in seconds (of
+            connecting, at most 5 seconds); requests to create or cancel
+            tasks are not sent again after timeouts, so it should be long
+            enough for slow backends, but short enough that requests to
+            create tasks (which may try several backends) stay below the
+            read timeout of a reverse proxy in front of proTES.
 
     Attributes:
         service_list: TES backends that tasks may be forwarded to.
@@ -466,12 +429,14 @@ class Tes(BaseModel):
             `https`.
         client_credentials: Client of proTES at its identity provider, for
             the backends with `auth: client_credentials`.
+        timeout: Timeout of requests to TES backends, in seconds.
     """
 
     service_list: list[TesBackend] = []
     discovery: Discovery = Discovery()
     url_schemes: list[Literal["https", "http"]] = Field(default=["https"], min_length=1)
     client_credentials: ClientCredentials = ClientCredentials()
+    timeout: PositiveInt = 15
 
     @model_validator(mode="after")
     def check_urls(self) -> "Tes":
@@ -517,7 +482,7 @@ class Tes(BaseModel):
         return self
 
 
-class StoreLogs(BaseModel):
+class StoreLogs(ConfigModel):
     """Logging configuration.
 
     Args:
@@ -554,7 +519,7 @@ class Middlewares(RootModel[list[list[str]]]):
     ]
 
 
-class AccessControl(BaseModel):
+class AccessControl(ConfigModel):
     """Access control settings of the app.
 
     Args:
@@ -571,21 +536,21 @@ class AccessControl(BaseModel):
     require_admin: bool = True
 
 
-class CustomConfig(BaseModel):
+class CustomConfig(ConfigModel):
     """Custom app configuration.
 
     Args:
         access_control: Access control settings of the app.
         controllers: All controller-related config.
         tes: TES service list and defaults.
-        store_logs: Logging preferences.
+        storeLogs: Logging preferences (camelCase, unlike other keys).
         middlewares: Middleware class paths.
 
     Attributes:
         access_control: Access control settings of the app.
         controllers: All controller-related config.
         tes: TES service list and defaults.
-        store_logs: Logging preferences.
+        storeLogs: Logging preferences (camelCase, unlike other keys).
         middlewares: Middleware class paths.
     """
 

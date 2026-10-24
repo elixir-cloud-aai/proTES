@@ -16,6 +16,15 @@ The service info is configured in `service_info.service` (see [Service
 info](configuration.md#service-info)); it is no longer stored in the
 database, so the `service_info` collection can be dropped.
 
+Unknown keys in `custom` are errors: the app and the Celery worker refuse
+to start with them, naming them, instead of ignoring them (e.g., a
+misspelled `service_list`, which left the list of TES instances empty).
+Remove the keys that had no effect from config overlays: all of
+`custom.celery` (`custom.celery.monitor.timeout` and
+`custom.celery.message_maxsize`) and of `custom.controllers.celery`
+(`custom.controllers.celery.monitor.timeout` and
+`custom.controllers.celery.message_maxsize`).
+
 API specifications (`api.specs`) and access control rules
 (`security.access_control.policies`) of the base config are named entries
 (the spec `tes`; rules `users-create-list-tasks`,
@@ -157,6 +166,20 @@ URL with an entry, e.g., `- url: https://tes.example.org`, and choose its
   names of the environment variables that hold them (`basic.username_env`
   and `basic.password_env`), set for the app and the Celery worker;
 - `none` for TES instances that need no credentials.
+
+proTES creates, gets and cancels tasks with a single request each, to
+`<url>/ga4gh/tes/v1` only (earlier versions also tried `<url>/v1` and
+`<url>`, and the next path or TES instance after timeouts and server
+errors, so that TES instances could get a task more than once). TES
+instances must serve the API at `/ga4gh/tes/v1` of their configured URL;
+requests to create and cancel tasks don't follow redirects.
+Tasks that a TES instance may have accepted without confirming it fail
+with `SYSTEM_ERROR` and `502 Bad Gateway`, instead of being sent to the next
+TES instance (see [TES instances](configuration.md#tes-instances)).
+Requests to TES instances time out after `custom.tes.timeout` seconds
+(default: 15, instead of 5); `custom.controllers.post_task.timeout`
+(`post`, `poll` and `job`), which had no effect, was removed: remove it
+from config overlays.
 
 The base config no longer lists public TES instances; deployments list
 their own. URLs of TES instances must use `https`, unless

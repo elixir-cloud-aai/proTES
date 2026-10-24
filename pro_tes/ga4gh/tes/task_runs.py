@@ -20,6 +20,7 @@ from tes.models import Task
 from pro_tes.config_models import CustomConfig
 from pro_tes.exceptions import (
     BackendAuthError,
+    BackendOutcomeUnknown,
     BadRequest,
     MiddlewareException,
     NoTesInstancesAvailable,
@@ -105,6 +106,11 @@ class TaskRuns:
         :py:mod:`pro_tes.ga4gh.tes.ownership`), also if it can't be
         forwarded.
 
+        Tasks are sent to the TES instances in turn, until one accepts the
+        task. They are sent to the next one only if a TES instance certainly
+        did not accept the task, never if it may have (cf.
+        :py:class:`pro_tes.ga4gh.tes.backends.TesClient`).
+
         Args:
             **kwargs: Additional keyword arguments passed along with request.
 
@@ -112,9 +118,15 @@ class TaskRuns:
             Task identifier.
 
         Raises:
+            pro_tes.exceptions.BackendOutcomeUnknown: A TES instance may
+                have accepted the task, but did not confirm it; the task is
+                stored with the state `SYSTEM_ERROR`, and with the TES
+                instance, without remote identifier.
             pro_tes.exceptions.BadRequest: The request has no JSON body.
             pro_tes.exceptions.MiddlewareException: The middlewares removed
                 the JSON body.
+            pro_tes.exceptions.NoTesInstancesAvailable: No TES instance
+                accepted the task.
             pro_tes.exceptions.Unauthorized: The user of the request could
                 not be identified.
         """
@@ -221,7 +233,24 @@ class TaskRuns:
             task_relayed = self._relayed_task(task=payload_marshalled)
             try:
                 remote_task_id = cli.create_task(task_relayed)
+            except BackendOutcomeUnknown as exc:
+                # the backend may run the task, so it is not sent elsewhere
+                logger.error(
+                    "Task '%s' may or may not have been accepted by TES endpoint"
+                    " hosted at: %s; not sent to other TES endpoints. Original"
+                    " error message: '%s: %s'",
+                    db_document.task.id,
+                    url,
+                    type(exc).__name__,
+                    exc,
+                )
+                db_connector.upsert_fields_in_root_object(
+                    root="tes_endpoint", host=tes_url, base_path=""
+                )
+                db_connector.update_task_state(state=TesState.SYSTEM_ERROR.value)
+                raise
             except (requests.RequestException, BackendAuthError) as exc:
+                # the backend did not accept the task (cf. `TesClient`)
                 logger.warning(
                     "Task '%s' could not be sent to TES endpoint hosted at: %s."
                     " Original error message: '%s: %s'",
@@ -239,15 +268,26 @@ class TaskRuns:
                 url,
                 remote_task_id,
             )
-            state: TesState | None = None
+            # the task is stored with its backend first, so that it is
+            # cancelable even if the rest fails (e.g., the instance stops)
+            db_document = self._update_doc_in_db(
+                db_connector=db_connector,
+                tes_url=tes_url,
+                remote_task_id=remote_task_id,
+            )
             try:
                 task: Task = cli.get_task(remote_task_id)
                 task_model_converter = TaskModelConverter(task=task)
                 task_converted: TesTask = task_model_converter.convert_task()
                 state = TesState(task_converted.state)
-            except (requests.RequestException, BackendAuthError, ValueError) as exc:
-                # e.g., invalid states (`ValueError`): the task is stored with
-                # its backend, as it was accepted, and tracked
+                # unless a request to cancel the task changed it meanwhile
+                if db_connector.update_task_state(
+                    state=state.value, if_state=TesState.UNKNOWN.value
+                ):
+                    db_document.task.state = state
+            except Exception as exc:
+                # the task is tracked anyway, also if its backend serves it
+                # invalid (e.g., with an unknown state)
                 logger.error(
                     "Task '%s' info could not be retrieved from TES endpoint"
                     " hosted at: %s. Original error message: '%s: %s'",
@@ -256,13 +296,6 @@ class TaskRuns:
                     type(exc).__name__,
                     exc,
                 )
-            # update task_logs, tes_endpoint and task in db
-            db_document = self._update_doc_in_db(
-                db_connector=db_connector,
-                tes_url=tes_url,
-                remote_task_id=remote_task_id,
-                state=state,
-            )
             task__track_task_progress.apply_async(
                 None,
                 {
@@ -385,11 +418,19 @@ class TaskRuns:
             Task identifier.
 
         Raises:
+            pro_tes.exceptions.BackendAuthError: No credentials for the TES
+                instance of the task are available.
+            pro_tes.exceptions.BackendNotConfigured: The TES instance of the
+                task is no longer configured.
+            pro_tes.exceptions.BackendOutcomeUnknown: The TES instance may
+                have canceled the task, but did not confirm it.
             pro_tes.exceptions.TaskNotCancelable: The task has not
                 finished, but its identifier at its TES instance is unknown
                 (e.g., it was not forwarded yet).
             pro_tes.exceptions.TaskNotFound: The requested task is not
                 available.
+            requests.RequestException: The TES instance was not reached, or
+                rejected the request.
         """
         document = self.db_client.find_one(
             filter={"task.id": id},
@@ -622,7 +663,6 @@ class TaskRuns:
         db_connector: DbDocumentConnector,
         tes_url: str,
         remote_task_id: str,
-        state: TesState | None = None,
     ) -> DbDocument:
         """Set end time, task metadata in `TesTask.logs`, and update document.
 
@@ -630,10 +670,6 @@ class TaskRuns:
             db_connector: The database connector.
             tes_url: The TES URL where the task if forwarded.
             remote_task_id: Task identifier at the remote TES instance.
-            state: State of the task at the remote TES instance, if known;
-                stored as the task's state unless that changed from
-                `UNKNOWN` in the meantime (e.g., the task was canceled); else
-                the state is kept until the task is tracked.
 
         Returns:
             The updated database document.
@@ -671,10 +707,6 @@ class TaskRuns:
         task = db_document.model_dump(mode="json", exclude_none=True)["task"]
         del task["state"]
         db_document = db_connector.upsert_fields_in_root_object(root="task", **task)
-        if state is not None and db_connector.update_task_state(
-            state=state.value, if_state=TesState.UNKNOWN.value
-        ):
-            db_document.task.state = state
         logger.debug("Task '%s' inserted to database", db_document.task)
         return db_document
 
