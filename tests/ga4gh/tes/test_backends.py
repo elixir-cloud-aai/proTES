@@ -1,9 +1,11 @@
 """Tests of the clients of TES backends and their credentials."""
 
 from collections.abc import Callable, Iterator
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import socket
 import ssl
-from typing import Any
+import threading
+from typing import Any, ClassVar
 
 from connexion import FlaskApp
 import pydantic
@@ -35,6 +37,8 @@ BACKEND_URL = "https://tes.example.org"
 # Fictitious client of proTES
 CLIENT_ID = "protes client"
 CLIENT_SECRET = "s3cret:&"  # noqa: S105 (fictitious)
+# Connecting of sockets, as before the tests block network access
+_CONNECT = socket.socket.connect
 
 
 class FakeResponse:
@@ -398,7 +402,7 @@ def test_client_token(configured: None, idp: FakeIdp) -> None:
         assert kwargs["headers"]["Authorization"] == "Bearer token-1"
         assert "auth" not in kwargs
         assert kwargs["data"] == "{}"
-        assert kwargs["timeout"] == get_custom_config().tes.timeout == 30
+        assert kwargs["timeout"] == (5, 15)
 
 
 def test_client_basic(
@@ -610,13 +614,16 @@ def wrapped(reason: Exception, error: type[requests.RequestException]) -> Except
 
 
 def test_client_timeout(configured: None) -> None:
-    """Requests to backends time out after `custom.tes.timeout` seconds."""
+    """Requests to backends time out after `custom.tes.timeout` seconds.
+
+    Connecting times out after 5 seconds, at most.
+    """
     get_custom_config().tes.timeout = 120
-    assert request_kwargs(NONE_URL)["timeout"] == 120
+    assert request_kwargs(NONE_URL)["timeout"] == (5, 120)
     client = backends.TesClient(
-        url=BACKEND_URL, backend=TesBackend(url=BACKEND_URL, auth="none"), timeout=7
+        url=BACKEND_URL, backend=TesBackend(url=BACKEND_URL, auth="none"), timeout=3
     )
-    assert client._request_params()["timeout"] == 7
+    assert client._request_params()["timeout"] == (3, 3)
 
 
 def test_create_task_once(post: Callable[..., FakePost]) -> None:
@@ -627,15 +634,115 @@ def test_create_task_once(post: Callable[..., FakePost]) -> None:
     ((url, kwargs),) = fake.sent
     assert url == f"{NONE_URL}/ga4gh/tes/v1/tasks"
     assert kwargs["data"] == TASK.as_json()
-    assert kwargs["timeout"] == 30
+    assert kwargs["timeout"] == (5, 15)
+    assert kwargs["allow_redirects"] is False
 
 
 def test_cancel_task_once(post: Callable[..., FakePost]) -> None:
     """Tasks are canceled with a single request; their identifier is quoted."""
     fake = post(FakeResponse({}))
     backends.create_client(host=NONE_URL).cancel_task("remote/1?x")
-    ((url, _),) = fake.sent
+    ((url, kwargs),) = fake.sent
     assert url == f"{NONE_URL}/ga4gh/tes/v1/tasks/remote%2F1%3Fx:cancel"
+    assert "data" not in kwargs
+    assert kwargs["allow_redirects"] is False
+
+
+@pytest.fixture
+def loopback(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Allow connections to local servers (the tests block network access).
+
+    Requests go there directly, also behind proxies.
+    """
+    blocked = socket.socket.connect
+
+    def connect(sock: socket.socket, address: Any) -> None:
+        """Connect to local addresses only (else as blocked)."""
+        if isinstance(address, tuple) and address[0] == "127.0.0.1":
+            _CONNECT(sock, address)
+            return
+        blocked(sock, address)
+
+    monkeypatch.setattr(socket.socket, "connect", connect)
+    for name in ("NO_PROXY", "no_proxy"):
+        monkeypatch.setenv(name, "127.0.0.1")
+
+
+class RedirectingHandler(BaseHTTPRequestHandler):
+    """Handler of a local server that redirects `POST` requests.
+
+    `GET` requests (e.g., of followed redirects) get a list of tasks, as if
+    they were confirmations.
+
+    Attributes:
+        methods: Methods of the requests received.
+    """
+
+    methods: ClassVar[list[str]] = []
+
+    def do_POST(self) -> None:
+        """Redirect."""
+        self.methods.append("POST")
+        self.send_response(302)
+        self.send_header("Location", "/login")
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+    def do_GET(self) -> None:
+        """Answer with an empty list of tasks."""
+        self.methods.append("GET")
+        body = b'{"id": "login", "tasks": []}'
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, format: str, *args: Any) -> None:
+        """Log nothing."""
+
+
+def test_post_redirect_not_followed(
+    configured: None, loopback: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Redirects of `POST` requests are not followed, but are rejections.
+
+    E.g., of authentication gateways, whose login page would be taken for
+    a confirmation.
+    """
+    monkeypatch.setattr(RedirectingHandler, "methods", [])
+    server = ThreadingHTTPServer(("127.0.0.1", 0), RedirectingHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        url = f"http://127.0.0.1:{server.server_address[1]}"
+        get_custom_config().tes.service_list.append(TesBackend(url=url, auth="none"))
+        client = backends.create_client(host=url)
+        with pytest.raises(requests.HTTPError, match="status 302"):
+            client.create_task(TASK)
+        with pytest.raises(requests.HTTPError, match="status 302"):
+            client.cancel_task("remote-1")
+    finally:
+        server.shutdown()
+        server.server_close()
+    assert RedirectingHandler.methods == ["POST", "POST"]
+
+
+def test_get_task_once(
+    configured: None, idp: FakeIdp, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Tasks are got with a single request; their identifier is quoted."""
+    sent: list[str] = []
+
+    def get(url: str, **kwargs: Any) -> FakeResponse:
+        """Record the request, and fail."""
+        sent.append(url)
+        return FakeResponse({}, status_code=404)
+
+    monkeypatch.setattr(backends.requests, "get", get)
+    with pytest.raises(requests.HTTPError):
+        backends.create_client(host=NONE_URL).get_task("remote/1")
+    assert sent == [f"{NONE_URL}/ga4gh/tes/v1/tasks/remote%2F1"]
 
 
 @pytest.mark.parametrize("status", [500, 502, 503, 504])
@@ -650,12 +757,27 @@ def test_post_server_error(post: Callable[..., FakePost], status: int) -> None:
     assert len(fake.sent) == 2
 
 
+def create(client: backends.TesClient) -> None:
+    """Create a task."""
+    client.create_task(TASK)
+
+
+def cancel(client: backends.TesClient) -> None:
+    """Cancel a task."""
+    client.cancel_task("remote-1")
+
+
 @pytest.mark.parametrize("status", [302, 400, 401, 403, 404])
-def test_post_rejected(post: Callable[..., FakePost], status: int) -> None:
+@pytest.mark.parametrize("action", [create, cancel])
+def test_post_rejected(
+    post: Callable[..., FakePost],
+    status: int,
+    action: Callable[[backends.TesClient], None],
+) -> None:
     """Other errors (and redirects) are rejections; requests aren't sent again."""
     fake = post(FakeResponse({}, status_code=status))
     with pytest.raises(requests.HTTPError, match=f"status {status}") as info:
-        backends.create_client(host=NONE_URL).create_task(TASK)
+        action(backends.create_client(host=NONE_URL))
     assert info.value.response.status_code == status
     assert len(fake.sent) == 1
 
@@ -681,13 +803,19 @@ def test_create_task_no_id(post: Callable[..., FakePost], body: Any) -> None:
             SSLError(ssl.SSLCertVerificationError("certificate verify failed")),
             requests.exceptions.SSLError,
         ),
+        requests.exceptions.InvalidHeader("invalid header"),
     ],
 )
-def test_post_not_sent(post: Callable[..., FakePost], error: Exception) -> None:
+@pytest.mark.parametrize("action", [create, cancel])
+def test_post_not_sent(
+    post: Callable[..., FakePost],
+    error: Exception,
+    action: Callable[[backends.TesClient], None],
+) -> None:
     """Requests that certainly weren't received fail as they are."""
     fake = post(error)
     with pytest.raises(type(error)):
-        backends.create_client(host=NONE_URL).create_task(TASK)
+        action(backends.create_client(host=NONE_URL))
     assert len(fake.sent) == 1
 
 
@@ -723,13 +851,16 @@ def test_post_no_credentials(post: Callable[..., FakePost]) -> None:
     assert not fake.sent
 
 
-def test_not_sent_refused() -> None:
-    """Refused connections are recognized, as `requests` raises them."""
+def test_not_sent_refused(loopback: None) -> None:
+    """Refused connections are recognized, as `requests` raises them.
+
+    The port is free, unless another process took it in the meantime.
+    """
     with socket.socket() as sock:
         # a port that nothing listens on
         sock.bind(("127.0.0.1", 0))
         port = sock.getsockname()[1]
-        with pytest.raises(requests.ConnectionError) as info:
+        with pytest.raises(requests.ConnectionError, match="refused") as info:
             requests.post(f"http://127.0.0.1:{port}/", timeout=5)
     assert backends.not_sent(info.value)
 

@@ -105,16 +105,16 @@ class TaskRuns:
         :py:mod:`pro_tes.ga4gh.tes.ownership`), also if it can't be
         forwarded.
 
+        Tasks are sent to the TES instances in turn, until one accepts the
+        task. They are sent to the next one only if a TES instance certainly
+        did not accept the task, never if it may have (cf.
+        :py:class:`pro_tes.ga4gh.tes.backends.TesClient`).
+
         Args:
             **kwargs: Additional keyword arguments passed along with request.
 
         Returns:
             Task identifier.
-
-        Tasks are sent to the TES instances in turn, until one accepts the
-        task. They are sent to the next one only if a TES instance certainly
-        did not accept the task, never if it may have (cf.
-        :py:class:`pro_tes.ga4gh.tes.backends.TesClient`).
 
         Raises:
             pro_tes.exceptions.BackendOutcomeUnknown: A TES instance may
@@ -406,8 +406,16 @@ class TaskRuns:
             Task identifier.
 
         Raises:
+            pro_tes.exceptions.BackendAuthError: No credentials for the TES
+                instance of the task are available.
+            pro_tes.exceptions.BackendNotConfigured: The TES instance of the
+                task is no longer configured.
+            pro_tes.exceptions.BackendOutcomeUnknown: The TES instance may
+                have canceled the task, but did not confirm it.
             pro_tes.exceptions.TaskNotFound: The requested task is not
                 available.
+            requests.RequestException: The TES instance was not reached, or
+                rejected the request.
             ValueError: The task is cancelable, but its identifier at its
                 TES instance is unknown.
         """

@@ -434,9 +434,12 @@ class Tes(BaseModel):
             `https`.
         client_credentials: Client of proTES at its identity provider, for
             the backends with `auth: client_credentials`.
-        timeout: Timeout of requests to TES backends, in seconds; requests
-            to create or cancel tasks are not sent again after timeouts, so
-            it should be long enough for slow backends.
+        timeout: Timeout of requests to TES backends, in seconds (of
+            connecting, at most 5 seconds); requests to create or cancel
+            tasks are not sent again after timeouts, so it should be long
+            enough for slow backends, but shorter than the timeouts of
+            requests to proTES (e.g., Gunicorn's graceful timeout, and the
+            read timeout of a reverse proxy).
 
     Attributes:
         service_list: TES backends that tasks may be forwarded to.
@@ -454,7 +457,7 @@ class Tes(BaseModel):
     discovery: Discovery = Discovery()
     url_schemes: list[Literal["https", "http"]] = Field(default=["https"], min_length=1)
     client_credentials: ClientCredentials = ClientCredentials()
-    timeout: PositiveInt = 30
+    timeout: PositiveInt = 15
 
     @model_validator(mode="after")
     def check_urls(self) -> "Tes":

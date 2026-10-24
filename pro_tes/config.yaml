@@ -294,11 +294,14 @@ custom:
       auth_method: client_secret_basic
       refresh_before: 60
       timeout: 10
-    # Timeout of requests to TES backends, in seconds. Tasks are created and
-    # canceled with a single request each: if a backend doesn't answer in
-    # time, the task is not sent to another backend (it may run already),
-    # but fails with `SYSTEM_ERROR`. Allow for slow backends
-    timeout: 30
+    # Timeout of requests to TES backends, in seconds (of connecting: at most
+    # 5 seconds). Tasks are created and canceled with a single request each:
+    # if a backend doesn't answer in time, the task is not sent to another
+    # backend (it may run already), but fails with `SYSTEM_ERROR`. Allow for
+    # slow backends, but stay below the timeouts of requests to proTES
+    # (Gunicorn's graceful timeout, 20 seconds in the chart, and the read
+    # timeout of a reverse proxy)
+    timeout: 15
 
   storeLogs:
     execution_trace: True

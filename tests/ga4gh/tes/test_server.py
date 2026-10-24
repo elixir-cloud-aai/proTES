@@ -851,6 +851,35 @@ def test_cancel_task_backend_auth_error(
     assert stored(mongo_client, task_id)["task"]["state"] == "RUNNING"
 
 
+@pytest.mark.parametrize(
+    "error, status",
+    [(BackendOutcomeUnknown("timed out"), 502), (requests.HTTPError("400"), 500)],
+)
+def test_cancel_task_backend_error(
+    client: FlaskClient,
+    task_id: str,
+    backend: type[FakeBackend],
+    mongo_client: MongoClient[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+    error: Exception,
+    status: int,
+) -> None:
+    """Tasks stay as they are if their backend doesn't confirm the cancel.
+
+    If the backend may have canceled the task, the request fails with `502`.
+    """
+
+    def cancel_task(self: FakeBackend, task_id: str) -> None:
+        """Fail."""
+        raise error
+
+    monkeypatch.setattr(backend, "cancel_task", cancel_task)
+    set_state(mongo_client, task_id, "RUNNING")
+    response = client.post(f"{BASE_PATH}/tasks/{task_id}:cancel")
+    assert response.status_code == status
+    assert stored(mongo_client, task_id)["task"]["state"] == "RUNNING"
+
+
 def test_create_task_no_basic_auth(
     client: FlaskClient, backend: type[FakeBackend], tracked: list[dict[str, Any]]
 ) -> None:
