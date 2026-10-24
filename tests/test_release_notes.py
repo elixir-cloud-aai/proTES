@@ -469,6 +469,8 @@ def test_first_release_notes() -> None:
             _pull(7, "2026-01-04T00:00:00Z", None),
             # Merged, but without a merge commit
             {**_pull(8, "2026-01-05T00:00:00Z", "e"), "merge_commit_sha": None},
+            # Repeated on the next page (listed once)
+            _pull(3, "2026-01-03T00:00:00Z", "b"),
         ],
     ]
     pulls = release_notes.merged_pull_requests(pages)

@@ -456,7 +456,9 @@ def merged_pull_requests(pages: object) -> list[PullRequest]:
 
     Returns:
         The pull requests that were merged (`merged_at` set) and have a
-        merge commit (`merge_commit_sha` set), in the order of the pages.
+        merge commit (`merge_commit_sha` set), in the order of the pages,
+        each once (pages fetched while pull requests are closed may repeat
+        one).
 
     Raises:
         ValueError: If the pages are not lists of pull requests with the
@@ -464,7 +466,7 @@ def merged_pull_requests(pages: object) -> list[PullRequest]:
     """
     if not isinstance(pages, list) or not all(isinstance(page, list) for page in pages):
         raise ValueError("Pull requests are not a list of pages (lists)")
-    merged = []
+    merged: dict[int, PullRequest] = {}
     for pull in (pull for page in pages for pull in page):
         if not isinstance(pull, dict):
             raise ValueError(f"Pull request is not an object: {pull!r:.200}")
@@ -478,7 +480,8 @@ def merged_pull_requests(pages: object) -> list[PullRequest]:
         # `bool` is an `int`, but no number of a pull request
         if not isinstance(number, int) or isinstance(number, bool):
             raise ValueError(f"Pull request without a valid 'number': {pull!r:.200}")
-        merged.append(
+        merged.setdefault(
+            number,
             PullRequest(
                 number=number,
                 # On one line, also with line breaks or other whitespace
@@ -488,9 +491,9 @@ def merged_pull_requests(pages: object) -> list[PullRequest]:
                 url=_string(pull, "html_url"),
                 merged_at=_string(pull, "merged_at"),
                 merge_commit=_string(pull, "merge_commit_sha"),
-            )
+            ),
         )
-    return merged
+    return list(merged.values())
 
 
 def first_release_notes(
