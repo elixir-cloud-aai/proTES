@@ -18,20 +18,32 @@ Credentials are looked up for each request, so that long-running Celery
 tasks get fresh tokens. Before each request to a discovered backend, its host
 is checked to have public addresses only (unless private addresses are
 allowed, `custom.tes.discovery.allow_private_addresses`), and redirects are
-not followed.
+not followed. Requests time out after `custom.tes.timeout` seconds (and
+after `CONNECT_TIMEOUT` seconds while connecting).
+
+Tasks are created and canceled with a single `POST` request each (which
+doesn't follow redirects), to the API path of the backend's URL
+(`<url>/ga4gh/tes/v1`), so that backends never get a task twice; tasks are
+got from the same path. If it is unknown whether the backend processed such
+a request (e.g., because the response timed out), the request is not sent
+again (cf. :py:class:`pro_tes.exceptions.BackendOutcomeUnknown`).
 """
 
+from collections.abc import Iterator
 from contextlib import suppress
 from dataclasses import dataclass
 import logging
 import os
+import ssl
 import threading
 import time
 from typing import Any
-from urllib.parse import quote_plus
+from urllib.parse import quote, quote_plus
 
 import requests
 import tes
+from tes.utils import unmarshal
+from urllib3.exceptions import ConnectTimeoutError
 
 from pro_tes.config_models import (
     ClientCredentials,
@@ -40,7 +52,11 @@ from pro_tes.config_models import (
     TesBackend,
     split_server_url,
 )
-from pro_tes.exceptions import BackendAuthError, BackendNotConfigured
+from pro_tes.exceptions import (
+    BackendAuthError,
+    BackendNotConfigured,
+    BackendOutcomeUnknown,
+)
 from pro_tes.ga4gh.tes.discovery import check_public_host, get_backends, url_key
 from pro_tes.utils.misc import get_custom_config
 
@@ -54,8 +70,20 @@ CLIENT_SECRET_ENV = "PROTES_CLIENT_SECRET"  # noqa: S105 (a variable name)
 OIDC_CONFIG_PATH = ".well-known/openid-configuration"
 # Lifetime (in seconds) assumed for tokens of responses without `expires_in`
 DEFAULT_TOKEN_LIFETIME = 60
-# Timeout (in seconds) of requests to TES backends
-TIMEOUT = 5
+# Path of the TES API, relative to the URL of a backend
+API_PATH = "ga4gh/tes/v1"
+# Timeout (in seconds) of connecting to TES backends (at most the timeout of
+# requests, `custom.tes.timeout`); short, as requests that time out while
+# connecting are sent to the next backend
+CONNECT_TIMEOUT = 5
+# Errors of `requests` raised before anything is sent
+NOT_SENT_ERRORS = (
+    requests.ConnectTimeout,
+    requests.exceptions.InvalidHeader,
+    requests.exceptions.InvalidSchema,
+    requests.exceptions.InvalidURL,
+    requests.exceptions.MissingSchema,
+)
 
 
 def get_env(name: str) -> str:
@@ -321,26 +349,226 @@ def get_backend(url: str) -> TesBackend:
     raise BackendNotConfigured(f"TES backend not configured: {url}")
 
 
+def _causes(exc: BaseException) -> Iterator[BaseException]:
+    """Get an exception and the exceptions it was caused by.
+
+    Args:
+        exc: Exception, e.g., of `requests`.
+
+    Yields:
+        The exception, and the exceptions it was raised from or during, or
+        that it wraps (e.g., the `reason` of errors of `urllib3`).
+    """
+    seen: list[BaseException] = []
+    pending: list[BaseException | None] = [exc]
+    while pending:
+        current = pending.pop()
+        if current is None or any(current is other for other in seen):
+            continue
+        seen.append(current)
+        yield current
+        reason = getattr(current, "reason", None)
+        pending.extend(
+            [
+                current.__cause__,
+                current.__context__,
+                reason if isinstance(reason, BaseException) else None,
+                *(arg for arg in current.args if isinstance(arg, BaseException)),
+            ]
+        )
+
+
+def quote_id(task_id: str) -> str:
+    """Quote the identifier of a task at a backend, as a path segment.
+
+    Args:
+        task_id: Identifier of the task, as the backend set it.
+
+    Returns:
+        The identifier, with all characters but unreserved ones
+        percent-encoded, also the dots of the identifiers `.` and `..`, so
+        that it can't change the path of requests.
+    """
+    quoted = quote(task_id, safe="")
+    if quoted in (".", ".."):
+        quoted = quoted.replace(".", "%2E")
+    return quoted
+
+
+def not_sent(exc: requests.RequestException) -> bool:
+    """Check whether a failed request was certainly not received.
+
+    Only errors that prevent the connection from being established count:
+    the connection was refused, the host was not resolved, the connection
+    timed out, or the server's certificate was not accepted; and errors of
+    requests that could not be prepared (e.g., invalid headers). For all others
+    (e.g., read timeouts, or connections lost after the request was sent),
+    the server may have received, and processed, the request.
+
+    Args:
+        exc: Error of the request.
+
+    Returns:
+        Whether the server certainly did not receive the request.
+    """
+    if isinstance(exc, NOT_SENT_ERRORS):
+        return True
+    # `NewConnectionError` (e.g., connection refused, host not resolved) is
+    # a subclass of `ConnectTimeoutError`
+    return any(
+        isinstance(cause, ConnectTimeoutError | ssl.SSLCertVerificationError)
+        for cause in _causes(exc)
+    )
+
+
 class TesClient(tes.HTTPClient):
     """Client of a TES backend, authenticated as configured for the backend.
 
     Credentials are looked up for each request (cf.
-    :py:meth:`TesClient._request_params`).
+    :py:meth:`TesClient._request_params`). Tasks are created, got and
+    canceled with a single request each, to the API path of the backend's
+    URL (unlike py-tes, which tries other paths too, and so may create a
+    task more than once); redirects of `POST` requests are not followed.
 
     Attributes:
         backend: Configuration of the backend.
     """
 
-    def __init__(self, url: str, backend: TesBackend, timeout: int = TIMEOUT) -> None:
+    def __init__(
+        self, url: str, backend: TesBackend, timeout: int | None = None
+    ) -> None:
         """Create a client.
 
         Args:
             url: URL of the backend, possibly with a base path.
             backend: Configuration of the backend.
-            timeout: Timeout of requests, in seconds.
+            timeout: Timeout of requests, in seconds; by default
+                `custom.tes.timeout`.
         """
+        if timeout is None:
+            timeout = get_custom_config().tes.timeout
         super().__init__(url=url, timeout=timeout)
         self.backend = backend
+
+    def create_task(self, task: tes.Task) -> str:
+        """Create a task (`POST /tasks`), with a single request.
+
+        Args:
+            task: The task.
+
+        Returns:
+            Identifier of the task at the backend.
+
+        Raises:
+            requests.RequestException: The backend did not accept the task:
+                it was not reached (cf. :py:func:`not_sent`), or it rejected
+                the task (e.g., with a client error).
+            pro_tes.exceptions.BackendAuthError: No credentials are
+                available.
+            pro_tes.exceptions.BackendOutcomeUnknown: The backend may have
+                accepted the task, but did not confirm it with its
+                identifier.
+        """
+        response = self._post(path="tasks", data=task.as_json())
+        try:
+            body = response.json()
+        except ValueError:
+            body = None
+        task_id = body.get("id") if isinstance(body, dict) else None
+        if not isinstance(task_id, str) or not task_id:
+            raise BackendOutcomeUnknown(
+                f"TES backend {self.url} accepted the task without an identifier"
+            )
+        return task_id
+
+    def get_task(self, task_id: str, view: str = "BASIC") -> tes.Task:
+        """Get a task (`GET /tasks/{id}`), with a single request.
+
+        Args:
+            task_id: Identifier of the task at the backend.
+            view: View of the task (`MINIMAL`, `BASIC` or `FULL`).
+
+        Returns:
+            The task.
+
+        Raises:
+            requests.RequestException: The request failed, or the backend
+                answered with an error.
+            pro_tes.exceptions.BackendAuthError: No credentials are
+                available.
+        """
+        kwargs = self._request_params(params={"view": view})
+        timeout = kwargs.pop("timeout")
+        url = f"{self.url}/{API_PATH}/tasks/{quote_id(task_id)}"
+        response = requests.get(url, timeout=timeout, **kwargs)
+        response.raise_for_status()
+        task: tes.Task = unmarshal(response.json(), tes.Task)
+        return task
+
+    def cancel_task(self, task_id: str) -> None:
+        """Cancel a task (`POST /tasks/{id}:cancel`), with a single request.
+
+        Args:
+            task_id: Identifier of the task at the backend.
+
+        Raises:
+            requests.RequestException: The backend was not reached (cf.
+                :py:func:`not_sent`), or it rejected the request.
+            pro_tes.exceptions.BackendAuthError: No credentials are
+                available.
+            pro_tes.exceptions.BackendOutcomeUnknown: The backend may have
+                canceled the task, but did not confirm it.
+        """
+        self._post(path=f"tasks/{quote_id(task_id)}:cancel")
+
+    def _post(self, path: str, data: str | None = None) -> requests.Response:
+        """Send a `POST` request once, to the API path of the backend.
+
+        Args:
+            path: Path of the request, relative to the API path.
+            data: JSON body of the request.
+
+        Returns:
+            The response, with a success status (2xx).
+
+        Raises:
+            requests.RequestException: The request was certainly not
+                processed: it was not received (cf. :py:func:`not_sent`), or
+                it was answered with a status other than 2xx and 5xx (e.g.,
+                a client error, or a redirect, which is not followed).
+            pro_tes.exceptions.BackendAuthError: No credentials are
+                available.
+            pro_tes.exceptions.BackendOutcomeUnknown: The request may have
+                been processed: it failed after it may have been received
+                (e.g., the response timed out), or it was answered with a
+                server error (5xx).
+        """
+        # may raise before anything is sent, e.g., without credentials
+        kwargs = self._request_params(data=data)
+        timeout = kwargs.pop("timeout")
+        # e.g., redirects of authentication gateways would turn requests
+        # into `GET` requests, whose answers could be taken for confirmations
+        kwargs["allow_redirects"] = False
+        url = f"{self.url}/{API_PATH}/{path}"
+        try:
+            response = requests.post(url, timeout=timeout, **kwargs)
+        except requests.RequestException as exc:
+            if not_sent(exc):
+                raise
+            raise BackendOutcomeUnknown(
+                f"Outcome of POST {url} unknown: {type(exc).__name__}"
+            ) from exc
+        if 200 <= response.status_code < 300:
+            return response
+        if response.status_code >= 500:
+            # e.g., gateways answer 502, 503 or 504 also when the backend
+            # behind them got the request
+            raise BackendOutcomeUnknown(
+                f"Outcome of POST {url} unknown: status {response.status_code}"
+            )
+        raise requests.HTTPError(
+            f"POST {url} failed: status {response.status_code}", response=response
+        )
 
     def _request_params(
         self, data: str | None = None, params: dict[str, Any] | None = None
@@ -352,7 +580,9 @@ class TesClient(tes.HTTPClient):
             params: Query parameters of the request.
 
         Returns:
-            Keyword arguments of the request (`requests`).
+            Keyword arguments of the request (`requests`), with the timeouts
+            of connecting (`CONNECT_TIMEOUT`, at most `timeout`) and of the
+            request (`timeout`).
 
         Raises:
             pro_tes.exceptions.BackendAuthError: No credentials are available.
@@ -361,6 +591,7 @@ class TesClient(tes.HTTPClient):
                 (unless allowed).
         """
         kwargs: dict[str, Any] = super()._request_params(data=data, params=params)
+        kwargs["timeout"] = (min(CONNECT_TIMEOUT, self.timeout), self.timeout)
         config = get_custom_config().tes
         if isinstance(self.backend, DiscoveredBackend):
             # redirects could lead to any address

@@ -33,6 +33,16 @@ class BackendAddressNotAllowed(requests.ConnectionError):
     """
 
 
+class BackendOutcomeUnknown(RuntimeError):
+    """Raised when a TES backend may have processed a request, or not.
+
+    E.g., because the response timed out, the connection was lost after the
+    request was sent, or the backend answered with a server error. Such
+    requests (to create or cancel tasks) are not sent again, neither to the
+    backend nor to other backends, so that tasks are never created twice.
+    """
+
+
 class HostNotResolved(BackendAddressNotAllowed):
     """Raised when the host of a discovered TES backend can't be resolved."""
 
@@ -182,6 +192,13 @@ exceptions = {
         "title": "Internal server error",
         "detail": "The TES instance of the task is not configured.",
         "status": 500,
+    },
+    BackendOutcomeUnknown: {
+        "title": "Bad gateway",
+        "detail": (
+            "The TES instance did not confirm the request; it may have processed it."
+        ),
+        "status": 502,
     },
     MiddlewareException: {
         "title": "Internal server error",
