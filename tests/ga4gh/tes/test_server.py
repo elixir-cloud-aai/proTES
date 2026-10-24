@@ -1322,6 +1322,34 @@ def test_controllers_pass_request_data(
     assert collections == [f"{BASE_PATH}/tasks"] * 2
 
 
+def test_controllers_pass_request_path(
+    app: FlaskApp, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The controllers pass the path of the request, whatever it is."""
+    calls: list[tuple[str, Any, str]] = []
+
+    def record(method: str) -> Any:
+        """Get a stand-in for a method of `TaskRuns` that records its call."""
+
+        def recorded(
+            self: task_runs.TaskRuns, task: Any = None, *, collection: str, **_: Any
+        ) -> dict[str, Any]:
+            """Record the call."""
+            calls.append((method, task, collection))
+            return {}
+
+        return recorded
+
+    for method in ("create_task", "list_tasks"):
+        monkeypatch.setattr(task_runs.TaskRuns, method, record(method))
+    path = "/other/base/tasks"
+    with app.app.test_request_context(path, method="POST", json=TASK):
+        server.CreateTask(body=TASK)
+    with app.app.test_request_context(path):
+        server.ListTasks()
+    assert calls == [("create_task", TASK, path), ("list_tasks", None, path)]
+
+
 def test_controller_no_body(
     client: FlaskClient,
     app: FlaskApp,

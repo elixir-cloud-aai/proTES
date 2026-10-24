@@ -76,8 +76,10 @@ Project-specific rules are in `.semgrep/` (security) and `.ast-grep/`
 Starlette in the task processing (`pro_tes/ga4gh/tes/task_runs.py`) and
 the middlewares (`pro_tes/middleware/`, `pro_tes/plugins/`): they get
 plain data (the task, the request path) from the controllers
-(`pro_tes/ga4gh/tes/server.py`), so that they run unchanged after the
-move to Connexion 3 without Flask.
+(`pro_tes/ga4gh/tes/server.py`), so that the move to Connexion 3 without
+Flask touches them as little as possible. They still raise the exceptions
+of `pro_tes.exceptions`, which derive from Connexion's and Werkzeug's, so
+those change with that move.
 [actionlint](https://github.com/rhysd/actionlint) checks the workflows in
 `.github/workflows/`, and their shell scripts with
 [ShellCheck](https://www.shellcheck.net/) if it is installed (as on

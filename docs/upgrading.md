@@ -322,9 +322,12 @@ it succeeds; returning something other than a `dict` fails the middleware,
 like raising an exception. Subclasses of `TaskDistributionBaseClass` that
 override `_set_tes_urls()` get the task as `task=` instead of `request=`.
 Port custom middlewares before upgrading: old-style ones still load, but
-fail on every task (a warning in the log for each), so that, with no other
-alternative, task creation fails with `500` ("No middleware could be
-applied").
+usually fail on every task (those that use `request.json` or other
+attributes of the request they are given), with a warning in the log for
+each; changes they make through the global `flask.request` are ignored
+silently. With no other alternative, task creation then fails with `500`
+and the detail "Middleware could not be applied."; the log says why ("No
+middleware could be applied", or "Middlewares selected no TES backends").
 
 ## Middleware management API
 
