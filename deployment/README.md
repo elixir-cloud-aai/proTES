@@ -334,10 +334,10 @@ track many tasks: raise the concurrency, `worker.replicas` and
 tracking](https://protes.readthedocs.io/en/latest/operations/#task-tracking)).
 Restarts and upgrades of the worker don't stop the tracking: polls are
 acknowledged after they ran, so the broker delivers those of a killed worker
-again, and workers resume the tracking of all unfinished tasks when they
-start. Without a worker (e.g., one
-run elsewhere, connected to the same broker and MongoDB), the states of
-tasks are not tracked, and Helm's notes warn.
+again, and workers resume the tracking of unfinished tasks that haven't been
+polled for long. Without a worker (e.g., one run elsewhere, connected to the
+same broker and MongoDB), the states of tasks are not tracked, and Helm's
+notes warn.
 
 The broker (`broker`, enabled by default) is RabbitMQ, with one pod, and its
 data (queued tasks) in a PersistentVolumeClaim (`broker.persistence`). Both

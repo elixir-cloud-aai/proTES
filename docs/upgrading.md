@@ -218,7 +218,9 @@ Failed polls no longer make a task fail: after
 (not failed polls over the task's whole life), its state is `UNKNOWN` until
 the TES instance answers again, and polls back off up to
 `polling.max_wait` seconds (new, default 600); the first poll is retried,
-too. The workers no longer set `INITIALIZING` when they start tracking a
+too, and so are polls of tasks whose TES instance is not (or no longer)
+configured or discovered. `polling.wait` and `polling.attempts` must be
+positive. The workers no longer set `INITIALIZING` when they start tracking a
 task: the state is the one reported by its TES instance.
 
 ## Task times and remote identifiers

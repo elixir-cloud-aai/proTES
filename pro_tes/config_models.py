@@ -71,8 +71,8 @@ class Polling(BaseModel):
             successful one) after which the state of the task is set to
             `UNKNOWN`, and polls back off.
         max_wait: Maximum number of seconds between polls while they back
-            off (at least `wait`); keep it below the broker's acknowledgement
-            timeout (RabbitMQ's `consumer_timeout`, 30 minutes by default).
+            off (values below `wait` count as `wait`); keep it below the
+            broker's acknowledgement timeout (RabbitMQ's `consumer_timeout`).
 
     Attributes:
         wait: Seconds between polls of the state of a task.
@@ -80,8 +80,8 @@ class Polling(BaseModel):
             successful one) after which the state of the task is set to
             `UNKNOWN`, and polls back off.
         max_wait: Maximum number of seconds between polls while they back
-            off (at least `wait`); keep it below the broker's acknowledgement
-            timeout (RabbitMQ's `consumer_timeout`, 30 minutes by default).
+            off (values below `wait` count as `wait`); keep it below the
+            broker's acknowledgement timeout (RabbitMQ's `consumer_timeout`).
     """
 
     wait: PositiveInt = 3

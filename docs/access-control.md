@@ -246,7 +246,8 @@ registry](configuration.md#discovery-in-a-service-registry)): TES instances
 that middlewares add (`tes_urls`) are skipped, as proTES has no credentials
 for them. Keep TES instances in the list until their tasks have finished:
 tasks of TES instances that are no longer configured can't be tracked or
-canceled.
+canceled (their state becomes `UNKNOWN`, and is tracked again once the TES
+instance is configured again).
 
 URLs of TES instances and of the identity provider must use `https`
 (`custom.tes.url_schemes`); allow `http` for local tests only, as tokens and

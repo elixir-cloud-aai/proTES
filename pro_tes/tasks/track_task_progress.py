@@ -4,32 +4,37 @@ A task is tracked by a chain of Celery tasks: each polls the backend once
 and, while the task is unfinished, schedules the next poll (`countdown`), so
 that no worker process is blocked for the runtime of a task. Messages are
 acknowledged after the poll (`acks_late`), so that the broker delivers them
-again if a worker is lost.
+again if a worker is lost; polls that fail because MongoDB or the broker is
+unavailable are retried.
 
 Each task is tracked by one chain of polls only: each poll has an
 identifier, and the stored task holds the identifier of its current poll
-(`tracking.poll`). Each poll passes the tracking on to the next one, which
-gets a new identifier; polls whose identifier is no longer current do
-nothing, which ends their chain. A poll may also take over from the poll
-that scheduled it (`previous`), if that one didn't pass the tracking on
-(e.g., because its worker was lost). When a worker starts, the tracking of
-stored unfinished tasks is resumed with new identifiers
-(:py:func:`task__resume_tracking`), which ends the chains of earlier
-workers.
+(`tracking.poll`) and the time it was claimed (`tracking.polled_at`). Each
+poll passes the tracking on to the next one, which gets a new identifier;
+polls whose identifier is no longer current do nothing, which ends their
+chain. A poll may also take over from the poll that scheduled it
+(`previous`), if that one didn't pass the tracking on (e.g., because its
+worker was lost). When a worker starts, and then periodically, the tracking
+of stored unfinished tasks that haven't been polled for long is resumed
+(:py:func:`task__resume_tracking`), e.g., of tasks whose polls the broker
+lost.
 """
 
 import logging
+from threading import Event, Thread
+import time
 from typing import Any
 from uuid import uuid4
 
 from celery.signals import worker_ready
 from foca import get_collection
+from kombu.exceptions import OperationalError
 from pymongo.collection import Collection
+from pymongo.errors import PyMongoError
 
 from pro_tes.celery_worker import celery
-from pro_tes.exceptions import BackendNotConfigured
+from pro_tes.config_models import CustomConfig
 from pro_tes.ga4gh.tes.backends import create_client
-from pro_tes.ga4gh.tes.discovery import MIN_REFRESH_INTERVAL
 from pro_tes.ga4gh.tes.models import TesState, TesTask
 from pro_tes.ga4gh.tes.states import States
 from pro_tes.utils.db import TASK_COLLECTION, TASK_DB, DbDocumentConnector
@@ -37,11 +42,15 @@ from pro_tes.utils.misc import get_custom_config, has_credentials, strip_auth
 from pro_tes.utils.models import TaskModelConverter
 
 logger = logging.getLogger(__name__)
-# Retries of tasks whose backend is unknown, if backends are discovered
-# (every `MIN_REFRESH_INTERVAL` seconds)
-BACKEND_RETRIES = 3
-# Field of stored tasks with the identifier of the poll tracking them
+# Fields of stored tasks with the identifier of the poll tracking them, and
+# the time (seconds since the epoch) at which it claimed the tracking
 POLL_FIELD = "tracking.poll"
+POLLED_AT_FIELD = "tracking.polled_at"
+# Tasks not polled for this many times `polling.max_wait` are resumed by
+# `task__resume_tracking`, which runs every `polling.max_wait` seconds
+STALE_FACTOR = 3
+# Errors of MongoDB and the broker, after which polls are retried
+INFRASTRUCTURE_ERRORS = (PyMongoError, OperationalError)
 
 
 def backoff(failures: int) -> int:
@@ -49,7 +58,8 @@ def backoff(failures: int) -> int:
 
     Polls are `polling.wait` seconds apart until `polling.attempts`
     consecutive polls have failed; then the interval doubles with each
-    failed poll, up to `polling.max_wait` seconds.
+    failed poll, up to `polling.max_wait` seconds (values of `max_wait`
+    below `wait` count as `wait`).
 
     Args:
         failures: Number of consecutive failed polls.
@@ -85,9 +95,138 @@ def _claim(
     """
     result = collection.update_one(
         {"worker_id": worker_id, POLL_FIELD: {"$in": [poll, previous]}},
-        {"$set": {POLL_FIELD: poll}},
+        {"$set": {POLL_FIELD: poll, POLLED_AT_FIELD: time.time()}},
     )
     return result.matched_count > 0
+
+
+def _schedule(
+    collection: Collection[dict[str, Any]],
+    kwargs: dict[str, Any],
+    failures: int,
+) -> None:
+    """Schedule the next poll of a task, and pass the tracking on to it.
+
+    The next poll is scheduled first, so that it can take over if passing
+    the tracking on fails.
+
+    Args:
+        collection: Database collection of the tasks.
+        kwargs: Arguments of the current poll (cf.
+            :py:func:`task__track_task_progress`).
+        failures: Number of consecutive failed polls.
+    """
+    successor = uuid4().hex
+    task__track_task_progress.apply_async(
+        kwargs={
+            **kwargs,
+            "poll": successor,
+            "previous": kwargs["poll"],
+            "failures": failures,
+        },
+        countdown=backoff(failures),
+    )
+    collection.update_one(
+        {"worker_id": kwargs["worker_id"], POLL_FIELD: kwargs["poll"]},
+        {"$set": {POLL_FIELD: successor}},
+    )
+
+
+def _store_final(db_client: DbDocumentConnector, worker_id: str, response: Any) -> None:
+    """Store the final state, logs and outputs of a finished task.
+
+    Args:
+        db_client: Database connector of the task.
+        worker_id: Worker identifier of the task.
+        response: Task as served by its backend.
+
+    Raises:
+        ValueError: The task has no logs.
+    """
+    task_converted: TesTask = TaskModelConverter(task=response).convert_task()
+    document = db_client.get_document()
+    document.task.state = task_converted.state
+    if task_converted.logs is None or document.task.logs is None:
+        raise ValueError(f"[{worker_id}] Task has no logs")
+    for index, logs in enumerate(task_converted.logs):
+        document.task.logs[index].logs = logs.logs
+        # backends may log output URLs with credentials, e.g., of tasks that
+        # earlier versions forwarded with them
+        for output in logs.outputs or []:
+            try:
+                found = has_credentials(output.url)
+            except ValueError:
+                continue
+            if found:
+                output.url = strip_auth(output.url)
+        document.task.logs[index].outputs = logs.outputs
+    db_client.upsert_fields_in_root_object(
+        root="task", **document.task.model_dump(mode="json", exclude_none=True)
+    )
+
+
+def _poll(kwargs: dict[str, Any]) -> None:
+    """Poll a task at its backend once, and schedule the next poll.
+
+    Args:
+        kwargs: Arguments of the poll (cf.
+            :py:func:`task__track_task_progress`).
+
+    Raises:
+        ValueError: The task finished, but has no logs.
+    """
+    worker_id = kwargs["worker_id"]
+    collection = get_collection(TASK_DB, TASK_COLLECTION)
+    if not _claim(
+        collection=collection,
+        worker_id=worker_id,
+        poll=kwargs["poll"],
+        previous=kwargs["previous"],
+    ):
+        logger.debug("[%s] Tracked by another chain of polls", worker_id)
+        return
+    db_client = DbDocumentConnector(collection=collection, worker_id=worker_id)
+
+    try:
+        cli = create_client(
+            host=kwargs["remote_host"], base_path=kwargs["remote_base_path"]
+        )
+        response = cli.get_task(task_id=kwargs["remote_task_id"])
+    except INFRASTRUCTURE_ERRORS:
+        raise
+    except Exception as exc:
+        # also if the backend is no longer configured or discovered (for the
+        # time being), as the task may still run there
+        failures = kwargs["failures"] + 1
+        logger.warning(
+            "[%s] Poll %d of the task at its backend failed: %s: %s",
+            worker_id,
+            failures,
+            type(exc).__name__,
+            exc,
+        )
+        if failures == get_custom_config().controllers.post_task.polling.attempts:
+            logger.error(
+                "[%s] %d consecutive polls failed; the state is unknown until"
+                " the backend answers again",
+                worker_id,
+                failures,
+            )
+            db_client.update_task_state(state=TesState.UNKNOWN.value)
+        _schedule(collection=collection, kwargs=kwargs, failures=failures)
+        return
+
+    stored = db_client.get_document(projection={"_id": False, "task.state": True})
+    finished = response.state in States.FINISHED
+    # a cancelation stays stored until the backend has finished the task, as
+    # backends may report the task as running for a while
+    canceled = stored.task.state == TesState.CANCELED.value and not finished
+    if response.state != stored.task.state and not canceled:
+        db_client.update_task_state(state=str(response.state))
+    if not finished:
+        _schedule(collection=collection, kwargs=kwargs, failures=0)
+        return
+    _store_final(db_client=db_client, worker_id=worker_id, response=response)
 
 
 @celery.task(
@@ -109,19 +248,19 @@ def task__track_task_progress(
 ) -> None:
     """Poll a task at its TES backend once, and schedule the next poll.
 
-    The state is stored if it changed; once the task is finished, its logs
-    and outputs are stored, and tracking ends. Failed polls are retried; after
+    The state is stored if it changed (a stored `CANCELED` only once the
+    backend has finished the task); once the task is finished, its logs and
+    outputs are stored, and tracking ends. Failed polls are retried, also if
+    the backend is not (or no longer) configured or discovered; after
     `polling.attempts` consecutive failures, the state is set to `UNKNOWN`
     (the task may still run at its backend), and polls back off (see
-    :py:func:`backoff`) until the backend answers again.
+    :py:func:`backoff`) until the backend answers again. Polls that fail
+    because MongoDB or the broker is unavailable are retried, with the same
+    arguments, after up to `polling.max_wait` seconds.
 
     proTES authenticates at the TES service as configured for it (see
     :py:mod:`pro_tes.ga4gh.tes.backends`), with fresh credentials for each
-    request. If the backend is unknown and backends are discovered in a
-    registry, the task is retried (`BACKEND_RETRIES` times, after
-    `MIN_REFRESH_INTERVAL` seconds each), as the worker may not have read
-    the registry since another process discovered the backend; otherwise,
-    or then, the state is set to `SYSTEM_ERROR`.
+    request.
 
     Args:
         self: Celery task instance (bound task).
@@ -140,137 +279,68 @@ def task__track_task_progress(
         failures: Number of consecutive failed polls before this one.
 
     Raises:
-        BackendNotConfigured: The backend of the task is not configured.
         ValueError: The task finished, but has no logs.
     """
-    collection = get_collection(TASK_DB, TASK_COLLECTION)
-    if not _claim(
-        collection=collection, worker_id=worker_id, poll=poll, previous=previous
-    ):
-        logger.debug("[%s] Tracked by another chain of polls", worker_id)
-        return
-    db_client = DbDocumentConnector(collection=collection, worker_id=worker_id)
-
-    def schedule(failures: int) -> None:
-        """Schedule the next poll, and pass the tracking on to it.
-
-        Args:
-            failures: Number of consecutive failed polls.
-        """
-        successor = uuid4().hex
-        self.apply_async(
-            kwargs={
-                "worker_id": worker_id,
-                "remote_host": remote_host,
-                "remote_base_path": remote_base_path,
-                "remote_task_id": remote_task_id,
-                "poll": successor,
-                "previous": poll,
-                "failures": failures,
-            },
-            countdown=backoff(failures),
-        )
-        # the next poll may claim the tracking itself, if this fails
-        collection.update_one(
-            {"worker_id": worker_id, POLL_FIELD: poll},
-            {"$set": {POLL_FIELD: successor}},
-        )
-
+    kwargs = {
+        "worker_id": worker_id,
+        "remote_host": remote_host,
+        "remote_base_path": remote_base_path,
+        "remote_task_id": remote_task_id,
+        "poll": poll,
+        "previous": previous,
+        "failures": failures,
+    }
     try:
-        cli = create_client(host=remote_host, base_path=remote_base_path)
-        response = cli.get_task(task_id=remote_task_id)
-    except BackendNotConfigured as exc:
-        # the worker may not know a backend that another process discovered
-        # in the registry yet, and reads it at most every
-        # `MIN_REFRESH_INTERVAL` seconds
-        if (
-            get_custom_config().tes.discovery.enabled
-            and self.request.retries < BACKEND_RETRIES
-        ):
-            raise self.retry(exc=exc, countdown=MIN_REFRESH_INTERVAL) from exc
-        db_client.update_task_state(state=TesState.SYSTEM_ERROR.value)
-        raise
-    except Exception as exc:
-        failures += 1
-        attempts = get_custom_config().controllers.post_task.polling.attempts
+        _poll(kwargs)
+    except INFRASTRUCTURE_ERRORS as exc:
+        polling = get_custom_config().controllers.post_task.polling
+        retries = min(self.request.retries, 32)
+        countdown = max(polling.wait, min(polling.wait * 2**retries, polling.max_wait))
         logger.warning(
-            "[%s] Poll %d of the task at its backend failed: %s: %s",
+            "[%s] Poll failed, retrying in %d seconds: %s: %s",
             worker_id,
-            failures,
+            countdown,
             type(exc).__name__,
             exc,
         )
-        if failures == attempts:
-            logger.error(
-                "[%s] %d consecutive polls failed; the state is unknown until"
-                " the backend answers again",
-                worker_id,
-                failures,
-            )
-            db_client.update_task_state(state=TesState.UNKNOWN.value)
-        schedule(failures=failures)
-        return
-
-    document = db_client.get_document(projection={"_id": False, "task.state": True})
-    if response.state != document.task.state:
-        db_client.update_task_state(state=str(response.state))
-    if response.state not in States.FINISHED:
-        schedule(failures=0)
-        return
-
-    task_model_converter = TaskModelConverter(task=response)
-    task_converted: TesTask = task_model_converter.convert_task()
-
-    document = db_client.get_document()
-
-    # updating task after task is finished
-    document.task.state = task_converted.state
-    if task_converted.logs is None or document.task.logs is None:
-        raise ValueError(f"[{worker_id}] Task has no logs")
-    for index, logs in enumerate(task_converted.logs):
-        document.task.logs[index].logs = logs.logs
-        # backends may log output URLs with credentials, e.g., of tasks that
-        # earlier versions forwarded with them
-        for output in logs.outputs or []:
-            try:
-                found = has_credentials(output.url)
-            except ValueError:
-                continue
-            if found:
-                output.url = strip_auth(output.url)
-        document.task.logs[index].outputs = logs.outputs
-
-    # updating the database
-    db_client.upsert_fields_in_root_object(
-        root="task", **document.task.model_dump(mode="json", exclude_none=True)
-    )
+        raise self.retry(exc=exc, countdown=countdown, max_retries=None) from exc
 
 
-@celery.task(name="tasks.resume_tracking", ignore_result=True)
+@celery.task(name="tasks.resume_tracking", ignore_result=True, acks_late=True)
 def task__resume_tracking() -> int:
-    """Resume the tracking of stored unfinished tasks.
+    """Resume the tracking of stored unfinished tasks not polled for long.
 
     That is, of tasks with an unfinished state and a remote identifier
     (`tes_endpoint.task_id`; tasks stored by earlier versions may not have
-    one). Each task gets a new poll identifier, which ends the chains of
-    polls that tracked it before (e.g., of a worker that was lost), and its
-    first poll is scheduled. Run when a worker starts (cf.
+    one) that no poll claimed in the last `STALE_FACTOR` times
+    `polling.max_wait` seconds, or ever. Each gets a new poll, which takes
+    over from the stored one, so that a chain that still tracks the task
+    ends. Run when a worker starts, and then periodically (cf.
     :py:func:`resume_tracking_on_start`); idempotent.
 
     Returns:
         Number of tasks whose tracking is resumed.
     """
+    polling = get_custom_config().controllers.post_task.polling
+    stale = time.time() - STALE_FACTOR * max(polling.max_wait, polling.wait)
     collection = get_collection(TASK_DB, TASK_COLLECTION)
     query = {
         "task.state": {"$in": States.UNFINISHED},
         "tes_endpoint.host": {"$nin": ["", None]},
         "tes_endpoint.task_id": {"$type": "string"},
+        "$or": [
+            {POLLED_AT_FIELD: {"$exists": False}},
+            {POLLED_AT_FIELD: {"$lt": stale}},
+        ],
     }
     resumed = 0
-    for document in collection.find(query, projection=["worker_id", "tes_endpoint"]):
+    for document in collection.find(
+        query, projection=["worker_id", "tes_endpoint", "tracking"]
+    ):
+        current = (document.get("tracking") or {}).get("poll")
         poll = uuid4().hex
-        collection.update_one({"_id": document["_id"]}, {"$set": {POLL_FIELD: poll}})
         endpoint = document["tes_endpoint"]
+        # scheduled first, so that the poll can take over if storing it fails
         task__track_task_progress.apply_async(
             kwargs={
                 "worker_id": document["worker_id"],
@@ -278,23 +348,57 @@ def task__resume_tracking() -> int:
                 "remote_base_path": endpoint.get("base_path") or "",
                 "remote_task_id": endpoint["task_id"],
                 "poll": poll,
+                "previous": current,
             },
+        )
+        collection.update_one(
+            {"_id": document["_id"], POLL_FIELD: current},
+            {"$set": {POLL_FIELD: poll}},
         )
         resumed += 1
     logger.info("Resumed the tracking of %d unfinished tasks", resumed)
     return resumed
 
 
-@worker_ready.connect
-def resume_tracking_on_start(**kwargs: Any) -> None:
-    """Resume the tracking of stored unfinished tasks when a worker starts.
+def resume_tracking_periodically(stop: Event, interval: float) -> None:
+    """Resume the tracking of stale tasks every `interval` seconds.
 
-    Tasks may have lost their tracking, e.g., if a worker was killed after
-    it acknowledged a poll but before it scheduled the next one, or if the
-    broker lost its messages. The tracking is resumed by a Celery task (cf.
-    :py:func:`task__resume_tracking`), which runs in the app context.
+    Args:
+        stop: Event that ends the loop.
+        interval: Seconds between runs of :py:func:`task__resume_tracking`.
+    """
+    while not stop.wait(interval):
+        try:
+            task__resume_tracking.delay()
+        except Exception:
+            logger.exception("Could not resume the tracking of tasks")
+
+
+@worker_ready.connect
+def resume_tracking_on_start(**kwargs: Any) -> Thread:
+    """Resume the tracking of stale tasks when a worker starts, and periodically.
+
+    Tasks may have lost their tracking, e.g., if the broker lost its
+    messages. The tracking is resumed by a Celery task (cf.
+    :py:func:`task__resume_tracking`), which runs in the app context, when
+    the worker starts and then every `polling.max_wait` seconds, from a
+    daemon thread of the worker's main process.
 
     Args:
         **kwargs: Arguments of the signal; ignored.
+
+    Returns:
+        Thread that resumes the tracking periodically.
     """
+    custom = (celery.conf.foca.model_extra or {}).get("custom")
+    config = custom if isinstance(custom, CustomConfig) else CustomConfig()
+    interval = config.controllers.post_task.polling.max_wait
     task__resume_tracking.delay()
+    thread = Thread(
+        target=resume_tracking_periodically,
+        kwargs={"stop": Event(), "interval": interval},
+        name="resume-tracking",
+        daemon=True,
+    )
+    thread.start()
+    return thread

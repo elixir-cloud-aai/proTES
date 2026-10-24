@@ -128,9 +128,10 @@ seconds at most; TES instances whose hosts can't be resolved for the time
 being are kept for one more read, too. A process that doesn't know the
 TES instance of a task (e.g., the Celery worker, for a TES instance that
 the app's process discovered first) reads the registry again, at most every
-10 seconds; the Celery worker retries tracking such a task three times,
-10 seconds apart, before it gives up (state `SYSTEM_ERROR`). A service whose verification is removed is no longer used once
-the registry has been read again. Changes of the list and rejected verified
+10 seconds; polls of a task whose TES instance is unknown fail like other
+polls, so its tracking goes on (see `post_task.polling` in
+[Tasks](#tasks)). A service whose verification is removed is no longer used
+once the registry has been read again. Changes of the list and rejected verified
 services are logged. `timeout` applies to each request to the registry; the
 hosts of the services are resolved with the timeouts of the system's
 resolver. TES instances of `custom.tes.service_list` are used, too, and come
@@ -138,7 +139,8 @@ first; their settings take precedence over those of discovered ones with the
 same URL. Discovered TES instances get the credentials of `auth` (see
 [Credentials of TES
 instances](access-control.md#credentials-of-tes-instances)); tasks of a TES
-instance that is no longer discovered can't be tracked or canceled.
+instance that is no longer discovered can't be tracked or canceled (their
+state becomes `UNKNOWN` until it is discovered again).
 
 The host check doesn't protect against DNS rebinding (a host whose
 addresses change between the check and the request); restrict the egress

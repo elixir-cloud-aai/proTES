@@ -29,7 +29,8 @@ at its TES instance every `polling.wait` seconds (see
 [Tasks](configuration.md#tasks)): each poll is a short Celery task, which
 schedules the next one, so no worker process is held for the runtime of a
 task, and long tasks don't keep the others from being tracked. Once a task has
-finished, its logs and outputs are stored, and tracking ends. After
+finished, its logs and outputs are stored, and tracking ends; a canceled
+task stays `CANCELED` until its TES instance has finished it. After
 `polling.attempts` consecutive failed polls (e.g., while the TES instance or
 the identity provider is down), the state of the task is `UNKNOWN` until the
 TES instance answers again, and polls back off to every `polling.max_wait`
@@ -47,13 +48,15 @@ than configured, but are still tracked.
 Polls are acknowledged after they ran (`acks_late`), so the broker delivers
 the poll of a worker that is lost (e.g., killed after its grace period)
 again, and polls that are scheduled but not yet due go back to the broker
-when a worker shuts down. Each task is tracked by one chain of polls (the
-stored task holds the identifier of its current poll, `tracking.poll`).
-When a worker starts, it resumes the tracking of all stored unfinished tasks
-that were forwarded to a TES instance, which also recovers tasks whose polls
-were lost: restart the workers if RabbitMQ lost its data. Upgrades and
-restarts of the workers therefore don't stop the tracking of tasks; they
-only delay their next polls.
+when a worker shuts down. Polls that fail because MongoDB or RabbitMQ is
+unavailable are retried, with backoff up to `polling.max_wait` seconds. Each
+task is tracked by one chain of polls (the stored task holds the identifier
+of its current poll and when it ran, `tracking`). When a worker starts, and
+then every `polling.max_wait` seconds, it resumes the tracking of stored
+unfinished tasks that were forwarded to a TES instance but haven't been
+polled for three times `polling.max_wait` seconds (or ever), e.g., because
+RabbitMQ lost its data. Upgrades and restarts of the workers therefore don't
+stop the tracking of tasks; they only delay their next polls.
 
 ## Task owners
 
