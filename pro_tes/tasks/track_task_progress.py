@@ -4,8 +4,8 @@ A task is tracked by a chain of Celery tasks: each polls the backend once
 and, while the task is unfinished, schedules the next poll (`countdown`), so
 that no worker process is blocked for the runtime of a task. Messages are
 acknowledged after the poll (`acks_late`), so that the broker delivers them
-again if a worker is lost; polls that fail because MongoDB or the broker is
-unavailable are retried.
+again if a worker is lost; polls that fail because MongoDB is unavailable
+are retried, and those that fail because the broker is go back to it.
 
 Each task is tracked by one chain of polls only: each poll has an
 identifier, and the stored task holds the identifier of its current poll
@@ -26,6 +26,7 @@ import time
 from typing import Any
 from uuid import uuid4
 
+from celery.exceptions import Reject
 from celery.signals import worker_ready
 from foca import get_collection
 from kombu.exceptions import OperationalError
@@ -51,6 +52,8 @@ POLLED_AT_FIELD = "tracking.polled_at"
 STALE_FACTOR = 3
 # Errors of MongoDB and the broker, after which polls are retried
 INFRASTRUCTURE_ERRORS = (PyMongoError, OperationalError)
+# Doublings of intervals between polls considered (more don't change them)
+MAX_DOUBLINGS = 32
 
 
 def backoff(failures: int) -> int:
@@ -70,9 +73,24 @@ def backoff(failures: int) -> int:
     polling = get_custom_config().controllers.post_task.polling
     if failures < polling.attempts:
         return polling.wait
-    # capped exponent, so that the interval isn't computed from huge numbers
-    exponent = min(failures - polling.attempts + 1, 32)
-    return max(polling.wait, min(polling.wait * 2**exponent, polling.max_wait))
+    return interval(doublings=failures - polling.attempts + 1)
+
+
+def interval(doublings: int) -> int:
+    """Get `polling.wait` seconds, doubled a number of times.
+
+    At most `polling.max_wait` seconds, and at least `polling.wait`.
+
+    Args:
+        doublings: Number of times the interval is doubled.
+
+    Returns:
+        Seconds.
+    """
+    polling = get_custom_config().controllers.post_task.polling
+    # capped, so that the interval isn't computed from huge numbers
+    doubled = polling.wait * 2 ** min(doublings, MAX_DOUBLINGS)
+    return max(polling.wait, min(doubled, polling.max_wait))
 
 
 def _claim(
@@ -130,6 +148,31 @@ def _schedule(
         {"worker_id": kwargs["worker_id"], POLL_FIELD: kwargs["poll"]},
         {"$set": {POLL_FIELD: successor}},
     )
+
+
+def _store_state(
+    collection: Collection[dict[str, Any]],
+    worker_id: str,
+    state: str,
+    keep_canceled: bool = True,
+) -> None:
+    """Store the state of a task.
+
+    Args:
+        collection: Database collection of the tasks.
+        worker_id: Worker identifier of the task.
+        state: State of the task.
+        keep_canceled: Whether a stored `CANCELED` is kept: backends cancel
+            tasks asynchronously, and may report them as running (or be
+            unreachable) for a while; also if the task is canceled while it
+            is polled.
+    """
+    query: dict[str, Any] = {"worker_id": worker_id}
+    if keep_canceled:
+        query["task.state"] = {"$ne": TesState.CANCELED.value}
+    result = collection.update_one(query, {"$set": {"task.state": state}})
+    if result.modified_count:
+        logger.info("[%s] %s", worker_id, state)
 
 
 def _store_final(db_client: DbDocumentConnector, worker_id: str, response: Any) -> None:
@@ -193,6 +236,7 @@ def _poll(kwargs: dict[str, Any]) -> None:
         )
         response = cli.get_task(task_id=kwargs["remote_task_id"])
     except INFRASTRUCTURE_ERRORS:
+        # retried by the Celery task; not a failed poll
         raise
     except Exception as exc:
         # also if the backend is no longer configured or discovered (for the
@@ -212,17 +256,23 @@ def _poll(kwargs: dict[str, Any]) -> None:
                 worker_id,
                 failures,
             )
-            db_client.update_task_state(state=TesState.UNKNOWN.value)
+            _store_state(
+                collection=collection,
+                worker_id=worker_id,
+                state=TesState.UNKNOWN.value,
+            )
         _schedule(collection=collection, kwargs=kwargs, failures=failures)
         return
 
     stored = db_client.get_document(projection={"_id": False, "task.state": True})
     finished = response.state in States.FINISHED
-    # a cancelation stays stored until the backend has finished the task, as
-    # backends may report the task as running for a while
-    canceled = stored.task.state == TesState.CANCELED.value and not finished
-    if response.state != stored.task.state and not canceled:
-        db_client.update_task_state(state=str(response.state))
+    if response.state != stored.task.state:
+        _store_state(
+            collection=collection,
+            worker_id=worker_id,
+            state=str(response.state),
+            keep_canceled=not finished,
+        )
     if not finished:
         _schedule(collection=collection, kwargs=kwargs, failures=0)
         return
@@ -235,6 +285,7 @@ def _poll(kwargs: dict[str, Any]) -> None:
     ignore_result=True,
     acks_late=True,
     reject_on_worker_lost=True,
+    max_retries=None,
 )
 def task__track_task_progress(
     self: Any,
@@ -255,8 +306,9 @@ def task__track_task_progress(
     `polling.attempts` consecutive failures, the state is set to `UNKNOWN`
     (the task may still run at its backend), and polls back off (see
     :py:func:`backoff`) until the backend answers again. Polls that fail
-    because MongoDB or the broker is unavailable are retried, with the same
-    arguments, after up to `polling.max_wait` seconds.
+    because MongoDB is unavailable are retried, with the same arguments,
+    after up to `polling.max_wait` seconds, until it is available again;
+    polls that fail because the broker is unavailable go back to it.
 
     proTES authenticates at the TES service as configured for it (see
     :py:mod:`pro_tes.ga4gh.tes.backends`), with fresh credentials for each
@@ -292,10 +344,18 @@ def task__track_task_progress(
     }
     try:
         _poll(kwargs)
-    except INFRASTRUCTURE_ERRORS as exc:
-        polling = get_custom_config().controllers.post_task.polling
-        retries = min(self.request.retries, 32)
-        countdown = max(polling.wait, min(polling.wait * 2**retries, polling.max_wait))
+    except OperationalError as exc:
+        # the retry couldn't be published either: the broker delivers the
+        # poll again
+        logger.warning(
+            "[%s] Poll failed, returned to the broker: %s: %s",
+            worker_id,
+            type(exc).__name__,
+            exc,
+        )
+        raise Reject(exc, requeue=True) from exc
+    except PyMongoError as exc:
+        countdown = interval(doublings=self.request.retries)
         logger.warning(
             "[%s] Poll failed, retrying in %d seconds: %s: %s",
             worker_id,
@@ -303,7 +363,8 @@ def task__track_task_progress(
             type(exc).__name__,
             exc,
         )
-        raise self.retry(exc=exc, countdown=countdown, max_retries=None) from exc
+        # retried until MongoDB is available (`max_retries=None`)
+        raise self.retry(exc=exc, countdown=countdown) from exc
 
 
 @celery.task(name="tasks.resume_tracking", ignore_result=True, acks_late=True)
@@ -390,6 +451,7 @@ def resume_tracking_on_start(**kwargs: Any) -> Thread:
     Returns:
         Thread that resumes the tracking periodically.
     """
+    # signal handlers run outside of the app context (`get_custom_config`)
     custom = (celery.conf.foca.model_extra or {}).get("custom")
     config = custom if isinstance(custom, CustomConfig) else CustomConfig()
     interval = config.controllers.post_task.polling.max_wait

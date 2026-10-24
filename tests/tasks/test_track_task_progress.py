@@ -4,6 +4,7 @@ from collections.abc import Iterator
 import time
 from typing import Any, ClassVar
 
+from celery.exceptions import Reject
 from connexion import FlaskApp
 from foca import get_collection
 from foca.models.config import Config
@@ -143,16 +144,22 @@ def tasks(app: FlaskApp) -> Iterator[Collection[dict[str, Any]]]:
 
 @pytest.fixture
 def stored_states(monkeypatch: pytest.MonkeyPatch) -> list[str]:
-    """States stored by the Celery task, in order."""
+    """States stored by the Celery task, in order (changes only)."""
     calls: list[str] = []
-    update = DbDocumentConnector.update_task_state
+    store = track_task_progress._store_state
 
-    def record(self: DbDocumentConnector, state: str = "UNKNOWN") -> None:
-        """Record the state, and store it."""
-        calls.append(state)
-        update(self, state=state)
+    def record(
+        collection: Collection[dict[str, Any]], worker_id: str, **kwargs: Any
+    ) -> None:
+        """Store the state, and record it if it was stored."""
+        before = collection.find_one({"worker_id": worker_id})
+        store(collection=collection, worker_id=worker_id, **kwargs)
+        after = collection.find_one({"worker_id": worker_id})
+        assert before is not None and after is not None
+        if after["task"]["state"] != before["task"]["state"]:
+            calls.append(after["task"]["state"])
 
-    monkeypatch.setattr(DbDocumentConnector, "update_task_state", record)
+    monkeypatch.setattr(track_task_progress, "_store_state", record)
     return calls
 
 
@@ -344,7 +351,6 @@ def test_database_error_retried(
         run()
     (call,) = retries
     assert call["countdown"] == countdown
-    assert call["max_retries"] is None
     assert isinstance(call["exc"], ServerSelectionTimeoutError)
     assert not scheduled
 
@@ -356,7 +362,7 @@ def test_infrastructure_error_not_failed_poll(
     retries: list[dict[str, Any]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Errors of MongoDB or the broker while polling don't count as failed polls.
+    """Errors of MongoDB while polling don't count as failed polls.
 
     The poll is retried instead.
     """
@@ -372,15 +378,16 @@ def test_infrastructure_error_not_failed_poll(
     assert not scheduled
 
 
-def test_broker_error_retried(
+def test_broker_error_requeued(
     tasks: Collection[dict[str, Any]],
     client_class: type[FakeClient],
     retries: list[dict[str, Any]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Polls are retried if the next poll can't be scheduled.
+    """Polls go back to the broker if the next poll can't be scheduled.
 
-    The retry claims the tracking again, as the current poll still holds it.
+    As a retry couldn't be published either; the poll then claims the
+    tracking again, as it still holds it.
     """
     client_class.states = ["RUNNING"]
 
@@ -389,9 +396,12 @@ def test_broker_error_retried(
         raise OperationalError("unavailable")
 
     monkeypatch.setattr(TRACK, "apply_async", unavailable)
-    with pytest.raises(Retried):
+    with pytest.raises(Reject) as info:
         run()
-    assert isinstance(retries[0]["exc"], OperationalError)
+    reason, requeue = info.value.args
+    assert requeue
+    assert isinstance(reason, OperationalError)
+    assert not retries
     assert current_poll(tasks) is None
 
 
@@ -473,20 +483,47 @@ def test_cancelation_kept(
     client_class: type[FakeClient],
     scheduled: list[dict[str, Any]],
     stored_states: list[str],
+    polling: Polling,
     final: str,
 ) -> None:
     """A stored cancelation is kept until the backend has finished the task.
 
-    Backends cancel tasks asynchronously, and may report them as running for
-    a while; the final state is stored, also if the task completed anyway.
+    Backends cancel tasks asynchronously, and may report them as running (or
+    be unreachable) for a while; the final state is stored, also if the task
+    completed anyway.
     """
+    polling.attempts = 1
     tasks.update_one({}, {"$set": {"task.state": "CANCELED"}})
-    client_class.states = ["RUNNING", "CANCELING", final]
+    client_class.states = ["RUNNING", None, "CANCELING", final]
     track(scheduled)
     assert stored_states == ([] if final == "CANCELED" else [final])
     document = tasks.find_one({"worker_id": ARGS["worker_id"]})
     assert document is not None
     assert document["task"]["state"] == final
+
+
+def test_cancelation_not_overwritten(tasks: Collection[dict[str, Any]]) -> None:
+    """States of polls don't overwrite a cancelation stored meanwhile.
+
+    E.g., if the task is canceled after the poll read its state; final
+    states do.
+    """
+    tasks.update_one({}, {"$set": {"task.state": "CANCELED"}})
+    track_task_progress._store_state(
+        collection=tasks, worker_id=ARGS["worker_id"], state="RUNNING"
+    )
+    document = tasks.find_one({})
+    assert document is not None
+    assert document["task"]["state"] == "CANCELED"
+    track_task_progress._store_state(
+        collection=tasks,
+        worker_id=ARGS["worker_id"],
+        state="COMPLETE",
+        keep_canceled=False,
+    )
+    document = tasks.find_one({})
+    assert document is not None
+    assert document["task"]["state"] == "COMPLETE"
 
 
 def test_first_poll_retried(
@@ -847,10 +884,12 @@ def test_tracking_resumed_periodically(
 def test_messages_acknowledged_late() -> None:
     """Polls are acknowledged after they ran, one message per process.
 
-    So that the broker delivers them again if the worker is lost.
+    So that the broker delivers them again if the worker is lost; retries
+    (while MongoDB is unavailable) are not limited.
     """
     assert TRACK.acks_late
     assert TRACK.reject_on_worker_lost
+    assert TRACK.max_retries is None
     assert celery.conf.worker_prefetch_multiplier == 1
 
 

@@ -48,15 +48,18 @@ than configured, but are still tracked.
 Polls are acknowledged after they ran (`acks_late`), so the broker delivers
 the poll of a worker that is lost (e.g., killed after its grace period)
 again, and polls that are scheduled but not yet due go back to the broker
-when a worker shuts down. Polls that fail because MongoDB or RabbitMQ is
-unavailable are retried, with backoff up to `polling.max_wait` seconds. Each
+when a worker shuts down. Polls that fail because MongoDB is unavailable
+are retried, with backoff up to `polling.max_wait` seconds, and those that
+fail because RabbitMQ is go back to it. Each
 task is tracked by one chain of polls (the stored task holds the identifier
 of its current poll and when it ran, `tracking`). When a worker starts, and
 then every `polling.max_wait` seconds, it resumes the tracking of stored
 unfinished tasks that were forwarded to a TES instance but haven't been
 polled for three times `polling.max_wait` seconds (or ever), e.g., because
 RabbitMQ lost its data. Upgrades and restarts of the workers therefore don't
-stop the tracking of tasks; they only delay their next polls.
+stop the tracking of tasks; they only delay their next polls. Canceled
+tasks are not resumed: if their tracking is lost before their TES instance
+has finished them, they stay `CANCELED`, without their final logs.
 
 ## Task owners
 
