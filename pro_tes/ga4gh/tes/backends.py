@@ -378,6 +378,23 @@ def _causes(exc: BaseException) -> Iterator[BaseException]:
         )
 
 
+def quote_id(task_id: str) -> str:
+    """Quote the identifier of a task at a backend, as a path segment.
+
+    Args:
+        task_id: Identifier of the task, as the backend set it.
+
+    Returns:
+        The identifier, with all characters but unreserved ones
+        percent-encoded, also the dots of the identifiers `.` and `..`, so
+        that it can't change the path of requests.
+    """
+    quoted = quote(task_id, safe="")
+    if quoted in (".", ".."):
+        quoted = quoted.replace(".", "%2E")
+    return quoted
+
+
 def not_sent(exc: requests.RequestException) -> bool:
     """Check whether a failed request was certainly not received.
 
@@ -482,7 +499,7 @@ class TesClient(tes.HTTPClient):
         """
         kwargs = self._request_params(params={"view": view})
         timeout = kwargs.pop("timeout")
-        url = f"{self.url}/{API_PATH}/tasks/{quote(task_id, safe='')}"
+        url = f"{self.url}/{API_PATH}/tasks/{quote_id(task_id)}"
         response = requests.get(url, timeout=timeout, **kwargs)
         response.raise_for_status()
         task: tes.Task = unmarshal(response.json(), tes.Task)
@@ -502,7 +519,7 @@ class TesClient(tes.HTTPClient):
             pro_tes.exceptions.BackendOutcomeUnknown: The backend may have
                 canceled the task, but did not confirm it.
         """
-        self._post(path=f"tasks/{quote(task_id, safe='')}:cancel")
+        self._post(path=f"tasks/{quote_id(task_id)}:cancel")
 
     def _post(self, path: str, data: str | None = None) -> requests.Response:
         """Send a `POST` request once, to the API path of the backend.

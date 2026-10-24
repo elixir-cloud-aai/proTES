@@ -865,6 +865,21 @@ def test_not_sent_refused(loopback: None) -> None:
     assert backends.not_sent(info.value)
 
 
+@pytest.mark.parametrize(
+    "task_id, quoted",
+    [
+        ("remote-1", "remote-1"),
+        ("a/b?c#d", "a%2Fb%3Fc%23d"),
+        (".", "%2E"),
+        ("..", "%2E%2E"),
+        ("...", "..."),
+    ],
+)
+def test_quote_id(task_id: str, quoted: str) -> None:
+    """Identifiers of tasks can't change the path of requests."""
+    assert backends.quote_id(task_id) == quoted
+
+
 def test_not_sent_cyclic() -> None:
     """Exceptions whose causes form a cycle are checked once each."""
     first = requests.ConnectionError("first")
