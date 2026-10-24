@@ -100,9 +100,13 @@ db:
                 task.id: 1
               options:
                 "unique": True
-            # Celery workers find tasks by worker identifier
+            # Celery workers find tasks by worker identifier, and unfinished
+            # tasks not polled for long, to resume their tracking
             - keys:
                 worker_id: 1
+            - keys:
+                task.state: 1
+                tracking.polled_at: 1
         middlewares:
           indexes:
             - keys:
@@ -221,9 +225,14 @@ custom:
       task_id:
         charset: ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789
         length: 6
+      # Tasks are polled at their backend every `wait` seconds until they
+      # are finished; after `attempts` consecutive failed polls, their state
+      # is `UNKNOWN`, and polls back off to every `max_wait` seconds at most
+      # (both below 1800, RabbitMQ's default `consumer_timeout`)
       polling:
         wait: 3
         attempts: 100
+        max_wait: 600
       # Tasks with credentials in the URLs of inputs or outputs
       # (`https://user:password@host/...`) are rejected (`reject`), or the
       # credentials are removed (`strip`); they are never stored or forwarded

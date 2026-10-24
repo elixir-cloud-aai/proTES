@@ -1,20 +1,26 @@
-"""Tests of the Celery task tracking tasks at TES backends."""
+"""Tests of the Celery tasks tracking tasks at TES backends."""
 
 from collections.abc import Iterator
+import time
 from typing import Any, ClassVar
 
+from celery.exceptions import Reject
 from connexion import FlaskApp
 from foca import get_collection
+from foca.models.config import Config
+from kombu.exceptions import OperationalError
+from pydantic import ValidationError
 from pymongo import MongoClient
 from pymongo.collection import Collection
+from pymongo.errors import ServerSelectionTimeoutError
 import pytest
 import requests
 import tes
 
 from pro_tes.app import init_app
-from pro_tes.config_models import Discovery, TesBackend
-from pro_tes.exceptions import BackendNotConfigured
-from pro_tes.ga4gh.tes import backends, discovery
+from pro_tes.celery_worker import celery
+from pro_tes.config_models import Discovery, Polling, TesBackend
+from pro_tes.ga4gh.tes import backends
 from pro_tes.tasks import track_task_progress
 from pro_tes.utils.db import DbDocumentConnector
 from pro_tes.utils.misc import get_custom_config
@@ -28,6 +34,7 @@ ARGS: dict[str, Any] = {
     "remote_task_id": "remote-1",
 }
 OUTPUT = tes.OutputFileLog(url="s3://bucket/out", path="/out", size_bytes=10)
+TRACK = track_task_progress.task__track_task_progress
 
 
 class FakeClient:
@@ -84,24 +91,45 @@ def client_class(monkeypatch: pytest.MonkeyPatch) -> type[FakeClient]:
 
 
 @pytest.fixture
-def sleeps(monkeypatch: pytest.MonkeyPatch) -> list[float]:
-    """Waiting times between polls (without waiting)."""
-    calls: list[float] = []
-    monkeypatch.setattr(track_task_progress, "sleep", calls.append)
+def scheduled(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
+    """Polls scheduled by the Celery tasks (not run).
+
+    Each with its arguments (`kwargs`) and `countdown`, in order.
+    """
+    calls: list[dict[str, Any]] = []
+
+    def apply_async(**kwargs: Any) -> None:
+        """Record the scheduled poll."""
+        calls.append(kwargs)
+
+    monkeypatch.setattr(TRACK, "apply_async", apply_async)
     return calls
 
 
-def insert_task(collection: Collection[dict[str, Any]]) -> None:
-    """Store a queued task, as the controller does."""
+def insert_task(
+    collection: Collection[dict[str, Any]],
+    worker_id: str = ARGS["worker_id"],
+    state: str = "QUEUED",
+    **fields: Any,
+) -> None:
+    """Store a task, by default a queued one, as the controller does.
+
+    Args:
+        collection: Database collection of the tasks.
+        worker_id: Worker identifier of the task.
+        state: State of the task.
+        **fields: Further fields of the document.
+    """
     collection.insert_one(
         {
-            "worker_id": ARGS["worker_id"],
+            "worker_id": worker_id,
             "task": {
-                "id": "TASK01",
-                "state": "QUEUED",
+                "id": f"TASK-{worker_id}",
+                "state": state,
                 "executors": [],
                 "logs": [{"logs": [], "outputs": []}],
             },
+            **fields,
         }
     )
 
@@ -117,22 +145,74 @@ def tasks(app: FlaskApp) -> Iterator[Collection[dict[str, Any]]]:
 
 @pytest.fixture
 def stored_states(monkeypatch: pytest.MonkeyPatch) -> list[str]:
-    """States stored by the Celery task, in order."""
+    """States stored by the Celery task, in order (changes only)."""
     calls: list[str] = []
-    update = DbDocumentConnector.update_task_state
+    store = track_task_progress._store_state
 
-    def record(self: DbDocumentConnector, state: str = "UNKNOWN") -> None:
-        """Record the state, and store it."""
-        calls.append(state)
-        update(self, state=state)
+    def record(
+        collection: Collection[dict[str, Any]], worker_id: str, **kwargs: Any
+    ) -> None:
+        """Store the state, and record it if it was stored."""
+        before = collection.find_one({"worker_id": worker_id})
+        store(collection=collection, worker_id=worker_id, **kwargs)
+        after = collection.find_one({"worker_id": worker_id})
+        assert before is not None and after is not None
+        if after["task"]["state"] != before["task"]["state"]:
+            calls.append(after["task"]["state"])
 
-    monkeypatch.setattr(DbDocumentConnector, "update_task_state", record)
+    monkeypatch.setattr(track_task_progress, "_store_state", record)
     return calls
 
 
-def run() -> None:
-    """Run the Celery task (in the current app context)."""
-    track_task_progress.task__track_task_progress.run(**ARGS)
+@pytest.fixture
+def polling(app: FlaskApp) -> Polling:
+    """Polling configuration of the app (changed by tests)."""
+    return get_custom_config().controllers.post_task.polling
+
+
+def run(**kwargs: Any) -> None:
+    """Run one poll of the Celery task (in the current app context).
+
+    Args:
+        **kwargs: Arguments that replace those of `ARGS` or are added.
+    """
+    TRACK.run(**{**ARGS, **kwargs})
+
+
+def track(scheduled: list[dict[str, Any]], limit: int = 50) -> list[int]:
+    """Track the task: run the first poll, and then each scheduled one.
+
+    Args:
+        scheduled: Polls scheduled, as recorded by fixture `scheduled`.
+        limit: Maximum number of polls.
+
+    Returns:
+        Seconds until each scheduled poll (`countdown`), in order.
+    """
+    countdowns: list[int] = []
+    run()
+    for _ in range(limit):
+        if not scheduled:
+            return countdowns
+        call = scheduled.pop(0)
+        assert not scheduled, "more than one poll scheduled"
+        countdowns.append(call["countdown"])
+        TRACK.run(**call["kwargs"])
+    pytest.fail("tracking didn't end")  # pragma: no cover
+
+
+def current_poll(collection: Collection[dict[str, Any]]) -> str | None:
+    """Get the identifier of the poll tracking the task of `ARGS`.
+
+    Args:
+        collection: Database collection of the tasks.
+
+    Returns:
+        Identifier, or `None` if there is none.
+    """
+    document = collection.find_one({"worker_id": ARGS["worker_id"]})
+    assert document is not None
+    return (document.get("tracking") or {}).get("poll")
 
 
 @pytest.mark.parametrize("db_name", [None, OTHER_DB])
@@ -140,7 +220,7 @@ def test_task_tracked(
     monkeypatch: pytest.MonkeyPatch,
     mongo_client: MongoClient[dict[str, Any]],
     client_class: type[FakeClient],
-    sleeps: list[float],
+    scheduled: list[dict[str, Any]],
     db_name: str | None,
 ) -> None:
     """The state and outputs are stored in the configured database.
@@ -162,12 +242,13 @@ def test_task_tracked(
     assert document["task"]["logs"][0]["outputs"] == [
         {"url": "s3://bucket/out", "path": "/out", "size_bytes": "10"}
     ]
+    assert not scheduled
 
 
 def test_output_credentials_removed(
     tasks: Collection[dict[str, Any]],
     client_class: type[FakeClient],
-    sleeps: list[float],
+    scheduled: list[dict[str, Any]],
 ) -> None:
     """Credentials in the URLs of outputs that backends log aren't stored.
 
@@ -188,7 +269,7 @@ def test_output_credentials_removed(
 def test_backend_client(
     tasks: Collection[dict[str, Any]],
     client_class: type[FakeClient],
-    sleeps: list[float],
+    scheduled: list[dict[str, Any]],
 ) -> None:
     """The backend is called at its URL, with its configuration (credentials)."""
     run()
@@ -198,39 +279,43 @@ def test_backend_client(
     assert set(client_class.requested) == {"remote-1"}
 
 
+@pytest.mark.parametrize("discovered", [False, True])
 def test_backend_not_configured(
     tasks: Collection[dict[str, Any]],
     client_class: type[FakeClient],
-    sleeps: list[float],
+    scheduled: list[dict[str, Any]],
     stored_states: list[str],
+    polling: Polling,
+    discovered: bool,
 ) -> None:
-    """Tasks fail (`SYSTEM_ERROR`) if their backend is no longer configured."""
-    get_custom_config().tes.service_list = []
-    with pytest.raises(BackendNotConfigured):
-        run()
-    assert stored_states == ["INITIALIZING", "SYSTEM_ERROR"]
+    """Polls of tasks whose backend is unknown fail like other polls.
+
+    E.g., backends no longer configured, or not discovered (yet, or for the
+    time being): the task may still run there, so it doesn't fail, and is
+    tracked again once its backend is known.
+    """
+    polling.attempts = 2
+    tes_config = get_custom_config().tes
+    tes_config.service_list = []
+    if discovered:
+        tes_config.discovery = Discovery(
+            registry_url="https://registry.example.org/api", auth="none"
+        )
+    run()
+    run(**scheduled.pop()["kwargs"])
+    assert stored_states == ["UNKNOWN"]
     assert not client_class.clients
+    (call,) = scheduled
+    assert call["kwargs"]["failures"] == 2
 
 
 class Retried(Exception):
     """Raised instead of retrying the Celery task."""
 
 
-@pytest.mark.parametrize("retries, retried", [(0, True), (3, False)])
-def test_backend_unknown_retried(
-    tasks: Collection[dict[str, Any]],
-    client_class: type[FakeClient],
-    sleeps: list[float],
-    stored_states: list[str],
-    monkeypatch: pytest.MonkeyPatch,
-    retries: int,
-    retried: bool,
-) -> None:
-    """With discovery, tasks of unknown backends are retried, then fail.
-
-    The worker may not know a backend that another process discovered yet.
-    """
-    task = track_task_progress.task__track_task_progress
+@pytest.fixture
+def retries(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
+    """Retries of the Celery task (not run), with their arguments."""
     calls: list[dict[str, Any]] = []
 
     def retry(**kwargs: Any) -> Retried:
@@ -238,33 +323,127 @@ def test_backend_unknown_retried(
         calls.append(kwargs)
         return Retried()
 
-    monkeypatch.setattr(task, "retry", retry)
-    monkeypatch.setattr(task.request, "retries", retries, raising=False)
-    tes_config = get_custom_config().tes
-    tes_config.service_list = []
-    tes_config.discovery = Discovery(
-        registry_url="https://registry.example.org/api", auth="none"
-    )
-    with pytest.raises(Retried if retried else BackendNotConfigured):
+    monkeypatch.setattr(TRACK, "retry", retry)
+    return calls
+
+
+@pytest.mark.parametrize("retried, countdown", [(0, 3), (2, 12), (10**6, 600)], ids=str)
+def test_database_error_retried(
+    tasks: Collection[dict[str, Any]],
+    client_class: type[FakeClient],
+    scheduled: list[dict[str, Any]],
+    retries: list[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+    retried: int,
+    countdown: int,
+) -> None:
+    """Polls are retried if MongoDB is unavailable, with backoff.
+
+    Instead of failing, which would end the tracking of the task.
+    """
+
+    def unavailable(**kwargs: Any) -> bool:
+        """Fail like an unavailable MongoDB."""
+        raise ServerSelectionTimeoutError("unavailable")
+
+    monkeypatch.setattr(track_task_progress, "_claim", unavailable)
+    monkeypatch.setattr(TRACK.request, "retries", retried, raising=False)
+    with pytest.raises(Retried):
         run()
-    if retried:
-        assert stored_states == ["INITIALIZING"]
-        assert calls[0]["countdown"] == discovery.MIN_REFRESH_INTERVAL
-        assert isinstance(calls[0]["exc"], BackendNotConfigured)
-    else:
-        assert stored_states == ["INITIALIZING", "SYSTEM_ERROR"]
-        assert not calls
+    (call,) = retries
+    assert call["countdown"] == countdown
+    assert isinstance(call["exc"], ServerSelectionTimeoutError)
+    assert not scheduled
+
+
+def test_infrastructure_error_not_failed_poll(
+    tasks: Collection[dict[str, Any]],
+    client_class: type[FakeClient],
+    scheduled: list[dict[str, Any]],
+    retries: list[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Errors of MongoDB while polling don't count as failed polls.
+
+    The poll is retried instead.
+    """
+
+    def unavailable(self: FakeClient, task_id: str, **kwargs: Any) -> tes.Task:
+        """Fail like an unavailable MongoDB."""
+        raise ServerSelectionTimeoutError("unavailable")
+
+    monkeypatch.setattr(client_class, "get_task", unavailable)
+    with pytest.raises(Retried):
+        run()
+    assert len(retries) == 1
+    assert not scheduled
+
+
+def test_retry_not_published_requeued(
+    tasks: Collection[dict[str, Any]],
+    client_class: type[FakeClient],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Polls go back to the broker if their retry can't be published.
+
+    Celery would reject them without requeuing them, which ends the chain.
+    """
+
+    def unavailable(**kwargs: Any) -> bool:
+        """Fail like an unavailable MongoDB."""
+        raise ServerSelectionTimeoutError("unavailable")
+
+    def retry(**kwargs: Any) -> None:
+        """Fail to publish the retry, as Celery does."""
+        raise Reject(OperationalError("unavailable"), requeue=False)
+
+    monkeypatch.setattr(track_task_progress, "_claim", unavailable)
+    monkeypatch.setattr(TRACK, "retry", retry)
+    with pytest.raises(Reject) as info:
+        run()
+    reason, requeue = info.value.args
+    assert requeue
+    assert isinstance(reason, OperationalError)
+
+
+def test_broker_error_requeued(
+    tasks: Collection[dict[str, Any]],
+    client_class: type[FakeClient],
+    retries: list[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Polls go back to the broker if the next poll can't be scheduled.
+
+    As a retry couldn't be published either; the poll then claims the
+    tracking again, as it still holds it.
+    """
+    client_class.states = ["RUNNING"]
+
+    def unavailable(**kwargs: Any) -> None:
+        """Fail like an unavailable broker."""
+        raise OperationalError("unavailable")
+
+    monkeypatch.setattr(TRACK, "apply_async", unavailable)
+    with pytest.raises(Reject) as info:
+        run()
+    reason, requeue = info.value.args
+    assert requeue
+    assert isinstance(reason, OperationalError)
+    assert not retries
+    assert current_poll(tasks) is None
 
 
 def test_states_tracked(
     tasks: Collection[dict[str, Any]],
     client_class: type[FakeClient],
-    sleeps: list[float],
+    scheduled: list[dict[str, Any]],
     stored_states: list[str],
 ) -> None:
     """Changes of the state are stored until the task is finished.
 
-    The backend is polled at the configured interval.
+    Each run of the Celery task polls the backend once, and schedules the
+    next poll after the configured interval, instead of blocking a worker
+    process for the runtime of the task.
     """
     client_class.states = [
         "QUEUED",
@@ -273,10 +452,10 @@ def test_states_tracked(
         "RUNNING",
         "EXECUTOR_ERROR",
     ]
-    run()
-    assert stored_states == ["INITIALIZING", "QUEUED", "RUNNING", "EXECUTOR_ERROR"]
-    # the first request is not preceded by a wait
-    assert sleeps == [3] * (len(client_class.requested) - 1)
+    assert track(scheduled) == [3, 3, 3, 3]
+    # the task was stored as queued
+    assert stored_states == ["RUNNING", "EXECUTOR_ERROR"]
+    assert len(client_class.requested) == 5
     document = tasks.find_one({"worker_id": ARGS["worker_id"]})
     assert document is not None
     assert document["task"]["state"] == "EXECUTOR_ERROR"
@@ -285,7 +464,7 @@ def test_states_tracked(
 def test_preempted_final(
     tasks: Collection[dict[str, Any]],
     client_class: type[FakeClient],
-    sleeps: list[float],
+    scheduled: list[dict[str, Any]],
     stored_states: list[str],
 ) -> None:
     """Tracking ends once the backend reports `PREEMPTED` (TES 1.1).
@@ -294,8 +473,8 @@ def test_preempted_final(
     tracked only if the tracker kept polling.
     """
     client_class.states = ["RUNNING", "RUNNING", "PREEMPTED", "COMPLETE"]
-    run()
-    assert stored_states == ["INITIALIZING", "RUNNING", "PREEMPTED"]
+    track(scheduled)
+    assert stored_states == ["RUNNING", "PREEMPTED"]
     document = tasks.find_one({"worker_id": ARGS["worker_id"]})
     assert document is not None
     assert document["task"]["state"] == "PREEMPTED"
@@ -307,7 +486,7 @@ def test_preempted_final(
 def test_canceling_tracked(
     tasks: Collection[dict[str, Any]],
     client_class: type[FakeClient],
-    sleeps: list[float],
+    scheduled: list[dict[str, Any]],
     stored_states: list[str],
 ) -> None:
     """Tasks in `CANCELING` (TES 1.1) are tracked until they are `CANCELED`."""
@@ -315,78 +494,487 @@ def test_canceling_tracked(
         "RUNNING",
         "RUNNING",
         "CANCELING",
+        None,
         "CANCELING",
         "CANCELED",
     ]
-    run()
-    assert stored_states == ["INITIALIZING", "RUNNING", "CANCELING", "CANCELED"]
+    track(scheduled)
+    assert stored_states == ["RUNNING", "CANCELING", "CANCELED"]
     document = tasks.find_one({"worker_id": ARGS["worker_id"]})
     assert document is not None
     assert document["task"]["state"] == "CANCELED"
 
 
-def test_canceling_poll_attempts_exceeded(
+@pytest.mark.parametrize("final", ["CANCELED", "COMPLETE"])
+def test_cancelation_kept(
     tasks: Collection[dict[str, Any]],
     client_class: type[FakeClient],
-    sleeps: list[float],
+    scheduled: list[dict[str, Any]],
     stored_states: list[str],
+    polling: Polling,
+    final: str,
 ) -> None:
-    """Tasks in `CANCELING` fail like others once polls fail too often."""
-    attempts = get_custom_config().controllers.post_task.polling.attempts
-    client_class.states = ["RUNNING", "CANCELING", None]
-    with pytest.raises(requests.HTTPError):
-        run()
-    assert stored_states == ["INITIALIZING", "CANCELING", "SYSTEM_ERROR"]
-    # the first two requests, the allowed failed attempts, and the last failure
-    assert len(client_class.requested) == attempts + 3
+    """A stored cancelation is kept until the backend has finished the task.
+
+    Backends cancel tasks asynchronously, and may report them as running (or
+    be unreachable) for a while; the final state is stored, also if the task
+    completed anyway.
+    """
+    polling.attempts = 1
+    tasks.update_one({}, {"$set": {"task.state": "CANCELED"}})
+    client_class.states = ["RUNNING", None, "CANCELING", final]
+    track(scheduled)
+    assert stored_states == ([] if final == "CANCELED" else [final])
+    document = tasks.find_one({"worker_id": ARGS["worker_id"]})
+    assert document is not None
+    assert document["task"]["state"] == final
 
 
-def test_poll_retried(
+def test_cancelation_not_overwritten(tasks: Collection[dict[str, Any]]) -> None:
+    """States of polls don't overwrite a cancelation stored meanwhile.
+
+    E.g., if the task is canceled after the poll read its state; final
+    states do.
+    """
+    tasks.update_one({}, {"$set": {"task.state": "CANCELED"}})
+    track_task_progress._store_state(
+        collection=tasks, worker_id=ARGS["worker_id"], state="RUNNING"
+    )
+    document = tasks.find_one({})
+    assert document is not None
+    assert document["task"]["state"] == "CANCELED"
+    track_task_progress._store_state(
+        collection=tasks,
+        worker_id=ARGS["worker_id"],
+        state="COMPLETE",
+        keep_canceled=False,
+    )
+    document = tasks.find_one({})
+    assert document is not None
+    assert document["task"]["state"] == "COMPLETE"
+
+
+def test_first_poll_retried(
     tasks: Collection[dict[str, Any]],
     client_class: type[FakeClient],
-    sleeps: list[float],
+    scheduled: list[dict[str, Any]],
     stored_states: list[str],
 ) -> None:
-    """Failed polls are retried."""
-    client_class.states = ["QUEUED", None, None, "COMPLETE"]
-    run()
-    assert stored_states == ["INITIALIZING", "COMPLETE"]
-
-
-def test_poll_attempts_exceeded(
-    tasks: Collection[dict[str, Any]],
-    client_class: type[FakeClient],
-    sleeps: list[float],
-    stored_states: list[str],
-) -> None:
-    """Tasks fail (`SYSTEM_ERROR`) once polls fail more often than allowed."""
-    attempts = get_custom_config().controllers.post_task.polling.attempts
-    client_class.states = ["QUEUED", None]
-    with pytest.raises(requests.HTTPError):
-        run()
-    assert stored_states == ["INITIALIZING", "SYSTEM_ERROR"]
-    # the first request, the allowed failed attempts, and the last failure
-    assert len(client_class.requested) == attempts + 2
-
-
-def test_backend_unavailable(
-    tasks: Collection[dict[str, Any]],
-    client_class: type[FakeClient],
-    sleeps: list[float],
-    stored_states: list[str],
-) -> None:
-    """Tasks fail (`SYSTEM_ERROR`) if the backend doesn't serve them at first."""
+    """A failed first poll is retried, like the others (no `SYSTEM_ERROR`)."""
     client_class.states = [None, "COMPLETE"]
-    with pytest.raises(requests.HTTPError):
+    assert track(scheduled) == [3]
+    assert stored_states == ["COMPLETE"]
+
+
+def test_consecutive_failures_reset(
+    tasks: Collection[dict[str, Any]],
+    client_class: type[FakeClient],
+    scheduled: list[dict[str, Any]],
+    stored_states: list[str],
+    polling: Polling,
+) -> None:
+    """Only consecutive failed polls count: a successful poll resets them.
+
+    More polls fail than `attempts` over the life of the task, but never
+    `attempts` in a row, so the state is never `UNKNOWN`, and polls don't
+    back off.
+    """
+    polling.attempts = 3
+    client_class.states = [None, None, "RUNNING", None, None, "RUNNING"]
+    client_class.states += [None, None, "COMPLETE"]
+    assert track(scheduled) == [3] * 8
+    assert stored_states == ["RUNNING", "COMPLETE"]
+    assert len(client_class.requested) == 9
+
+
+def test_failures_exceeded(
+    tasks: Collection[dict[str, Any]],
+    client_class: type[FakeClient],
+    scheduled: list[dict[str, Any]],
+    stored_states: list[str],
+    polling: Polling,
+) -> None:
+    """After `attempts` consecutive failures, the state is `UNKNOWN`.
+
+    No final state is set, as the task may still run at its backend: polls
+    back off, up to `max_wait` seconds apart, and the state is stored again
+    once the backend answers; then polls are `wait` seconds apart again.
+    """
+    polling.attempts = 3
+    polling.max_wait = 20
+    client_class.states = [None] * 6 + ["RUNNING", "RUNNING", "COMPLETE"]
+    assert track(scheduled) == [3, 3, 6, 12, 20, 20, 3, 3]
+    assert stored_states == ["UNKNOWN", "RUNNING", "COMPLETE"]
+
+
+def test_attempts_lowered(
+    tasks: Collection[dict[str, Any]],
+    client_class: type[FakeClient],
+    scheduled: list[dict[str, Any]],
+    stored_states: list[str],
+) -> None:
+    """Tasks become `UNKNOWN` also if `attempts` was lowered meanwhile.
+
+    I.e., below the failures counted by a scheduled poll.
+    """
+    client_class.states = [None]
+    run(failures=200)
+    assert stored_states == ["UNKNOWN"]
+
+
+def test_failures_resumed(
+    tasks: Collection[dict[str, Any]],
+    client_class: type[FakeClient],
+    scheduled: list[dict[str, Any]],
+) -> None:
+    """Resumed polls continue from the stored count of failed polls.
+
+    So that they keep backing off while the backend is unavailable.
+    """
+    client_class.states = [None]
+    endpoint = {"host": ARGS["remote_host"], "base_path": "", "task_id": "remote-1"}
+    tasks.update_one({}, {"$set": {"tes_endpoint": endpoint}})
+    run(failures=4)
+    document = tasks.find_one({})
+    assert document is not None
+    assert document["tracking"]["failures"] == 5
+    tasks.update_one({}, {"$set": {"tracking.polled_at": 0}})
+    scheduled.clear()
+    track_task_progress.task__resume_tracking.run()
+    (call,) = scheduled
+    assert call["kwargs"]["failures"] == 5
+
+
+@pytest.mark.parametrize("field", ["wait", "max_wait"])
+def test_intervals_below_ack_timeout(field: str) -> None:
+    """Intervals are below the broker's acknowledgement timeout.
+
+    Scheduled polls are acknowledged when they run, so RabbitMQ would
+    deliver them again before they are due.
+    """
+    with pytest.raises(ValidationError):
+        Polling(**{field: 1800})
+
+
+def test_backoff_capped(polling: Polling) -> None:
+    """Intervals of polls are capped, also after many failures.
+
+    And never shorter than `wait`, even if `max_wait` is.
+    """
+    assert track_task_progress.backoff(10**6) == polling.max_wait
+    polling.max_wait = 1
+    assert track_task_progress.backoff(10**6) == polling.wait
+
+
+def test_superseded_chain_ends(
+    tasks: Collection[dict[str, Any]],
+    client_class: type[FakeClient],
+    scheduled: list[dict[str, Any]],
+) -> None:
+    """Polls whose identifier is no longer current do nothing.
+
+    E.g., of a chain replaced when the tracking was resumed.
+    """
+    tasks.update_one({}, {"$set": {"tracking.poll": "current"}})
+    run(poll="old", previous="older")
+    run()
+    assert not client_class.requested
+    assert not scheduled
+    assert current_poll(tasks) == "current"
+
+
+def test_tracking_passed_on(
+    tasks: Collection[dict[str, Any]],
+    client_class: type[FakeClient],
+    scheduled: list[dict[str, Any]],
+) -> None:
+    """Each poll passes the tracking on to the next, with a new identifier.
+
+    A redelivered message of an earlier poll then does nothing.
+    """
+    client_class.states = ["RUNNING"]
+    run()
+    (call,) = scheduled
+    successor = call["kwargs"]["poll"]
+    assert successor is not None
+    assert call["kwargs"]["previous"] is None
+    assert current_poll(tasks) == successor
+    run()
+    assert len(scheduled) == 1
+    assert len(client_class.requested) == 1
+
+
+class Lost(BaseException):
+    """Raised when the worker process is lost (e.g., killed)."""
+
+
+def test_redelivered_after_worker_lost(
+    tasks: Collection[dict[str, Any]],
+    client_class: type[FakeClient],
+    scheduled: list[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Polls whose worker is lost are run again, and one chain remains.
+
+    Messages are acknowledged late, so the broker delivers them again if the
+    worker is lost, e.g., between scheduling the next poll and passing the
+    tracking on to it. The poll then runs again and schedules another one,
+    and the first one it scheduled does nothing.
+    """
+    client_class.states = ["RUNNING"]
+    record = TRACK.apply_async
+
+    def lost(**kwargs: Any) -> None:
+        """Schedule the poll, and lose the worker."""
+        record(**kwargs)
+        raise Lost
+
+    monkeypatch.setattr(TRACK, "apply_async", lost)
+    with pytest.raises(Lost):
         run()
-    assert stored_states == ["INITIALIZING", "SYSTEM_ERROR"]
-    assert not sleeps
+    assert current_poll(tasks) is None
+    monkeypatch.setattr(TRACK, "apply_async", record)
+    # delivered again
+    run()
+    orphan, current = scheduled
+    assert current_poll(tasks) == current["kwargs"]["poll"]
+    scheduled.clear()
+    TRACK.run(**orphan["kwargs"])
+    assert not scheduled
+    TRACK.run(**current["kwargs"])
+    assert len(scheduled) == 1
+    assert len(client_class.requested) == 3
+
+
+def test_previous_token_claimed(
+    tasks: Collection[dict[str, Any]],
+    client_class: type[FakeClient],
+    scheduled: list[dict[str, Any]],
+) -> None:
+    """A poll takes over from the one that scheduled it.
+
+    If that one didn't pass the tracking on (e.g., it was lost, or the next
+    poll ran first).
+    """
+    client_class.states = ["RUNNING"]
+    tasks.update_one({}, {"$set": {"tracking.poll": "previous"}})
+    run(poll="next", previous="previous")
+    (call,) = scheduled
+    assert call["kwargs"]["previous"] == "next"
+    assert current_poll(tasks) == call["kwargs"]["poll"]
+
+
+def test_task_deleted(
+    tasks: Collection[dict[str, Any]],
+    client_class: type[FakeClient],
+    scheduled: list[dict[str, Any]],
+) -> None:
+    """Tracking ends if the task was deleted."""
+    tasks.delete_many({})
+    run()
+    assert not client_class.requested
+    assert not scheduled
+
+
+def test_tracking_resumed(
+    tasks: Collection[dict[str, Any]],
+    client_class: type[FakeClient],
+    scheduled: list[dict[str, Any]],
+    polling: Polling,
+) -> None:
+    """The tracking of stale unfinished tasks with a backend is resumed.
+
+    Each gets a new poll, which takes over from the stored one and ends the
+    chain of polls that tracked it before (e.g., of a worker that was lost);
+    tasks polled recently, finished tasks, tasks that weren't forwarded and
+    tasks without remote identifier (of earlier versions) are not resumed.
+    """
+    endpoint = {"host": ARGS["remote_host"], "base_path": "", "task_id": "remote-1"}
+    stale = time.time() - 3 * polling.max_wait - 1
+    tasks.update_one(
+        {},
+        {"$set": {"tes_endpoint": endpoint, "tracking": {"polled_at": stale}}},
+    )
+    insert_task(
+        tasks, "recent", tes_endpoint=endpoint, tracking={"polled_at": time.time()}
+    )
+    insert_task(tasks, "complete", state="COMPLETE", tes_endpoint=endpoint)
+    insert_task(tasks, "not-forwarded", state="UNKNOWN")
+    insert_task(
+        tasks,
+        "legacy",
+        state="RUNNING",
+        tes_endpoint={"host": ARGS["remote_host"], "base_path": ""},
+    )
+    insert_task(tasks, "no-host", tes_endpoint={**endpoint, "host": ""})
+    assert track_task_progress.task__resume_tracking.run() == 1
+    (call,) = scheduled
+    assert call["kwargs"] == {
+        "worker_id": ARGS["worker_id"],
+        "remote_host": ARGS["remote_host"],
+        "remote_base_path": "",
+        "remote_task_id": "remote-1",
+        "poll": current_poll(tasks),
+        "previous": None,
+        "failures": 0,
+    }
+    assert call.get("countdown") is None
+    # the first poll of the earlier chain does nothing
+    scheduled.clear()
+    run()
+    assert not scheduled
+    # the resumed one tracks the task
+    TRACK.run(**call["kwargs"])
+    assert client_class.requested == ["remote-1"]
+
+
+def test_resumed_poll_takes_over(
+    tasks: Collection[dict[str, Any]],
+    client_class: type[FakeClient],
+    scheduled: list[dict[str, Any]],
+) -> None:
+    """A resumed poll takes over from the stored one, also if storing fails.
+
+    E.g., if the worker resuming the tracking is lost before it stored the
+    new poll; the chain that tracked the task before then ends.
+    """
+    client_class.states = ["RUNNING"]
+    endpoint = {"host": ARGS["remote_host"], "base_path": "", "task_id": "remote-1"}
+    tasks.update_one(
+        {}, {"$set": {"tes_endpoint": endpoint, "tracking": {"poll": "stored"}}}
+    )
+    track_task_progress.task__resume_tracking.run()
+    (call,) = scheduled
+    assert call["kwargs"]["previous"] == "stored"
+    # as if the new poll had not been stored
+    tasks.update_one({}, {"$set": {"tracking.poll": "stored"}})
+    scheduled.clear()
+    TRACK.run(**call["kwargs"])
+    assert len(scheduled) == 1
+    run(poll="stored", previous="older")
+    assert len(scheduled) == 1
+
+
+def test_poll_time_stored(
+    tasks: Collection[dict[str, Any]],
+    client_class: type[FakeClient],
+    scheduled: list[dict[str, Any]],
+) -> None:
+    """Polls store when they claimed the tracking, to find stale tasks."""
+    before = time.time()
+    run()
+    document = tasks.find_one({"worker_id": ARGS["worker_id"]})
+    assert document is not None
+    assert document["tracking"]["polled_at"] >= before
+
+
+class FakeThread:
+    """Thread that is not started.
+
+    Attributes:
+        kwargs: Arguments of its target.
+        started: Whether it was started.
+    """
+
+    def __init__(self, target: Any, kwargs: dict[str, Any], **options: Any) -> None:
+        """Create the thread."""
+        self.kwargs = kwargs
+        self.started = False
+
+    def start(self) -> None:
+        """Start the thread (do nothing)."""
+        self.started = True
+
+
+def test_tracking_resumed_on_start(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The tracking is resumed when a worker starts, and then periodically.
+
+    Every `polling.max_wait` seconds; also without the custom configuration
+    of proTES (the worker doesn't start without it).
+    """
+    calls: list[bool] = []
+    monkeypatch.setattr(
+        track_task_progress.task__resume_tracking,
+        "delay",
+        lambda: calls.append(True),
+    )
+    monkeypatch.setattr(track_task_progress, "Thread", FakeThread)
+    thread = track_task_progress.resume_tracking_on_start(sender=None)
+    assert calls == [True]
+    assert isinstance(thread, FakeThread)
+    assert thread.started
+    assert thread.kwargs["interval"] == 600
+    monkeypatch.setattr(celery.conf, "foca", Config())
+    thread = track_task_progress.resume_tracking_on_start(sender=None)
+    assert isinstance(thread, FakeThread)
+    assert thread.kwargs["interval"] == Polling().max_wait
+
+
+class Stop:
+    """Event that is set after a number of waits.
+
+    Attributes:
+        waits: Intervals waited for.
+    """
+
+    def __init__(self, waits: int) -> None:
+        """Create the event."""
+        self.remaining = waits
+        self.waits: list[float] = []
+
+    def wait(self, timeout: float) -> bool:
+        """Wait (without waiting).
+
+        Returns:
+            Whether the event is set.
+        """
+        self.waits.append(timeout)
+        self.remaining -= 1
+        return self.remaining < 0
+
+
+def test_tracking_resumed_periodically(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The tracking is resumed at the interval until stopped.
+
+    Errors (e.g., of the broker) are logged, and don't end the loop.
+    """
+    calls: list[bool] = []
+
+    def delay() -> None:
+        """Record the call; fail on the first one."""
+        calls.append(True)
+        if len(calls) == 1:
+            raise OperationalError("unavailable")
+
+    monkeypatch.setattr(track_task_progress.task__resume_tracking, "delay", delay)
+    stop = Stop(waits=2)
+    track_task_progress.resume_tracking_periodically(
+        stop=stop,  # type: ignore[arg-type]
+        interval=5,
+    )
+    assert calls == [True, True]
+    assert stop.waits == [5, 5, 5]
+    assert "Could not resume the tracking" in caplog.text
+
+
+def test_messages_acknowledged_late() -> None:
+    """Polls are acknowledged after they ran, one message per process.
+
+    So that the broker delivers them again if the worker is lost; retries
+    (while MongoDB is unavailable) are not limited.
+    """
+    assert TRACK.acks_late
+    assert TRACK.reject_on_worker_lost
+    assert TRACK.max_retries is None
+    assert celery.conf.worker_prefetch_multiplier == 1
 
 
 def test_logs_missing(
     tasks: Collection[dict[str, Any]],
     client_class: type[FakeClient],
-    sleeps: list[float],
+    scheduled: list[dict[str, Any]],
 ) -> None:
     """Tasks without logs at the backend fail to update."""
     tasks.update_one({"worker_id": ARGS["worker_id"]}, {"$unset": {"task.logs": ""}})

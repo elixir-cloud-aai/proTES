@@ -25,6 +25,7 @@ from pro_tes.plugins.middlewares.task_distribution.random import (
     TaskDistributionRandom,
 )
 from pro_tes.tasks import track_task_progress
+from pro_tes.utils.db import DbDocumentConnector
 from pro_tes.utils.misc import get_custom_config
 from tests.conftest import DB, OTHER_USER, USER
 from tests.ga4gh.tes.conftest import (
@@ -122,42 +123,46 @@ def test_create_task_no_backend(
     assert mongo_client[DB]["policy_rules"].count_documents({"ptype": "g2"}) == 0
 
 
+@pytest.mark.parametrize("served", ["none", "invalid"])
 def test_create_task_state_unavailable(
     client: FlaskClient,
     backend: type[FakeBackend],
     tracked: list[dict[str, Any]],
     mongo_client: MongoClient[dict[str, Any]],
-) -> None:
-    """Tasks are tracked even if the backend doesn't serve them right away."""
-    backend.no_tasks.update(BACKENDS)
-    response = client.post(f"{BASE_PATH}/tasks", json=TASK)
-    assert response.status_code == 200
-    assert stored(mongo_client, response.get_json()["id"])
-    assert len(tracked) == 1
-
-
-def test_create_task_state_invalid(
-    client: FlaskClient,
-    backend: type[FakeBackend],
-    tracked: list[dict[str, Any]],
-    mongo_client: MongoClient[dict[str, Any]],
     monkeypatch: pytest.MonkeyPatch,
+    served: str,
 ) -> None:
-    """Tasks are stored with their backend if it serves them invalid.
+    """Tasks are tracked even if the backend doesn't serve them right away.
 
-    E.g., with an unknown state: the backend accepted the task, so it is
-    tracked (and not created again by clients retrying after errors).
+    Also if it serves them with an invalid state. They are stored as
+    `UNKNOWN`, with their backend, and can be canceled.
+
+    Args:
+        client: Client of the app.
+        backend: Fake backends.
+        tracked: Arguments of the Celery tasks started.
+        mongo_client: Client of the database.
+        monkeypatch: Pytest fixture.
+        served: Whether the backend serves no tasks (`none`), or tasks with
+            an invalid state (`invalid`).
     """
-    monkeypatch.setattr(
-        backend,
-        "get_task",
-        lambda self, task_id, **kwargs: tes.Task(id=task_id, state="DONE"),
-    )
+    if served == "none":
+        backend.no_tasks.update(BACKENDS)
+    else:
+        monkeypatch.setattr(
+            backend,
+            "get_task",
+            lambda self, task_id, **kwargs: tes.Task(id=task_id, state="DONE"),
+        )
     response = client.post(f"{BASE_PATH}/tasks", json=TASK)
     assert response.status_code == 200
-    document = stored(mongo_client, response.get_json()["id"])
+    task_id = response.get_json()["id"]
+    document = stored(mongo_client, task_id)
+    assert document["task"]["state"] == "UNKNOWN"
     assert document["tes_endpoint"]["task_id"] == "remote-1"
     assert len(tracked) == 1
+    assert client.post(f"{BASE_PATH}/tasks/{task_id}:cancel").status_code == 200
+    assert backend.canceled == ["remote-1"]
 
 
 def test_create_task_files(client: FlaskClient, backend: type[FakeBackend]) -> None:
@@ -282,7 +287,6 @@ def test_task_original_unchanged(
         return tes.Task(id=task_id, state="COMPLETE", logs=[tes.TaskLog(logs=[])])
 
     monkeypatch.setattr(backend, "get_task", complete)
-    monkeypatch.setattr(track_task_progress, "sleep", lambda seconds: None)
     with app.app.app_context():
         track_task_progress.task__track_task_progress.run(**tracked[0])
     assert client.post(f"{BASE_PATH}/tasks/{task_id}:cancel").status_code == 200
@@ -360,6 +364,37 @@ def test_cancel_task(
         f"{BASE_PATH}/tasks/{task_id}", query_string={"view": "MINIMAL"}
     )
     assert response.get_json()["state"] == "CANCELED"
+
+
+def test_create_task_state_stored(
+    task_id: str, mongo_client: MongoClient[dict[str, Any]]
+) -> None:
+    """New tasks are stored with the state their backend reported."""
+    assert stored(mongo_client, task_id)["task"]["state"] == "QUEUED"
+
+
+def test_cancel_task_after_create(
+    client: FlaskClient, task_id: str, backend: type[FakeBackend]
+) -> None:
+    """Tasks are canceled at their backend right after creation."""
+    response = client.post(f"{BASE_PATH}/tasks/{task_id}:cancel")
+    assert response.status_code == 200
+    assert backend.canceled == ["remote-1"]
+    response = client.get(f"{BASE_PATH}/tasks/{task_id}")
+    assert response.get_json()["state"] == "CANCELED"
+
+
+def test_cancel_task_unknown_state(
+    client: FlaskClient,
+    task_id: str,
+    backend: type[FakeBackend],
+    mongo_client: MongoClient[dict[str, Any]],
+) -> None:
+    """Tasks in state `UNKNOWN` (e.g., state unavailable) are canceled too."""
+    set_state(mongo_client, task_id, "UNKNOWN")
+    assert client.post(f"{BASE_PATH}/tasks/{task_id}:cancel").status_code == 200
+    assert backend.canceled == ["remote-1"]
+    assert stored(mongo_client, task_id)["task"]["state"] == "CANCELED"
 
 
 @pytest.mark.parametrize("state", ["COMPLETE", "EXECUTOR_ERROR", "CANCELED"])
@@ -930,23 +965,65 @@ def test_cancel_task_legacy(
     assert backend.canceled == ["remote-1", "remote-2"]
 
 
+@pytest.mark.parametrize("state", ["RUNNING", "UNKNOWN"])
 def test_cancel_task_no_remote_id(
     client: FlaskClient,
     task_id: str,
     backend: type[FakeBackend],
     mongo_client: MongoClient[dict[str, Any]],
+    state: str,
 ) -> None:
-    """Cancelable tasks without a remote identifier can't be canceled (`500`)."""
+    """Unfinished tasks without a remote identifier can't be canceled (`409`).
+
+    E.g., tasks that are being forwarded.
+    """
     mongo_client[DB]["tasks"].update_one(
         {"task.id": task_id},
         {
             "$unset": {"tes_endpoint.task_id": ""},
-            "$set": {"task.logs.0.metadata": {}, "task.state": "RUNNING"},
+            "$set": {"task.logs.0.metadata": {}, "task.state": state},
         },
     )
-    assert client.post(f"{BASE_PATH}/tasks/{task_id}:cancel").status_code == 500
+    response = client.post(f"{BASE_PATH}/tasks/{task_id}:cancel")
+    assert response.status_code == 409
+    assert "identifier at its TES instance" in response.get_json()["detail"]
     assert backend.canceled == []
-    assert stored(mongo_client, task_id)["task"]["state"] == "RUNNING"
+    assert stored(mongo_client, task_id)["task"]["state"] == state
+
+
+def test_cancel_task_remote_id_stored_meanwhile(
+    client: FlaskClient,
+    task_id: str,
+    backend: type[FakeBackend],
+    mongo_client: MongoClient[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Tasks are read again before they are refused to be canceled.
+
+    E.g., if forwarding stored their remote identifier since they were read.
+    """
+    set_state(mongo_client, task_id, "UNKNOWN")
+    find_task = task_runs.TaskRuns._find_task
+    calls: list[str] = []
+
+    def find_task_forwarding(
+        self: task_runs.TaskRuns, id: str
+    ) -> tuple[dict[str, Any], DbDocument]:
+        """Serve the task without its remote identifier first."""
+        calls.append(id)
+        document, db_document = find_task(self, id=id)
+        if len(calls) == 1:
+            document["tes_endpoint"].pop("task_id")
+            document["task"]["logs"][0]["metadata"] = {}
+            db_document = DbDocument(**document)
+        return document, db_document
+
+    monkeypatch.setattr(task_runs.TaskRuns, "_find_task", find_task_forwarding)
+    response = client.post(f"{BASE_PATH}/tasks/{task_id}:cancel")
+    assert response.status_code == 200
+    assert calls == [task_id, task_id]
+    assert len(backend.canceled) == 1
+    assert stored(mongo_client, task_id)["task"]["state"] == "CANCELED"
 
 
 def test_cancel_task_backend_not_configured(
@@ -1217,6 +1294,75 @@ def test_forward_stored_no_logs(app: FlaskApp) -> None:
             tes_url=BACKENDS[0],
             remote_task_id="remote-1",
         )
+
+
+def test_forward_state_changed(
+    client: FlaskClient,
+    backend: type[FakeBackend],
+    mongo_client: MongoClient[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """States of the backend don't replace states set in the meantime.
+
+    E.g., of a request that canceled the task after it was stored with its
+    backend, while its state was got.
+
+    Args:
+        client: Client of the app.
+        backend: Fake backends.
+        mongo_client: Client of the database.
+        monkeypatch: Pytest fixture.
+    """
+
+    def get_task(self: FakeBackend, task_id: str, **kwargs: Any) -> tes.Task:
+        """Serve the task as queued, after it was canceled meanwhile."""
+        (document,) = mongo_client[DB]["tasks"].find()
+        assert document["tes_endpoint"]["task_id"] == task_id
+        set_state(mongo_client, document["task"]["id"], "CANCELED")
+        return tes.Task(id=task_id, state="QUEUED")
+
+    monkeypatch.setattr(backend, "get_task", get_task)
+    response = client.post(f"{BASE_PATH}/tasks", json=TASK)
+    assert response.status_code == 200
+    document = stored(mongo_client, response.get_json()["id"])
+    assert document["task"]["state"] == "CANCELED"
+
+
+def test_forward_state_changed_while_stored(
+    client: FlaskClient,
+    backend: type[FakeBackend],
+    mongo_client: MongoClient[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Storing forwarded tasks doesn't replace states set in the meantime.
+
+    E.g., of a request that canceled the task after its backend was stored,
+    before its logs were.
+
+    Args:
+        client: Client of the app.
+        backend: Fake backends.
+        mongo_client: Client of the database.
+        monkeypatch: Pytest fixture.
+    """
+    upsert = DbDocumentConnector.upsert_fields_in_root_object
+
+    def upsert_and_cancel(
+        self: DbDocumentConnector, root: str, **kwargs: Any
+    ) -> DbDocument:
+        """Cancel the task after its backend was stored."""
+        document = upsert(self, root, **kwargs)
+        if root == "tes_endpoint":
+            set_state(mongo_client, str(document.task.id), "CANCELED")
+        return document
+
+    monkeypatch.setattr(
+        DbDocumentConnector, "upsert_fields_in_root_object", upsert_and_cancel
+    )
+    response = client.post(f"{BASE_PATH}/tasks", json=TASK)
+    assert response.status_code == 200
+    document = stored(mongo_client, response.get_json()["id"])
+    assert document["task"]["state"] == "CANCELED"
 
 
 def test_task_not_stored(

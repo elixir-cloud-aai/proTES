@@ -54,20 +54,38 @@ class TaskID(ConfigModel):
     length: int = 6
 
 
+# RabbitMQ's default acknowledgement timeout (`consumer_timeout`), in
+# seconds: scheduled polls are held unacknowledged until they are due
+CONSUMER_TIMEOUT = 1800
+
+
 class Polling(ConfigModel):
-    """Polling config.
+    """How tasks are tracked at their TES backends.
 
     Args:
-        wait: Wait time between polling attempts.
-        attempts: Max polling attempts before failure.
+        wait: Seconds between polls of the state of a task.
+        attempts: Consecutive failed polls (the count is reset by a
+            successful one) after which the state of the task is set to
+            `UNKNOWN`, and polls back off.
+        max_wait: Maximum number of seconds between polls while they back
+            off (values below `wait` count as `wait`); below RabbitMQ's
+            default acknowledgement timeout (`consumer_timeout`, 30 minutes),
+            as are those of `wait`.
 
     Attributes:
-        wait: Wait time between polling attempts.
-        attempts: Max polling attempts before failure.
+        wait: Seconds between polls of the state of a task.
+        attempts: Consecutive failed polls (the count is reset by a
+            successful one) after which the state of the task is set to
+            `UNKNOWN`, and polls back off.
+        max_wait: Maximum number of seconds between polls while they back
+            off (values below `wait` count as `wait`); below RabbitMQ's
+            default acknowledgement timeout (`consumer_timeout`, 30 minutes),
+            as are those of `wait`.
     """
 
-    wait: int = 3
-    attempts: int = 100
+    wait: Annotated[int, Field(gt=0, lt=CONSUMER_TIMEOUT)] = 3
+    attempts: PositiveInt = 100
+    max_wait: Annotated[int, Field(gt=0, lt=CONSUMER_TIMEOUT)] = 600
 
 
 class PostTask(ConfigModel):

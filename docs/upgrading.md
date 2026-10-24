@@ -231,6 +231,29 @@ that failed requests don't fill the database. Tasks that a TES instance may
 have accepted (`502`) are still stored as `SYSTEM_ERROR`. Tasks stored as
 `SYSTEM_ERROR` by earlier versions are kept.
 
+## Task tracking
+
+Tasks are tracked by short polls that schedule the next one, instead of one
+Celery task per task that held a worker process until the task finished (see
+[Task tracking](operations.md#task-tracking)), so a few worker processes
+track many tasks. Polls are acknowledged after they ran, and workers resume
+the tracking of stored unfinished tasks when they start: restarts and
+upgrades of the workers no longer stop the tracking of tasks. Only tasks
+with a remote identifier in `tes_endpoint.task_id` (see [Task times and
+remote identifiers](#task-times-and-remote-identifiers)) are resumed:
+unfinished tasks stored by earlier versions keep their last state.
+
+Failed polls no longer make a task fail: after
+`custom.controllers.post_task.polling.attempts` consecutive failed polls
+(not failed polls over the task's whole life), its state is `UNKNOWN` until
+the TES instance answers again, and polls back off up to
+`polling.max_wait` seconds (new, default 600); the first poll is retried,
+too, and so are polls of tasks whose TES instance is not (or no longer)
+configured or discovered. `polling.wait` and `polling.attempts` must be
+positive, and `wait` and `max_wait` below 1800. The workers no longer set
+`INITIALIZING` when they start tracking a task: the state is the one
+reported by its TES instance.
+
 ## Task times and remote identifiers
 
 Times of tasks (`creation_time`, and `start_time` and `end_time` of the
@@ -244,6 +267,14 @@ The identifier of a
 task at its TES instance is also stored in `tes_endpoint.task_id` (not
 served), so that tasks can be canceled with
 `custom.storeLogs.execution_trace: False` too.
+
+New tasks are stored with the state that their TES instance reports when
+they are forwarded (e.g., `QUEUED`), instead of `UNKNOWN` until the Celery
+worker tracks them. Tasks in state `UNKNOWN` are canceled at their TES
+instance too (canceling them returned `200` without effect); tasks that
+have not finished, but whose identifier at their TES instance is unknown,
+can't be canceled (`409 Conflict`; was `500`, or `200` without effect
+for tasks in state `UNKNOWN`).
 
 ## Task listing
 
