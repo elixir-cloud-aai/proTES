@@ -217,12 +217,12 @@ custom:
   are rejected with `400 Bad Request` (`reject`, the default), or the
   credentials are removed (`strip`); credentials are never stored or
   forwarded, and those that middlewares add are always removed;
-- `post_task.max_inline_content`: the maximum size of the inline contents
-  of the inputs of a task (`inputs[].content`), together, in bytes of
-  UTF-8 (default 131072, i.e., 128 KiB, the minimum that the TES
-  specification recommends); tasks with larger contents are
-  rejected with `413 Content Too Large`, also if middlewares added the
-  contents;
+- `post_task.max_inline_content`: the maximum size of the inline content
+  of each input of a task (`inputs[].content`), in bytes of UTF-8 (default
+  131072, i.e., 128 KiB, the minimum that the TES specification recommends
+  per input; all contents together are limited by the [request size
+  limit](#request-size-limit)); tasks with larger contents are rejected
+  with `413 Content Too Large`, also if middlewares added the contents;
 - `list_tasks.default_page_size`: the number of tasks per page of
   `GET /tasks` if the request sets no `page_size` (default 256, as in the
   TES specification);
@@ -251,10 +251,10 @@ defaults. See [Access control](access-control.md).
 Request bodies are limited to `server.max_content_length` bytes (default:
 1048576, i.e., 1 MiB), by FOCA: larger requests, also chunked ones, are
 rejected with `413 Content Too Large` before they are authenticated and
-parsed. Inline contents of inputs (`inputs[].content`) have a lower limit of
-their own (`custom.controllers.post_task.max_inline_content`, see
-[Tasks](#tasks)), as they are stored with each task: raise both if tasks
-with large inline contents must be accepted. Prefer inputs with URLs.
+parsed. The inline content of each input (`inputs[].content`) has a lower
+limit of its own (`custom.controllers.post_task.max_inline_content`, see
+[Tasks](#tasks)), as contents are stored with each task: raise both if
+tasks with large inline contents must be accepted. Prefer inputs with URLs.
 
 ## Rate limits
 

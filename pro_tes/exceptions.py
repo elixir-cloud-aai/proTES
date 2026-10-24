@@ -180,7 +180,7 @@ exceptions = {
     InlineContentTooLarge: {
         "title": "Content Too Large",
         "detail": (
-            "The inline contents of the inputs of the task exceed the size limit."
+            "The inline content of an input of the task exceeds the size limit."
         ),
         "status": 413,
     },
@@ -196,7 +196,7 @@ exceptions = {
     },
     NoTesInstancesAvailable: {
         "title": "Internal server error",
-        "detail": "No TES instance accepted the task; it was not kept.",
+        "detail": "No TES instance accepted the task.",
         "status": 500,
     },
     BackendAuthError: {

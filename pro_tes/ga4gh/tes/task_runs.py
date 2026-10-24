@@ -323,8 +323,7 @@ class TaskRuns:
 
         self._discard_task(db_document=db_document, owner=owner, collection=collection)
         raise NoTesInstancesAvailable(
-            "Could not forward the task request to any TES instance; the task"
-            " was not kept."
+            "Could not forward the task request to any TES instance"
         )
 
     def list_tasks(self, **kwargs: Any) -> dict[str, Any]:
@@ -880,27 +879,32 @@ class TaskRuns:
     def _check_inline_content(payload: dict[str, Any], limit: int) -> None:
         """Check the size of the inline contents of the inputs of a task.
 
+        Each input's, as the TES specification recommends a minimum size per
+        field; all together are limited by the size of request bodies.
+
         Args:
             payload: Task (JSON).
-            limit: Maximum size of the contents (`inputs[].content`),
-                together, in bytes (UTF-8).
+            limit: Maximum size of the content of an input
+                (`inputs[].content`), in bytes (UTF-8).
 
         Raises:
-            pro_tes.exceptions.InlineContentTooLarge: The contents are
-                larger.
+            pro_tes.exceptions.InlineContentTooLarge: A content is larger.
         """
         inputs = payload.get("inputs")
         if not isinstance(inputs, list):
             return
-        size = sum(
-            len(item["content"].encode("utf-8", errors="surrogatepass"))
-            for item in inputs
-            if isinstance(item, dict) and isinstance(item.get("content"), str)
+        size = max(
+            (
+                len(item["content"].encode("utf-8", errors="surrogatepass"))
+                for item in inputs
+                if isinstance(item, dict) and isinstance(item.get("content"), str)
+            ),
+            default=0,
         )
         if size > limit:
             raise InlineContentTooLarge(
-                f"Inline contents of inputs (`inputs[].content`) exceed {limit}"
-                f" bytes: {size}"
+                f"Inline content of an input (`inputs[].content`) exceeds"
+                f" {limit} bytes: {size}"
             )
 
     @staticmethod

@@ -117,7 +117,6 @@ def test_create_task_no_backend(
     response = client.post(f"{BASE_PATH}/tasks", json=TASK)
     assert response.status_code == 500
     assert response.get_json()["status"] == 500
-    assert "not kept" in response.get_json()["detail"]
     assert not tracked
     assert mongo_client[DB]["tasks"].count_documents({}) == 0
     assert mongo_client[DB]["policy_rules"].count_documents({"ptype": "g2"}) == 0
@@ -638,11 +637,11 @@ def test_list_tasks_name_prefix_null(client: FlaskClient) -> None:
 @pytest.mark.parametrize(
     "contents, accepted",
     [
-        (["a" * 8, "b" * 8], True),
-        (["a" * 8, "b" * 9], False),
+        (["a" * 16, "b" * 16], True),
+        (["a" * 16, "b" * 17], False),
         # bytes, not characters
         (["\u00e4" * 8], True),
-        (["\u00e4" * 8, "x"], False),
+        (["\u00e4" * 8 + "x"], False),
     ],
 )
 def test_create_task_inline_content(
@@ -655,8 +654,8 @@ def test_create_task_inline_content(
 ) -> None:
     """Tasks with larger inline contents than the limit are rejected (`413`).
 
-    The contents of all inputs count together, in bytes (UTF-8); rejected
-    tasks are neither stored nor relayed.
+    The content of each input counts, in bytes (UTF-8); rejected tasks are
+    neither stored nor relayed.
 
     Args:
         app: The app.
@@ -681,7 +680,7 @@ def test_create_task_inline_content(
         assert response.status_code == 200
         return
     assert response.status_code == 413
-    assert "inline contents" in response.get_json()["detail"]
+    assert "inline content" in response.get_json()["detail"]
     assert not relayed(backend)
     assert mongo_client[DB]["tasks"].count_documents({}) == 0
 
@@ -1161,7 +1160,7 @@ def test_create_task_unknown_field(
 ) -> None:
     """Tasks with fields that py-tes doesn't know fail (`400`); not kept."""
     task = deepcopy(TASK)
-    task.setdefault(field, [{"url": "s3://bucket/x", "path": "/x"}])
+    task.setdefault(field, [{"url": "s3://bucket/x", "path": "/x", "type": "FILE"}])
     task[field][0]["unknown"] = 1
     response = client.post(f"{BASE_PATH}/tasks", json=task)
     assert response.status_code == 400
@@ -1186,7 +1185,6 @@ def test_create_task_not_discarded(
     backend.failing.update(BACKENDS)
     response = client.post(f"{BASE_PATH}/tasks", json=TASK)
     assert response.status_code == 500
-    assert "not kept" in response.get_json()["detail"]
     (document,) = mongo_client[DB]["tasks"].find()
     assert document["task"]["state"] == "SYSTEM_ERROR"
 

@@ -290,7 +290,7 @@ Pages of the view `FULL` have at most 64 tasks
 (`custom.controllers.list_tasks.max_page_size_full`), also by default:
 clients that list full tasks must follow `next_page_token`.
 
-Tasks whose inline contents of inputs (`inputs[].content`) together exceed
+Tasks with an inline content of an input (`inputs[].content`) of more than
 128 KiB (`custom.controllers.post_task.max_inline_content`) are rejected
 with `413 Content Too Large`; raise the limit (and
 `server.max_content_length`) if needed, or use inputs with URLs.

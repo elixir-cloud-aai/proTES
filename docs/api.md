@@ -38,8 +38,8 @@ For `POST /tasks`, proTES:
    `creation_time` (tasks that set `creation_time`, which the TES
    specification marks read-only, are rejected with `400 Bad Request`, as
    are tasks with credentials in the URLs of inputs or outputs, unless
-   proTES is configured to remove them, and tasks whose inline contents of
-   inputs exceed `max_inline_content`, with `413 Content Too Large`: see
+   proTES is configured to remove them, and tasks with inline contents of
+   inputs over `max_inline_content`, with `413 Content Too Large`: see
    [Tasks](configuration.md#tasks));
 2. applies the [middlewares](middlewares.md), which select the TES instances
    to try and their order (and may change the task; tasks that they make
@@ -85,8 +85,8 @@ users without the required role and for tasks of others or unknown tasks
 caller deleted from the database, `409 Conflict` for unfinished tasks
 whose identifier at their TES instance is unknown, which can't be canceled,
 `413 Content Too Large` for request bodies over the [size
-limit](configuration.md#request-size-limit) and tasks whose inline contents
-of inputs exceed `max_inline_content` (see
+limit](configuration.md#request-size-limit) and tasks with inline contents
+of inputs over `max_inline_content` (see
 [Tasks](configuration.md#tasks)), `500 Internal Server Error` if a task
 could not be forwarded (it is not kept) or no middleware could be applied,
 and
