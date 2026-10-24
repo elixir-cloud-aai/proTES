@@ -159,9 +159,10 @@ seconds at most; TES instances whose hosts can't be resolved for the time
 being are kept for one more read, too. A process that doesn't know the
 TES instance of a task (e.g., the Celery worker, for a TES instance that
 the app's process discovered first) reads the registry again, at most every
-10 seconds; the Celery worker retries tracking such a task three times,
-10 seconds apart, before it gives up (state `SYSTEM_ERROR`). A service whose verification is removed is no longer used once
-the registry has been read again. Changes of the list and rejected verified
+10 seconds; polls of a task whose TES instance is unknown fail like other
+polls, so its tracking goes on (see `post_task.polling` in
+[Tasks](#tasks)). A service whose verification is removed is no longer used
+once the registry has been read again. Changes of the list and rejected verified
 services are logged. `timeout` applies to each request to the registry; the
 hosts of the services are resolved with the timeouts of the system's
 resolver. TES instances of `custom.tes.service_list` are used, too, and come
@@ -169,7 +170,8 @@ first; their settings take precedence over those of discovered ones with the
 same URL. Discovered TES instances get the credentials of `auth` (see
 [Credentials of TES
 instances](access-control.md#credentials-of-tes-instances)); tasks of a TES
-instance that is no longer discovered can't be tracked or canceled.
+instance that is no longer discovered can't be tracked or canceled (their
+state becomes `UNKNOWN` until it is discovered again).
 
 The host check doesn't protect against DNS rebinding (a host whose
 addresses change between the check and the request); restrict the egress
@@ -200,10 +202,16 @@ custom:
   with a newly generated identifier if the identifier exists already;
 - `post_task.task_id`: the characters (`charset`) and the length (`length`)
   of task identifiers;
-- `post_task.polling`: how the Celery worker tracks a forwarded task: it
-  polls the TES instance for the task's state every `wait` seconds until the
-  task has finished, and gives up (state `SYSTEM_ERROR`) after `attempts`
-  failed requests;
+- `post_task.polling`: how the Celery workers track a forwarded task: they
+  poll the TES instance for the task's state every `wait` seconds (default
+  3) until the task has finished. After `attempts` consecutive failed polls
+  (default 100; a successful poll resets the count), the task's state is
+  `UNKNOWN`, and the polls back off, doubling the interval up to `max_wait`
+  seconds (default 600), until the TES instance answers again: failed polls
+  never make a task fail, as it may still be running (see [Task
+  tracking](operations.md#task-tracking)). `wait` and `max_wait` must be
+  below 1800 seconds, RabbitMQ's default acknowledgement timeout
+  (`consumer_timeout`), as scheduled polls are acknowledged when they run;
 - `post_task.url_credentials`: what happens to tasks with credentials in the
   URLs of their inputs or outputs (`https://user:password@host/...`): they
   are rejected with `400 Bad Request` (`reject`, the default), or the

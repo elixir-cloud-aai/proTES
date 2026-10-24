@@ -278,7 +278,6 @@ def test_task_original_unchanged(
         return tes.Task(id=task_id, state="COMPLETE", logs=[tes.TaskLog(logs=[])])
 
     monkeypatch.setattr(backend, "get_task", complete)
-    monkeypatch.setattr(track_task_progress, "sleep", lambda seconds: None)
     with app.app.app_context():
         track_task_progress.task__track_task_progress.run(**tracked[0])
     assert client.post(f"{BASE_PATH}/tasks/{task_id}:cancel").status_code == 200

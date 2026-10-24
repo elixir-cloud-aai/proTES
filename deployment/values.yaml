@@ -297,9 +297,10 @@ mongodb:
 # broker via `broker.existingSecret`. Required for proTES to track tasks
 worker:
   enabled: true
-  # Command of the worker's container; each process tracks one task at a
-  # time (`--concurrency`, raise `resources` with it), and `--task-events`
-  # sends the events that Flower shows
+  # Command of the worker's container: each process runs one poll at a
+  # time, and the polls of all unfinished tasks take turns (raise
+  # `--concurrency`, with `resources`, or `replicas` if polls wait in the
+  # queue); `--task-events` sends the events that Flower shows
   command:
   - celery
   - --app
@@ -317,9 +318,11 @@ worker:
   # and timeouts
   readinessProbe: {}
   livenessProbe: {}
-  # Seconds that the worker gets to finish running tasks after its pod is
-  # deleted (Celery's warm shutdown), before it is killed; tasks that are
-  # killed are not acknowledged, so the broker delivers them again
+  # Seconds that the worker gets to finish running polls after its pod is
+  # deleted (Celery's warm shutdown), before it is killed; polls are
+  # acknowledged after they ran, so the broker delivers those of a killed
+  # worker again, and workers resume the tracking of all unfinished tasks
+  # when they start
   terminationGracePeriodSeconds: 30
   resources:
     limits:

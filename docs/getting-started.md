@@ -40,11 +40,12 @@ docker compose down
 
 Add `--volumes` to also delete the database and the broker's data.
 
-!!! warning
+!!! note
     The Celery worker tracks the state of forwarded tasks until they finish.
-    Tracking is not resumed after a restart: tasks that are still being
-    tracked (or queued for tracking in RabbitMQ) when the service is shut
-    down keep the state last recorded. Shut down when no tasks are running.
+    When it starts again, it resumes the tracking of stored unfinished
+    tasks, so tasks that finish while the service is down get their final
+    state once it is up again (see [Task
+    tracking](operations.md#task-tracking)).
 
 If you need to inspect the logs, call:
 
