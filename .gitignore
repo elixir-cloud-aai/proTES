@@ -227,3 +227,9 @@ tests/output/*
 *.modified.yaml
 .netrc
 .idea/*
+
+# TLS / key material — keep outside the repo (e.g. ~/.local/share/dev-certs/)
+*.pem
+*.key
+*.p12
+*.pfx
