@@ -93,13 +93,15 @@ def test_publish_condition() -> None:
 def test_upstream_owner() -> None:
     """`ci.yml` marks upstream runs by the owner `elixir-cloud-aai` only.
 
-    A typo in one of the owner checks would quietly change upstream runs
-    (e.g., release readiness findings to warnings).
+    A typo in, or an inverted, owner check would quietly change upstream runs
+    (e.g., release readiness findings to warnings), so every check compares
+    with `==`.
     """
     text = (WORKFLOWS / "ci.yml").read_text()
-    owners = re.findall(r"github\.repository_owner\s*==\s*'([^']*)'", text)
-    assert owners
-    assert set(owners) == {"elixir-cloud-aai"}
+    checks = re.findall(r"github\.repository_owner\s*(\S+)\s*'([^']*)'", text)
+    assert checks
+    assert len(checks) == text.count("github.repository_owner")
+    assert set(checks) == {("==", "elixir-cloud-aai")}
     assert (
         '$publish == "false"'
         in _load(WORKFLOWS / "ci.yml")["jobs"][GATE]["steps"][0]["run"]
