@@ -3,7 +3,12 @@
 # Docker Compose, scan the Docker image for known vulnerabilities, and, on
 # pushes, push the Docker image by digest (with SBOM and provenance
 # attestations), scan exactly that digest, then attest, sign (Sigstore) and
-# tag it. The gate `passed` ("CI passed") is the only required check. No
+# tag it. Forks, which have none of the secrets, run the same checks without
+# these side effects and without uploads to code scanning (as for pull
+# requests from forks), unless they set the repository variable
+# `DOCKERHUB_ORG` to publish to their own organization.
+# `github.repository_owner == 'elixir-cloud-aai'` marks runs of the upstream
+# repository. The gate `passed` ("CI passed") is the only required check. No
 # `paths:` filters, so that the gate always reports; skip jobs with `if:`
 # instead (and allow the skip in the gate)
 name: CI
@@ -23,6 +28,10 @@ permissions:
 # secrets, scans the image that is published
 env:
   IMAGE_NAME: docker.io/${{ vars.DOCKERHUB_ORG || 'elixircloud' }}/protes
+  # "true" if this run publishes the image: pushes to this repository, or to
+  # a fork that sets `DOCKERHUB_ORG` (and the Docker Hub secrets). Jobs' `if:`
+  # can't read `env`, so `push` and `publish` repeat the expression
+  PUBLISH: ${{ github.event_name == 'push' && (github.repository_owner == 'elixir-cloud-aai' || vars.DOCKERHUB_ORG != '') }}
 
 # Cancel superseded runs of a pull request; runs for pushes get their own
 # group, so that queued runs for successive pushes are not dropped
@@ -137,15 +146,16 @@ jobs:
         run: |
           coverage run -m pytest -W ignore::DeprecationWarning
           coverage xml
-      # Upload errors fail the workflow only on pushes, because pull requests
-      # from forks and Dependabot get no access to the Codecov token
+      # Upload errors fail the workflow only on pushes to the upstream
+      # repository, because pull requests from forks and Dependabot get no
+      # access to the Codecov token, and forks have none
       - name: Submit Report to Codecov
         if: ${{ matrix.uri == '' }}
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: ./coverage.xml
-          fail_ci_if_error: ${{ github.event_name == 'push' }}
+          fail_ci_if_error: ${{ github.event_name == 'push' && github.repository_owner == 'elixir-cloud-aai' }}
           verbose: true
       # Fails instead of falling back to mongomock if the URI is missing
       - name: Run tests against MongoDB
@@ -221,9 +231,9 @@ jobs:
   # immutable tag exists: for the version in `CITATION.cff` (set before a
   # release, see "Versioning and releases" in `docs/development.md`) while
   # it has no tag, or its tag is on this commit. Not needed for publishing;
-  # on pull requests, findings are warnings (so that they don't fail the
-  # gate). On pushes, findings fail the run, which the release workflow
-  # requires to pass for the release commit
+  # on pull requests and in forks, findings are warnings (so that they don't
+  # fail the gate). On pushes to the upstream repository, findings fail the
+  # run, which the release workflow requires to pass for the release commit
   readiness:
     name: Release readiness
     runs-on: ubuntu-latest
@@ -238,10 +248,13 @@ jobs:
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.13"
+      # In forks, findings are warnings too: forks often lack the upstream
+      # repository's later tags, so released versions would look unreleased
       - name: Check pins and release notes
         env:
           EVENT: ${{ github.event_name }}
           SHA: ${{ github.sha }}
+          UPSTREAM: ${{ github.repository_owner == 'elixir-cloud-aai' }}
         run: |
           version="$(sed -En "s/^version:[[:space:]]*[\"']?([0-9A-Za-z.+-]+)[\"']?[[:space:]]*(#.*)?$/\1/p" CITATION.cff)"
           if [[ -z "${version}" ]]; then
@@ -257,7 +270,7 @@ jobs:
               exit 0
           fi
           level=error
-          if [[ "${EVENT}" == "pull_request" ]]; then
+          if [[ "${EVENT}" == "pull_request" || "${UPSTREAM}" != "true" ]]; then
               level=warning
           fi
           status=0
@@ -313,17 +326,18 @@ jobs:
       - name: Show app logs
         if: failure()
         run: docker compose logs
-  # On pushes, builds the image once and pushes it by digest only (untagged,
-  # with SBOM and provenance attestations, `mode=max`), for `scan` to scan and
-  # `publish` to sign and tag, as in `release.yml`. Runs alongside the tests,
-  # so that the scan starts early; digests of runs that fail (or fail the
-  # scan) are never signed or tagged, but stay on Docker Hub, untagged
-  # (pullable by digest only)
+  # On pushes that publish (`PUBLISH`), builds the image once and pushes it
+  # by digest only (untagged, with SBOM and provenance attestations,
+  # `mode=max`), for `scan` to scan and `publish` to sign and tag, as in
+  # `release.yml`. Runs alongside the tests, so that the scan starts early;
+  # digests of runs that fail (or fail the scan) are never signed or tagged,
+  # but stay on Docker Hub, untagged (pullable by digest only)
   push:
     name: Push image
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    if: ${{ github.event_name == 'push' }}
+    # The same expression as `PUBLISH` (`tests/test_workflows.py`)
+    if: ${{ github.event_name == 'push' && (github.repository_owner == 'elixir-cloud-aai' || vars.DOCKERHUB_ORG != '') }}
     # Docker Hub secrets; the environment only allows branch `dev`
     environment: dev-images
     permissions:
@@ -378,21 +392,24 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           build-args: SETUPTOOLS_SCM_PRETEND_VERSION=${{ steps.version.outputs.version }}
   # Scans the image with Trivy (`.github/actions/scan-image`): for pull
-  # requests a local build, for pushes exactly the digest pushed by `push`
+  # requests and pushes to forks (without `DOCKERHUB_ORG`) a local build, for
+  # other pushes exactly the digest pushed by `push`
   # (`<image>@<digest>`; public, so pulling it needs no login), in a job
   # without credentials or signing permissions, as the Trivy action resolves
   # the Trivy binary from a mutable tag. The findings that have a fix are
-  # uploaded to code scanning (not for pull requests from forks, whose token
-  # cannot write them), and the job fails on critical and high
+  # uploaded to code scanning of the upstream repository (not in forks, nor
+  # for pull requests from forks, whose token cannot write them), and the job
+  # fails on critical and high
   # vulnerabilities that have a fix. Accepted findings are listed, with a
   # reason and an expiry date, in `.trivyignore.yaml`. The release workflow
   # scans the release image the same way (`release.yml`), and `latest` is
   # scanned weekly (`scan.yml`)
   scan:
     name: Scan image
-    # For pull requests, `push` is skipped
+    # `push` is skipped (by its own `if:` only, as it needs no other job)
+    # where `PUBLISH` is "false"; a failed or cancelled push skips the scan
     needs: push
-    if: ${{ !cancelled() && (github.event_name == 'pull_request' || needs.push.result == 'success') }}
+    if: ${{ !cancelled() && contains(fromJSON('["success", "skipped"]'), needs.push.result) }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -404,10 +421,10 @@ jobs:
         with:
           persist-credentials: false
       - name: Set up Docker Buildx
-        if: ${{ github.event_name != 'push' }}
+        if: ${{ env.PUBLISH != 'true' }}
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Build image
-        if: ${{ github.event_name != 'push' }}
+        if: ${{ env.PUBLISH != 'true' }}
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
@@ -420,10 +437,9 @@ jobs:
       - name: Determine image
         id: image
         env:
-          EVENT_NAME: ${{ github.event_name }}
           DIGEST: ${{ needs.push.outputs.digest }}
         run: |
-          if [[ "${EVENT_NAME}" != "push" ]]; then
+          if [[ "${PUBLISH}" != "true" ]]; then
             echo "image=${IMAGE_NAME}:scan" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -437,7 +453,7 @@ jobs:
         with:
           image: ${{ steps.image.outputs.image }}
           category: image
-          upload: ${{ github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository }}
+          upload: ${{ github.repository_owner == 'elixir-cloud-aai' && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) }}
   # Attests the build provenance of the scanned digest (GitHub artifact
   # attestation, also pushed to the registry), signs it with Sigstore keyless
   # signing (`cosign`, via the workflow's OIDC token) and only then tags
@@ -447,7 +463,8 @@ jobs:
     name: Publish image
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    if: ${{ github.event_name == 'push' }}
+    # The same expression as `PUBLISH` (`tests/test_workflows.py`)
+    if: ${{ github.event_name == 'push' && (github.repository_owner == 'elixir-cloud-aai' || vars.DOCKERHUB_ORG != '') }}
     needs: [lint, test, chart, docs, smoke, push, scan]
     # Docker Hub secrets; the environment only allows branch `dev`
     environment: dev-images
@@ -527,9 +544,10 @@ jobs:
             fi
           done
   # The only required check: passes if every other job passed, or was skipped
-  # where that is intended: `push` and `publish` on pull requests (they run
-  # on pushes only). Any other result (failure, cancelled, or an unintended
-  # skip) fails it. Add every new job to `needs`
+  # where that is intended: `push` and `publish` where `PUBLISH` is "false"
+  # (pull requests, and forks without `DOCKERHUB_ORG`). Any other result
+  # (failure, cancelled, or an unintended skip) fails it. Add every new job
+  # to `needs`
   passed:
     name: CI passed
     runs-on: ubuntu-latest
@@ -540,13 +558,12 @@ jobs:
       - name: Check results of all jobs
         env:
           NEEDS: ${{ toJSON(needs) }}
-          EVENT_NAME: ${{ github.event_name }}
         run: |
-          failed="$(jq -r --arg event "${EVENT_NAME}" '
+          failed="$(jq -r --arg publish "${PUBLISH}" '
             to_entries[]
             | select(
                 .value.result == "success"
-                or (.value.result == "skipped" and $event == "pull_request"
+                or (.value.result == "skipped" and $publish == "false"
                     and (.key == "push" or .key == "publish"))
                 | not)
             | "\(.key): \(.value.result)"' <<< "${NEEDS}")"

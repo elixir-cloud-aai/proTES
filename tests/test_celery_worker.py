@@ -37,6 +37,6 @@ def test_worker_backends_checked(
 
 def test_worker_without_custom_config(monkeypatch: pytest.MonkeyPatch) -> None:
     """The worker doesn't start without the custom configuration."""
-    monkeypatch.setattr(celery_worker.celery.conf, "foca", Config())
+    monkeypatch.setitem(celery_worker.celery.conf, "foca", Config())
     with pytest.raises(SystemExit, match="custom configuration"):
         celery_worker.check_worker_backends()

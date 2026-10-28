@@ -1061,7 +1061,7 @@ def test_tracking_resumed_on_start(monkeypatch: pytest.MonkeyPatch) -> None:
     assert isinstance(thread, FakeThread)
     assert thread.started
     assert thread.kwargs["interval"] == 600
-    monkeypatch.setattr(celery.conf, "foca", Config())
+    monkeypatch.setitem(celery.conf, "foca", Config())
     thread = track_task_progress.resume_tracking_on_start(sender=None)
     assert isinstance(thread, FakeThread)
     assert thread.kwargs["interval"] == Polling().max_wait

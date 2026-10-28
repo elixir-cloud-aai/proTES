@@ -74,3 +74,35 @@ def test_verification_signer_workflow() -> None:
     )
     assert signers
     assert set(signers) == {expected}
+
+
+def test_publish_condition() -> None:
+    """`push` and `publish` run exactly where `PUBLISH` of `ci.yml` is "true".
+
+    The gate allows them to be skipped only where `PUBLISH` is "false", and
+    `scan` builds the image locally there, so the three must agree.
+    """
+    workflow = _load(WORKFLOWS / "ci.yml")
+    publish = workflow["env"]["PUBLISH"]
+    assert publish.startswith("${{ github.event_name == 'push' && ")
+    jobs = workflow["jobs"]
+    assert jobs["push"]["if"] == publish
+    assert jobs["publish"]["if"] == publish
+
+
+def test_upstream_owner() -> None:
+    """`ci.yml` marks upstream runs by the owner `elixir-cloud-aai` only.
+
+    A typo in, or an inverted, owner check would quietly change upstream runs
+    (e.g., release readiness findings to warnings), so every check compares
+    with `==`.
+    """
+    text = (WORKFLOWS / "ci.yml").read_text()
+    checks = re.findall(r"github\.repository_owner\s*(\S+)\s*'([^']*)'", text)
+    assert checks
+    assert len(checks) == text.count("github.repository_owner")
+    assert set(checks) == {("==", "elixir-cloud-aai")}
+    assert (
+        '$publish == "false"'
+        in _load(WORKFLOWS / "ci.yml")["jobs"][GATE]["steps"][0]["run"]
+    )
