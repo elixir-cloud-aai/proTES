@@ -231,9 +231,9 @@ jobs:
   # immutable tag exists: for the version in `CITATION.cff` (set before a
   # release, see "Versioning and releases" in `docs/development.md`) while
   # it has no tag, or its tag is on this commit. Not needed for publishing;
-  # on pull requests, findings are warnings (so that they don't fail the
-  # gate). On pushes, findings fail the run, which the release workflow
-  # requires to pass for the release commit
+  # on pull requests and in forks, findings are warnings (so that they don't
+  # fail the gate). On pushes to the upstream repository, findings fail the
+  # run, which the release workflow requires to pass for the release commit
   readiness:
     name: Release readiness
     runs-on: ubuntu-latest
@@ -248,10 +248,13 @@ jobs:
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.13"
+      # In forks, findings are warnings too: forks often lack the upstream
+      # repository's later tags, so released versions would look unreleased
       - name: Check pins and release notes
         env:
           EVENT: ${{ github.event_name }}
           SHA: ${{ github.sha }}
+          UPSTREAM: ${{ github.repository_owner == 'elixir-cloud-aai' }}
         run: |
           version="$(sed -En "s/^version:[[:space:]]*[\"']?([0-9A-Za-z.+-]+)[\"']?[[:space:]]*(#.*)?$/\1/p" CITATION.cff)"
           if [[ -z "${version}" ]]; then
@@ -267,7 +270,7 @@ jobs:
               exit 0
           fi
           level=error
-          if [[ "${EVENT}" == "pull_request" ]]; then
+          if [[ "${EVENT}" == "pull_request" || "${UPSTREAM}" != "true" ]]; then
               level=warning
           fi
           status=0
@@ -333,6 +336,7 @@ jobs:
     name: Push image
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # The same expression as `PUBLISH` (`tests/test_workflows.py`)
     if: ${{ github.event_name == 'push' && (github.repository_owner == 'elixir-cloud-aai' || vars.DOCKERHUB_ORG != '') }}
     # Docker Hub secrets; the environment only allows branch `dev`
     environment: dev-images
@@ -459,6 +463,7 @@ jobs:
     name: Publish image
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # The same expression as `PUBLISH` (`tests/test_workflows.py`)
     if: ${{ github.event_name == 'push' && (github.repository_owner == 'elixir-cloud-aai' || vars.DOCKERHUB_ORG != '') }}
     needs: [lint, test, chart, docs, smoke, push, scan]
     # Docker Hub secrets; the environment only allows branch `dev`
@@ -558,7 +563,7 @@ jobs:
             to_entries[]
             | select(
                 .value.result == "success"
-                or (.value.result == "skipped" and $publish != "true"
+                or (.value.result == "skipped" and $publish == "false"
                     and (.key == "push" or .key == "publish"))
                 | not)
             | "\(.key): \(.value.result)"' <<< "${NEEDS}")"

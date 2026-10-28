@@ -239,9 +239,10 @@ tag is pushed fails again on re-runs: the release then needs a new patch
 version, with its own citation metadata and notes. Run these checks before
 tagging, therefore. The CI job "Release readiness" runs the pin and
 the notes checks, too, for the version in `CITATION.cff` while it has no
-tag (or its tag is on the checked commit): on pull requests as warnings, on
-pushes to `dev` as errors, which fail the CI run that the release workflow
-requires for the release commit. The image scan of the release workflow can
+tag (or its tag is on the checked commit): on pull requests and in forks
+(which often lack upstream's later tags) as warnings, on pushes to `dev` as
+errors, which fail the CI run that the release workflow requires for the
+release commit. The image scan of the release workflow can
 still fail after the tag, e.g., on a vulnerability published since CI last
 scanned the image of the commit; check the code scanning alerts before
 tagging.
@@ -377,44 +378,43 @@ Maintainers: the workflows rely on these repository settings: environment
 reviewer; a tag ruleset for `v*` that restricts who may create them and
 prevents moving or deleting them; immutable releases; `main` protected
 against non-fast-forward pushes; and the Docker Hub secrets
-(`DOCKERHUB_LOGIN`, `DOCKERHUB_TOKEN`) only in the two environments, not
-as repository secrets. The Docker Hub organization is the repository
-variable `DOCKERHUB_ORG` (by default `elixircloud`; forks set it to the
-organization they publish to, with the Docker Hub secrets), so that
-the scan jobs, which have no secrets, know the image name too, and the
-released chart's default image (`protes.image`) is the published one (the
-chart's README still names upstream's default). On Read the Docs, the
-default version is `stable` (the highest release) from the first release
-on, and the default branch is left empty, so that `latest` follows the
-repository's default branch, `dev`; an automation rule activates the
-versions of tags (`v*`), so that the docs linked from packaged charts
+(`DOCKERHUB_LOGIN`, `DOCKERHUB_TOKEN`) only in the two environments, not as
+repository secrets. The Docker Hub organization is the repository variable
+`DOCKERHUB_ORG` (by default `elixircloud`; forks set it to the organization
+they publish to, with the Docker Hub secrets in an environment
+`dev-images`), so that the scan jobs, which have no secrets, know the image
+name too, and the released chart's default image (`protes.image`) is the
+published one (the chart's README still names upstream's default). On Read
+the Docs, the default version is `stable` (the highest release) from the
+first release on, and the default branch is left empty, so that `latest`
+follows the repository's default branch, `dev`; an automation rule activates
+the versions of tags (`v*`), so that the docs linked from packaged charts
 exist.
 
 The CI workflow builds the image of every pull request and scans it with
 [Trivy](https://trivy.dev/) (`.github/actions/scan-image`), and a weekly
 workflow (`scan.yml`) scans `latest`. For pushes to `dev` (in forks only if
 they set `DOCKERHUB_ORG`) and for releases, the workflows push the image by
-digest, untagged, scan exactly that digest
-in a job without credentials or signing identity, and only if the scan
-passes attest, sign and tag it, so that the published images are the
-scanned ones; a digest that fails the scan stays untagged and unsigned. The
-scans fail on critical and high vulnerabilities that have a fix, and upload
-the findings that have a fix (all severities) to code scanning (Security tab;
-not in forks, nor for pull requests from forks, nor in the release
-workflow); findings without a fix appear there once a fix is released. Forks
-without `DOCKERHUB_ORG` publish nothing: their CI builds and scans the image
-locally, as for pull requests, and passes without the secrets; in all forks,
-Codecov upload errors don't fail CI. The weekly scan also
-uploads a full report, findings without a fix included, as the workflow
-artifact `trivy-report-release-image` of each run (`trivy-report.json` and
-`trivy-report.txt`, a table; Actions tab, "Scan"); it is not
-uploaded to code scanning. Accepted findings are left out of all results. To
-accept a finding (e.g., if it doesn't affect the app), add it to
+digest, untagged, scan exactly that digest in a job without credentials or
+signing identity, and only if the scan passes attest, sign and tag it, so
+that the published images are the scanned ones; a digest that fails the scan
+stays untagged and unsigned. The scans fail on critical and high
+vulnerabilities that have a fix, and upload the findings that have a fix
+(all severities) to code scanning (Security tab; not in forks, nor for pull
+requests from forks, nor in the release workflow); findings without a fix
+appear there once a fix is released. Forks without `DOCKERHUB_ORG` publish
+nothing: their CI builds and scans the image locally, as for pull requests,
+and passes without the secrets; in all forks, Codecov upload errors don't
+fail CI. The weekly scan also uploads a full report, findings without a fix
+included, as the workflow artifact `trivy-report-release-image` of each run
+(`trivy-report.json` and `trivy-report.txt`, a table; Actions tab, "Scan");
+it is not uploaded to code scanning. Accepted findings are left out of all
+results. To accept a finding (e.g., if it doesn't affect the app), add it to
 `.trivyignore.yaml` with the affected package versions (`purls`), the reason
 (`statement`) and an expiry date (`expired_at`), after which the scans fail
 again. Trivy also scans for secrets (critical and high ones fail the scans
-too); accept those under `secrets:` in the same file. Dependabot
-updates the actions, but not the Trivy version (`version:` in
+too); accept those under `secrets:` in the same file. Dependabot updates the
+actions, but not the Trivy version (`version:` in
 `.github/actions/scan-image/action.yml`): bump it by hand. Images of commits
 on `dev` are signed and attested like release images, by the CI workflow.
 All of this needs no secrets beyond the Docker Hub ones: signing uses the
