@@ -31,10 +31,26 @@ With FOCA 0.18, settings and checks that proTES had of its own are FOCA's:
   (`exceptions.validation_details`).
 - Rules of access control changed in the database directly (e.g., with
   `mongosh`) apply only after a restart of proTES (see [Task
-  owners](operations.md#task-owners)); during a rolling update from an
-  earlier version, update all instances before granting or revoking roles
+  owners](operations.md#task-owners)). Instances of earlier versions don't
+  record their changes of rules, and proTES adds owner roles with each new
+  task: once all instances run this version, restart them once more (e.g.,
+  `kubectl rollout restart deployment/<release>` with the Helm chart), so
+  that they apply the owner roles of tasks created during the rolling update
   (see FOCA's [migration guide to
   0.18](https://foca.readthedocs.io/en/latest/migration-0.18/)).
+- With several trusted issuers (`security.auth.issuers`), subjects are now
+  namespaced by issuer (`<issuer>|<sub>`), so that equal subjects of
+  different issuers are different users. Owners of stored tasks
+  (`user_id`, owner roles) and roles granted to users via the permissions
+  API are stored with bare subjects and then no longer apply: list the
+  issuer whose users own the stored tasks with `namespace: ""` (e.g.,
+  `issuers: [{issuer: "https://login.example.org/oidc/", namespace: ""},
+  "https://other.example.org/"]`; not supported by the Helm chart yet,
+  which accepts issuers as URLs only, see [#337](https://github.com/elixir-cloud-aai/proTES/issues/337)), or rewrite the stored subjects to the
+  namespaced form (see FOCA's [migration
+  guide](https://foca.readthedocs.io/en/latest/migration-0.18/#subjects-of-several-issuers)).
+  Deployments with a single trusted issuer are not affected.
+
 The service info is configured in `service_info.service` (see [Service
 info](configuration.md#service-info)); it is no longer stored in the
 database, so the `service_info` collection can be dropped.

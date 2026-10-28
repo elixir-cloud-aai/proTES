@@ -734,15 +734,21 @@ def test_admins_not_required(value: str) -> None:
     assert ("Deployment", APP) in docs
 
 
-def test_custom_require_admin_removed() -> None:
-    """Rendering fails with the old key of `require_admin`, naming the new one.
+@pytest.mark.parametrize(
+    "args",
+    [
+        ("--set", "config.custom.access_control.require_admin=false"),
+        ("--set-json", "config.custom.access_control={}"),
+    ],
+)
+def test_custom_access_control_removed(args: tuple[str, ...]) -> None:
+    """Rendering fails with `custom.access_control`, as the app refuses it.
 
-    It moved to FOCA's `security.access_control.require_admin`.
+    Naming FOCA's `security.access_control.require_admin`, where its only
+    setting moved.
     """
-    error = _render_error(
-        "--set", "config.custom.access_control.require_admin=false", admin_group=None
-    )
-    assert "config.custom.access_control.require_admin was removed" in error
+    error = _render_error(*args, admin_group=None)
+    assert "config.custom.access_control was removed" in error
     assert "config.security.access_control.require_admin" in error
 
 

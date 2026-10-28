@@ -44,7 +44,7 @@ sets:
 - an admin group mapped to the role `admin`
   (`config.security.access_control.group_mapping`), unless
   `config.security.access_control.require_admin` is `false` (rendering
-  fails on `config.custom.access_control.require_admin`, its key before the
+  fails on `config.custom.access_control`, the section of its key before the
   upgrade to FOCA 0.18); the chart counts only group mappings, so set it to
   `false` if only rules of `config.security.access_control.policies` grant
   the role;

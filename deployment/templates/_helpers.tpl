@@ -74,16 +74,13 @@ group mapping but no group claim, or without a group mapped to the role
 `admin` (unless admins are explicitly not required,
 `security.access_control.require_admin`, FOCA's); renders nothing. The
 audience is checked by the library (`requireAudience`). Fails on
-`custom.access_control.require_admin`, which moved to FOCA's setting.
+`custom.access_control` (its `require_admin` moved to FOCA's setting).
 */}}
 {{- define "protes.checkSecurity" -}}
 {{- $config := .Values.config | default dict -}}
 {{- $custom := get $config "custom" -}}
 {{- if and (kindIs "map" $custom) (hasKey $custom "access_control") -}}
-{{- $customAccessControl := get $custom "access_control" -}}
-{{- if and (kindIs "map" $customAccessControl) (hasKey $customAccessControl "require_admin") -}}
-{{- fail "config.custom.access_control.require_admin was removed with the FOCA 0.18 upgrade: set config.security.access_control.require_admin instead (see the Configuration section of Upgrading in the docs)" -}}
-{{- end -}}
+{{- fail "config.custom.access_control was removed with the FOCA 0.18 upgrade: set config.security.access_control.require_admin instead of config.custom.access_control.require_admin (see the Configuration section of Upgrading in the docs)" -}}
 {{- end -}}
 {{- $mapping := dict -}}
 {{- $requireAdmin := "true" -}}

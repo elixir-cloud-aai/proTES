@@ -131,3 +131,12 @@ def test_unknown_keys_rejected(overlay: dict[str, Any]) -> None:
     """Unknown (e.g., misspelled or removed) keys are rejected, at any level."""
     with pytest.raises(pydantic.ValidationError, match="Extra inputs"):
         CustomConfig.model_validate(deep_merge(base_custom(), overlay))
+
+
+def test_access_control_removed() -> None:
+    """`access_control` is refused, naming FOCA's `require_admin`."""
+    overlay = {"access_control": {"require_admin": False}}
+    with pytest.raises(
+        pydantic.ValidationError, match=r"security\.access_control\.require_admin"
+    ):
+        CustomConfig.model_validate(deep_merge(base_custom(), overlay))

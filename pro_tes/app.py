@@ -43,10 +43,10 @@ def init_app() -> FlaskApp:
         pydantic.ValidationError: The config is invalid, e.g., access control
             is enabled without trusted token issuers, or issuers are trusted
             without audience.
-        ValueError: The config is invalid, e.g., groups are mapped without a
-            group claim, or there are no admins (unless admins are optional,
-            `security.access_control.require_admin`), or a configured index
-            conflicts with an existing index.
+        ValueError: The config is invalid (raised by FOCA), e.g., groups are
+            mapped without a group claim, or there are no admins (unless
+            admins are optional, `security.access_control.require_admin`),
+            or a configured index conflicts with an existing index.
     """
     foca = Foca(
         config_file=Path(__file__).resolve().parent / "config.yaml",
