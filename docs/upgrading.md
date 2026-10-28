@@ -34,7 +34,7 @@ With FOCA 0.18, settings and checks that proTES had of its own are FOCA's:
   owners](operations.md#task-owners)). Instances of earlier versions don't
   record their changes of rules, and proTES adds owner roles with each new
   task: once all instances run this version, restart them once more (e.g.,
-  `kubectl rollout restart deployment/<release>` with the Helm chart), so
+  `kubectl rollout restart deployment/<app>` with the Helm chart, `<app>` as in its README, Names and labels), so
   that they apply the owner roles of tasks created during the rolling update
   (see FOCA's [migration guide to
   0.18](https://foca.readthedocs.io/en/latest/migration-0.18/)).

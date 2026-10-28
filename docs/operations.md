@@ -116,7 +116,7 @@ paths of the deleted tasks, and those ending in `:cancel`).
 
 Rules of access control changed in the database directly (e.g., with
 `mongosh`) apply only once proTES is restarted (all instances; e.g.,
-`kubectl rollout restart deployment/<release>` with the Helm chart), as
+`kubectl rollout restart deployment/<app>` with the Helm chart, `<app>` as in its README, Names and labels), as
 proTES keeps the rules in memory and notices only the changes made through
 FOCA, e.g., via the permissions API (see FOCA's [migration guide to
 0.18](https://foca.readthedocs.io/en/latest/migration-0.18/#rules-changed-in-the-database-directly)).
