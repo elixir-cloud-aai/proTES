@@ -9,7 +9,7 @@ from typing import Any, Literal
 from bson.errors import InvalidId
 from bson.objectid import ObjectId
 from celery import uuid
-from foca import get_collection
+from foca import get_collection, get_custom_config
 from foca.utils.misc import generate_id
 from pymongo.collection import Collection
 from pymongo.errors import DuplicateKeyError
@@ -50,7 +50,6 @@ from pro_tes.middleware.middleware_handler import MiddlewareHandler
 from pro_tes.tasks.track_task_progress import task__track_task_progress
 from pro_tes.utils.db import TASK_COLLECTION, TASK_DB, DbDocumentConnector
 from pro_tes.utils.misc import (
-    get_custom_config,
     has_credentials,
     strip_auth,
     utc_now,
@@ -94,7 +93,7 @@ class TaskRuns:
 
     def __init__(self) -> None:
         """Construct object instance."""
-        self.custom_config: CustomConfig = get_custom_config()
+        self.custom_config: CustomConfig = get_custom_config(CustomConfig)
         self.db_client: Collection[dict[str, Any]] = get_collection(
             TASK_DB, TASK_COLLECTION
         )

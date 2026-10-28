@@ -109,10 +109,17 @@ db.tasks.deleteMany({ user_id: { $exists: false } })
 
 Owner roles left by deleted tasks don't give access to other tasks (their
 owners get `404 Not Found`, and their identifiers are not used for new
-tasks), but are loaded on each request; delete them together with the
-documents, via the permissions API, or in the database
+tasks), but are kept in memory by each instance of proTES; delete them
+together with the documents, via the permissions API, or in the database
 (`db.policy_rules.deleteMany({ ptype: "g2", v2: { $in: [...] } })`, with the
 paths of the deleted tasks, and those ending in `:cancel`).
+
+Rules of access control changed in the database directly (e.g., with
+`mongosh`) apply only once proTES is restarted (all instances; e.g.,
+`kubectl rollout restart deployment/<release>` with the Helm chart), as
+proTES keeps the rules in memory and notices only the changes made through
+FOCA, e.g., via the permissions API (see FOCA's [migration guide to
+0.18](https://foca.readthedocs.io/en/latest/migration-0.18/#rules-changed-in-the-database-directly)).
 
 ## Abusive tasks
 

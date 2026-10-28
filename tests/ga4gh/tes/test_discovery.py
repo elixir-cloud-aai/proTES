@@ -11,12 +11,14 @@ from urllib.parse import urlsplit
 
 from connexion import FlaskApp
 from flask.testing import FlaskClient
+from foca import get_custom_config
 import pydantic
 import pytest
 import requests
 
 from pro_tes.config_models import (
     ClientCredentials,
+    CustomConfig,
     DiscoveredBackend,
     Discovery,
     Tes,
@@ -29,7 +31,6 @@ from pro_tes.exceptions import (
     RegistryError,
 )
 from pro_tes.ga4gh.tes import backends, discovery
-from pro_tes.utils.misc import get_custom_config
 from tests.conftest import mock_get
 from tests.ga4gh.tes.conftest import BASE_PATH, TASK, FakeBackend, relayed
 
@@ -762,7 +763,7 @@ def discovering(
 ) -> Iterator[FakeRegistry]:
     """App context with a static backend and discovery without credentials."""
     with app.app.app_context():
-        tes = get_custom_config().tes
+        tes = get_custom_config(CustomConfig).tes
         tes.service_list = [TesBackend(url="https://static.example.org/", auth="none")]
         tes.discovery = conf(auth="none")
         yield registry
@@ -783,7 +784,7 @@ def test_get_backends_invalid_static(discovering: FakeRegistry) -> None:
     backend = TesBackend.model_construct(
         url="https://static.example.org:x/", auth="none"
     )
-    get_custom_config().tes.service_list = [backend]
+    get_custom_config(CustomConfig).tes.service_list = [backend]
     discovering.add(service("a", "https://tes1.example.org"))
     assert urls(discovery.get_backends()) == [
         "https://static.example.org:x/",
@@ -831,7 +832,7 @@ def test_client_private_allowed(
 ) -> None:
     """Hosts of discovered backends aren't checked if private ones are allowed."""
     monkeypatch.setattr(
-        get_custom_config().tes,
+        get_custom_config(CustomConfig).tes,
         "discovery",
         conf(auth="none", allow_private_addresses=True),
     )
@@ -869,7 +870,10 @@ def test_get_backend_no_discovery(app: FlaskApp, registry: FakeRegistry) -> None
 def test_client_static_not_checked(discovering: FakeRegistry) -> None:
     """Hosts of configured backends are not checked (e.g., internal ones)."""
     client = backends.create_client(host="https://static.example.org")
-    assert client._request_params()["timeout"] == (5, get_custom_config().tes.timeout)
+    assert client._request_params()["timeout"] == (
+        5,
+        get_custom_config(CustomConfig).tes.timeout,
+    )
     assert not discovering.requests or all(
         "static" not in url for url, _ in discovering.requests
     )
@@ -879,7 +883,7 @@ def test_client_discovered_token(
     discovering: FakeRegistry, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Discovered backends with `auth: client_credentials` get proTES' token."""
-    tes = get_custom_config().tes
+    tes = get_custom_config(CustomConfig).tes
     tes.discovery = conf()
     tes.client_credentials = ClientCredentials(
         token_endpoint="https://idp.example.org/token"  # noqa: S106 (a URL)
@@ -907,7 +911,7 @@ def test_task_relayed_to_discovered_backend(
     services or those with internal addresses.
     """
     with app.app.app_context():
-        tes = get_custom_config().tes
+        tes = get_custom_config(CustomConfig).tes
         tes.service_list = []
         tes.discovery = conf(auth="none")
     registry.add(service("u", "https://unverified.example.org"), verified=False)

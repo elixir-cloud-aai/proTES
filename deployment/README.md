@@ -43,7 +43,11 @@ sets:
   any audience;
 - an admin group mapped to the role `admin`
   (`config.security.access_control.group_mapping`), unless
-  `config.custom.access_control.require_admin` is `false`;
+  `config.security.access_control.require_admin` is `false` (rendering
+  fails on `config.custom.access_control.require_admin`, its key before the
+  upgrade to FOCA 0.18); the chart counts only group mappings, so set it to
+  `false` if only rules of `config.security.access_control.policies` grant
+  the role;
 - the claim with the groups of users
   (`config.security.access_control.claim_groups`), if groups are mapped.
 
@@ -126,8 +130,9 @@ Always`), so that moving tags such as `dev` deploy the latest image; set
 the nodes (e.g., with `kind load`). The images of MongoDB, RabbitMQ and
 Flower are pinned to patch versions and pulled only if missing.
 
-The chart needs images built with FOCA 0.17 or later (installed as a
-package, with the worker entry point `pro_tes.celery_worker`; see
+The chart needs images built with FOCA 0.18 or later (installed as a
+package, with the worker entry point `pro_tes.celery_worker`, and with
+`security.access_control.require_admin`, which older images refuse; see
 [Image](https://protes.readthedocs.io/en/latest/upgrading/#image)).
 
 ## Installation

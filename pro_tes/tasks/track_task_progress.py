@@ -30,7 +30,7 @@ from uuid import uuid4
 from bson.objectid import ObjectId
 from celery.exceptions import Reject
 from celery.signals import worker_ready
-from foca import get_collection
+from foca import get_collection, get_custom_config
 from kombu.exceptions import OperationalError
 from pymongo.collection import Collection
 from pymongo.errors import PyMongoError
@@ -41,7 +41,7 @@ from pro_tes.ga4gh.tes.backends import create_client
 from pro_tes.ga4gh.tes.models import TesState, TesTask
 from pro_tes.ga4gh.tes.states import States
 from pro_tes.utils.db import TASK_COLLECTION, TASK_DB, DbDocumentConnector
-from pro_tes.utils.misc import get_custom_config, has_credentials, strip_auth
+from pro_tes.utils.misc import has_credentials, strip_auth
 from pro_tes.utils.models import TaskModelConverter
 
 logger = logging.getLogger(__name__)
@@ -75,7 +75,7 @@ def backoff(failures: int) -> int:
     Returns:
         Seconds until the next poll.
     """
-    polling = get_custom_config().controllers.post_task.polling
+    polling = get_custom_config(CustomConfig).controllers.post_task.polling
     if failures < polling.attempts:
         return polling.wait
     return interval(doublings=failures - polling.attempts + 1)
@@ -92,7 +92,7 @@ def interval(doublings: int) -> int:
     Returns:
         Seconds.
     """
-    polling = get_custom_config().controllers.post_task.polling
+    polling = get_custom_config(CustomConfig).controllers.post_task.polling
     # capped, so that the interval isn't computed from huge numbers
     doubled = polling.wait * 2 ** min(doublings, MAX_DOUBLINGS)
     return max(polling.wait, min(doubled, polling.max_wait))
@@ -254,7 +254,9 @@ def _poll(kwargs: dict[str, Any]) -> None:
             type(exc).__name__,
             exc,
         )
-        attempts = get_custom_config().controllers.post_task.polling.attempts
+        attempts = get_custom_config(
+            CustomConfig
+        ).controllers.post_task.polling.attempts
         if failures == attempts:
             logger.error(
                 "[%s] %d consecutive polls failed; the state is unknown until"
@@ -396,7 +398,7 @@ def task__resume_tracking() -> int:
     Returns:
         Number of tasks whose tracking is resumed.
     """
-    post_task = get_custom_config().controllers.post_task
+    post_task = get_custom_config(CustomConfig).controllers.post_task
     polling = post_task.polling
     stale = time.time() - STALE_FACTOR * max(polling.max_wait, polling.wait)
     collection = get_collection(TASK_DB, TASK_COLLECTION)

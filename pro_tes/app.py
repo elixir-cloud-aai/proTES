@@ -4,9 +4,10 @@ import logging
 from pathlib import Path
 
 from connexion import FlaskApp
-from foca import Foca, get_collection, get_config
+from foca import Foca, get_collection
+from foca.security.auth import require_no_service_clients
 
-from pro_tes.security import check_backends, check_role_groups, check_task_ownership
+from pro_tes.security import check_backends, check_task_ownership, check_user_groups
 from pro_tes.utils.db import (
     TASK_COLLECTION,
     TASK_DB,
@@ -16,63 +17,36 @@ from pro_tes.utils.db import (
 )
 
 logger = logging.getLogger(__name__)
-# Placeholders of the service info in `config.yaml`, with reserved example
-# domains (RFC 2606), which deployments replace
-PLACEHOLDER_ID = "org.example.protes"
-PLACEHOLDER_ORGANIZATION = {
-    "name": "Example Organization",
-    "url": "https://example.org",
-}
-
-
-def warn_placeholder_service_info() -> None:
-    """Warn if the service info still has the placeholders of `config.yaml`.
-
-    That is, if `id` is the placeholder, or the name or URL of `organization`
-    is; the warning names the fields to set. Must be called in an app
-    context.
-    """
-    service_info = get_config().service_info
-    service = service_info.service if service_info is not None else {}
-    fields = []
-    if service.get("id") == PLACEHOLDER_ID:
-        fields.append("`id`")
-    organization = service.get("organization")
-    if isinstance(organization, dict) and any(
-        organization.get(key) == value
-        for key, value in PLACEHOLDER_ORGANIZATION.items()
-    ):
-        fields.append("`organization`")
-    if fields:
-        logger.warning(
-            "The service info (`service_info.service`) has placeholder"
-            " values; set %s to describe the deployment (and `name`,"
-            " `description`, `contactUrl` and `environment`)",
-            ", ".join(fields),
-        )
 
 
 def init_app() -> FlaskApp:
     """Initialize FOCA application.
 
-    Checks that only owners can access tasks, the groups of the roles and
-    the credentials of the TES backends, warns of placeholders in the
-    service info, removes credentials of callers from tasks stored by
-    earlier versions, and drops the index of earlier versions on the tasks.
+    Checks that only owners can access tasks, refuses service clients (FOCA's
+    `require_no_service_clients()`), as tasks are owned by users only, logs
+    the groups of the role `user` and checks the credentials of the TES
+    backends, removes credentials of callers from tasks stored by earlier
+    versions, and drops the index of earlier versions on the tasks. FOCA
+    validates the config, e.g., that groups are only mapped with a group
+    claim, refuses to start without admins
+    (`security.access_control.require_admin`), and warns of placeholders in
+    the service info.
 
     Returns:
         FOCA application.
 
     Raises:
         RuntimeError: Access control is not enabled and enforced, service
-            clients are configured, no group is mapped to the role `admin`
-            (unless admins are optional), credentials of TES backends
-            are missing, or stored tasks share identifiers (cf.
+            clients are configured, credentials of TES backends are missing,
+            or stored tasks share identifiers (cf.
             :py:func:`pro_tes.utils.db.check_unique_task_ids`).
         pydantic.ValidationError: The config is invalid, e.g., access control
             is enabled without trusted token issuers, or issuers are trusted
             without audience.
-        ValueError: A configured index conflicts with an existing index.
+        ValueError: The config is invalid, e.g., groups are mapped without a
+            group claim, or there are no admins (unless admins are optional,
+            `security.access_control.require_admin`), or a configured index
+            conflicts with an existing index.
     """
     foca = Foca(
         config_file=Path(__file__).resolve().parent / "config.yaml",
@@ -83,11 +57,11 @@ def init_app() -> FlaskApp:
     except ValueError as exc:
         check_unique_task_ids(foca=foca, exc=exc)
         raise
+    require_no_service_clients(app.app)
     with app.app.app_context():
         check_task_ownership()
-        check_role_groups()
+        check_user_groups()
         check_backends()
-        warn_placeholder_service_info()
         collection = get_collection(TASK_DB, TASK_COLLECTION)
         remove_stored_credentials(collection=collection)
         drop_legacy_task_index(collection=collection)

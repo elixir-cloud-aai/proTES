@@ -71,12 +71,22 @@ As the app on startup, refuse to render unless access control is enabled
 and enforced (`security.access_control.enabled` and `enforce`, so that only
 the owners of tasks can access them), without trusted token issuers, with a
 group mapping but no group claim, or without a group mapped to the role
-`admin` (unless admins are explicitly not required); renders nothing. The
-audience is checked by the library (`requireAudience`).
+`admin` (unless admins are explicitly not required,
+`security.access_control.require_admin`, FOCA's); renders nothing. The
+audience is checked by the library (`requireAudience`). Fails on
+`custom.access_control.require_admin`, which moved to FOCA's setting.
 */}}
 {{- define "protes.checkSecurity" -}}
 {{- $config := .Values.config | default dict -}}
+{{- $custom := get $config "custom" -}}
+{{- if and (kindIs "map" $custom) (hasKey $custom "access_control") -}}
+{{- $customAccessControl := get $custom "access_control" -}}
+{{- if and (kindIs "map" $customAccessControl) (hasKey $customAccessControl "require_admin") -}}
+{{- fail "config.custom.access_control.require_admin was removed with the FOCA 0.18 upgrade: set config.security.access_control.require_admin instead (see the Configuration section of Upgrading in the docs)" -}}
+{{- end -}}
+{{- end -}}
 {{- $mapping := dict -}}
+{{- $requireAdmin := "true" -}}
 {{- $claimGroups := "" -}}
 {{- $issuers := list -}}
 {{- $enabled := "true" -}}
@@ -100,6 +110,12 @@ audience is checked by the library (`requireAudience`).
 {{- /* Only if set, as `get` returns an empty string for missing keys */ -}}
 {{- if hasKey $securityAccessControl "group_mapping" -}}
 {{- $mapping = get $securityAccessControl "group_mapping" -}}
+{{- end -}}
+{{- if hasKey $securityAccessControl "require_admin" -}}
+{{- $requireAdmin = include "protes.parseBool" (dict
+  "value" (get $securityAccessControl "require_admin")
+  "key" "config.security.access_control.require_admin"
+) -}}
 {{- end -}}
 {{- if hasKey $securityAccessControl "claim_groups" -}}
 {{- $claimGroups = get $securityAccessControl "claim_groups" -}}
@@ -143,20 +159,8 @@ whitespace is refused, too
 {{- if and $mapping (not $claimGroups) -}}
 {{- fail "config.security.access_control.claim_groups must name the claim with the groups of users (e.g., groups), as groups are mapped to roles (group_mapping); also add it to config.security.auth.userinfo_claims if the identity provider releases it via user info only" -}}
 {{- end -}}
-{{- $requireAdmin := "true" -}}
-{{- $custom := get $config "custom" -}}
-{{- $accessControl := dict -}}
-{{- if kindIs "map" $custom -}}
-{{- $accessControl = get $custom "access_control" | default dict -}}
-{{- end -}}
-{{- if and (kindIs "map" $accessControl) (hasKey $accessControl "require_admin") -}}
-{{- $requireAdmin = include "protes.parseBool" (dict
-  "value" (get $accessControl "require_admin")
-  "key" "config.custom.access_control.require_admin"
-) -}}
-{{- end -}}
 {{- if and (eq $requireAdmin "true") (not (has "admin" (values $mapping))) -}}
-{{- fail "config.security.access_control.group_mapping must map a group to the role admin (e.g., the admin group of the identity provider), or set config.custom.access_control.require_admin to false" -}}
+{{- fail "config.security.access_control.group_mapping must map a group to the role admin (e.g., the admin group of the identity provider), or set config.security.access_control.require_admin to false" -}}
 {{- end -}}
 {{- end -}}
 

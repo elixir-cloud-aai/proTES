@@ -21,13 +21,12 @@ security:
     #   compute-admins: admin
     claim_groups: groups
     group_mapping: {}
-custom:
-  access_control:
     # Start without admin groups
     require_admin: False
-  # List the TES instances to forward tasks to, and how proTES authenticates
-  # at them (see `docs/access-control.md`), e.g.:
-  # tes:
-  #   service_list:
-  #     - url: https://tes.example.org
-  #       auth: none
+# List the TES instances to forward tasks to, and how proTES authenticates at
+# them (see `docs/access-control.md`), e.g.:
+# custom:
+#   tes:
+#     service_list:
+#       - url: https://tes.example.org
+#         auth: none

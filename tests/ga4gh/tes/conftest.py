@@ -4,14 +4,14 @@ from typing import Any, ClassVar
 
 from connexion import FlaskApp
 from flask.testing import FlaskClient
+from foca import get_custom_config
 from pymongo import MongoClient
 import pytest
 import requests
 import tes
 
-from pro_tes.config_models import TesBackend
+from pro_tes.config_models import CustomConfig, TesBackend
 from pro_tes.ga4gh.tes import backends, task_runs
-from pro_tes.utils.misc import get_custom_config
 from tests.conftest import DB
 
 BASE_PATH = "/ga4gh/tes/v1"
@@ -122,7 +122,7 @@ def backend(
     monkeypatch.setattr(FakeBackend, "clients", [])
     monkeypatch.setattr(backends, "TesClient", FakeBackend)
     with app.app.app_context():
-        get_custom_config().tes.service_list = [
+        get_custom_config(CustomConfig).tes.service_list = [
             TesBackend(url=url, auth="none") for url in BACKENDS
         ]
     return FakeBackend

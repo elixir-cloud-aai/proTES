@@ -8,6 +8,7 @@ import threading
 from typing import Any, ClassVar
 
 from connexion import FlaskApp
+from foca import get_custom_config
 import pydantic
 import pytest
 import requests
@@ -21,14 +22,19 @@ from urllib3.exceptions import (
     SSLError,
 )
 
-from pro_tes.config_models import BasicCredentials, ClientCredentials, Tes, TesBackend
+from pro_tes.config_models import (
+    BasicCredentials,
+    ClientCredentials,
+    CustomConfig,
+    Tes,
+    TesBackend,
+)
 from pro_tes.exceptions import (
     BackendAuthError,
     BackendNotConfigured,
     BackendOutcomeUnknown,
 )
 from pro_tes.ga4gh.tes import backends
-from pro_tes.utils.misc import get_custom_config
 
 ISSUER = "https://idp.example.org/oidc/"
 TOKEN_ENDPOINT = "https://idp.example.org/oidc/token"  # noqa: S105 (a URL)
@@ -363,7 +369,7 @@ def test_no_issuer(idp: FakeIdp) -> None:
 def configured(app: FlaskApp) -> Iterator[None]:
     """App context with backends of each authentication mode."""
     with app.app.app_context():
-        conf = get_custom_config().tes
+        conf = get_custom_config(CustomConfig).tes
         conf.service_list = [
             TesBackend(url=f"{BACKEND_URL}/token/"),
             TesBackend(
@@ -618,7 +624,7 @@ def test_client_timeout(configured: None) -> None:
 
     Connecting times out after 5 seconds, at most.
     """
-    get_custom_config().tes.timeout = 120
+    get_custom_config(CustomConfig).tes.timeout = 120
     assert request_kwargs(NONE_URL)["timeout"] == (5, 120)
     client = backends.TesClient(
         url=BACKEND_URL, backend=TesBackend(url=BACKEND_URL, auth="none"), timeout=3
@@ -716,7 +722,9 @@ def test_post_redirect_not_followed(
     thread.start()
     try:
         url = f"http://127.0.0.1:{server.server_address[1]}"
-        get_custom_config().tes.service_list.append(TesBackend(url=url, auth="none"))
+        get_custom_config(CustomConfig).tes.service_list.append(
+            TesBackend(url=url, auth="none")
+        )
         client = backends.create_client(host=url)
         with pytest.raises(requests.HTTPError, match="status 302"):
             client.create_task(TASK)

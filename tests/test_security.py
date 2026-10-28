@@ -92,14 +92,39 @@ def test_no_audience(
     init_app()
 
 
+def test_default_require_admin() -> None:
+    """The base config requires admins (FOCA's `require_admin`)."""
+    security = yaml.safe_load(CONFIG.read_text(encoding="utf-8"))["security"]
+    assert security["access_control"]["require_admin"] is True
+
+
 def test_no_admin_group(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, app_env: None
 ) -> None:
     """The app refuses to start without a group of the role `admin`."""
     overlay = write_overlay(tmp_path / "overlay.yaml", mapping(admin="user"))
     set_overlays(monkeypatch, overlay)
-    with pytest.raises(RuntimeError, match="No group is mapped to the role 'admin'"):
+    with pytest.raises(ValueError, match="No group or service client is mapped"):
         init_app()
+
+
+def test_custom_require_admin(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, app_env: None
+) -> None:
+    """The app refuses `custom.access_control`, naming FOCA's setting.
+
+    `custom.access_control.require_admin` moved to
+    `security.access_control.require_admin`.
+    """
+    overlay = write_overlay(
+        tmp_path / "overlay.yaml",
+        {"custom": {"access_control": {"require_admin": False}}},
+    )
+    set_overlays(monkeypatch, overlay)
+    # FOCA raises its own error, from the model's (shown in the traceback)
+    with pytest.raises(ValueError, match="custom configuration") as exc:
+        init_app()
+    assert "security.access_control.require_admin" in str(exc.value.__cause__)
 
 
 def test_admin_optional(
@@ -109,19 +134,15 @@ def test_admin_optional(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Without groups of the roles, the app warns, if admins are optional."""
-    overlay = write_overlay(
-        tmp_path / "overlay.yaml",
-        {
-            **mapping(user="guest", admin="guest"),
-            "custom": {"access_control": {"require_admin": False}},
-        },
-    )
+    config = mapping(user="guest", admin="guest")
+    config["security"]["access_control"]["require_admin"] = False
+    overlay = write_overlay(tmp_path / "overlay.yaml", config)
     set_overlays(monkeypatch, overlay)
     init_app()
     # FOCA configures logging to stderr
     err = capsys.readouterr().err
     assert "No group is mapped to the role 'user'" in err
-    assert "No group is mapped to the role 'admin'" in err
+    assert "No group or service client is mapped to the role 'admin'" in err
 
 
 def test_groups_logged(app_env: None, capsys: pytest.CaptureFixture[str]) -> None:
@@ -135,7 +156,8 @@ def test_groups_logged(app_env: None, capsys: pytest.CaptureFixture[str]) -> Non
 @pytest.mark.parametrize(
     "access_control",
     [
-        {"enabled": False, "enforce": False, "policies": None},
+        # FOCA refuses `require_admin` without access control itself
+        {"enabled": False, "enforce": False, "policies": None, "require_admin": False},
         {"enforce": False},
     ],
 )
@@ -204,17 +226,15 @@ def test_no_claim_groups(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     app_env: None,
-    capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Group mappings need the claim of the groups."""
+    """Group mappings need the claim of the groups (FOCA's startup check)."""
     overlay = write_overlay(
         tmp_path / "overlay.yaml",
         {"security": {"access_control": {"claim_groups": None}}},
     )
     set_overlays(monkeypatch, overlay)
-    with pytest.raises(RuntimeError, match="No group is mapped to the role 'admin'"):
+    with pytest.raises(ValueError, match="claim_groups"):
         init_app()
-    assert "but not `claim_groups`" in capsys.readouterr().err
 
 
 def test_default_backends() -> None:

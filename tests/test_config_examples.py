@@ -124,7 +124,6 @@ def test_base_config_valid() -> None:
         {"tes": {"service_list": [{"url": "https://tes.example.org", "ath": "none"}]}},
         {"tes": {"discovery": {"registry": "https://registry.example.org"}}},
         {"controllers": {"post_task": {"task_id": {"lenght": 8}}}},
-        {"access_control": {"require_admins": False}},
         {"storeLogs": {"execution_traces": False}},
     ],
 )
