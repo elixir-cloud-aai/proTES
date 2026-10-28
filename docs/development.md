@@ -378,8 +378,9 @@ reviewer; a tag ruleset for `v*` that restricts who may create them and
 prevents moving or deleting them; immutable releases; `main` protected
 against non-fast-forward pushes; and the Docker Hub secrets
 (`DOCKERHUB_LOGIN`, `DOCKERHUB_TOKEN`) only in the two environments, not
-as repository secrets. The Docker Hub organization is the repository variable `DOCKERHUB_ORG` (by default
-`elixircloud`; forks set it to the organization they publish to), so that
+as repository secrets. The Docker Hub organization is the repository
+variable `DOCKERHUB_ORG` (by default `elixircloud`; forks set it to the
+organization they publish to, with the Docker Hub secrets), so that
 the scan jobs, which have no secrets, know the image name too, and the
 released chart's default image (`protes.image`) is the published one (the
 chart's README still names upstream's default). On Read the Docs, the
@@ -391,15 +392,19 @@ exist.
 
 The CI workflow builds the image of every pull request and scans it with
 [Trivy](https://trivy.dev/) (`.github/actions/scan-image`), and a weekly
-workflow (`scan.yml`) scans `latest`. For pushes to `dev` and for releases,
-the workflows push the image by digest, untagged, scan exactly that digest
+workflow (`scan.yml`) scans `latest`. For pushes to `dev` (in forks only if
+they set `DOCKERHUB_ORG`) and for releases, the workflows push the image by
+digest, untagged, scan exactly that digest
 in a job without credentials or signing identity, and only if the scan
 passes attest, sign and tag it, so that the published images are the
 scanned ones; a digest that fails the scan stays untagged and unsigned. The
 scans fail on critical and high vulnerabilities that have a fix, and upload
 the findings that have a fix (all severities) to code scanning (Security tab;
-not for pull requests from forks, nor in the release workflow); findings
-without a fix appear there once a fix is released. The weekly scan also
+not in forks, nor for pull requests from forks, nor in the release
+workflow); findings without a fix appear there once a fix is released. Forks
+without `DOCKERHUB_ORG` publish nothing: their CI builds and scans the image
+locally, as for pull requests, and passes without the secrets; in all forks,
+Codecov upload errors don't fail CI. The weekly scan also
 uploads a full report, findings without a fix included, as the workflow
 artifact `trivy-report-release-image` of each run (`trivy-report.json` and
 `trivy-report.txt`, a table; Actions tab, "Scan"); it is not
