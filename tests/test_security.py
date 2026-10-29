@@ -4,12 +4,13 @@ from pathlib import Path
 from typing import Any
 
 from foca import get_config
+from foca.plugins.backends import BackendListConfig, ServiceEntry
 import pydantic
 import pytest
 import yaml
 
 from pro_tes.app import init_app
-from pro_tes.config_models import Tes, TesBackend
+from pro_tes.config_models import Tes
 from pro_tes.ga4gh.tes.backends import CLIENT_ID_ENV, CLIENT_SECRET_ENV
 from pro_tes.security import check_backends
 from tests.conftest import ADMIN_GROUP, USER_GROUP, set_overlays
@@ -243,44 +244,49 @@ def test_default_backends() -> None:
     Tasks with credentials in URLs are rejected.
     """
     custom = yaml.safe_load(CONFIG.read_text(encoding="utf-8"))["custom"]
-    assert custom["tes"]["service_list"] == []
+    # no backends and no registry by default (generic)
+    assert custom["tes"]["backends"] == []
     assert custom["tes"]["url_schemes"] == ["https"]
     assert custom["tes"]["client_credentials"]["issuer"] is None
-    # no registry by default (generic); discovered hosts must be public
-    assert custom["tes"]["discovery"]["registry_url"] is None
-    assert custom["tes"]["discovery"]["allow_private_addresses"] is False
     assert custom["controllers"]["post_task"]["url_credentials"] == "reject"
 
 
-def backends_overlay(path: Path, *backends: dict[str, Any]) -> Path:
+def backends_overlay(path: Path, *backends: dict[str, Any], **server: Any) -> Path:
     """Write a config overlay with TES backends.
 
     Args:
         path: Path of the overlay.
-        *backends: TES backends (`custom.tes.service_list`).
+        *backends: Entries of the backend list (`custom.tes.backends`).
+        **server: Server settings, if any (e.g., `public_url`).
 
     Returns:
         Path of the overlay.
     """
-    return write_overlay(
-        path,
-        {
-            "custom": {
-                "tes": {
-                    "service_list": list(backends),
-                    "client_credentials": {"issuer": "https://idp.example.org/"},
-                }
+    config: dict[str, Any] = {
+        "custom": {
+            "tes": {
+                "backends": list(backends),
+                "client_credentials": {"issuer": "https://idp.example.org/"},
             }
-        },
-    )
+        }
+    }
+    if server:
+        config["server"] = server
+    return write_overlay(path, config)
 
 
-TOKEN_BACKEND = {"url": "https://tes1.example.org"}
+TOKEN_BACKEND = {"type": "ga4gh-tes", "url": "https://tes1.example.org"}
 BASIC_BACKEND = {
+    "type": "ga4gh-tes",
     "url": "https://tes2.example.org",
     "auth": "basic",
     "basic": {"username_env": "TES2_USERNAME", "password_env": "TES2_PASSWORD"},
 }
+REGISTRY = {
+    "type": "ga4gh-service-registry",
+    "url": "https://registry.example.org/api",
+}
+PUBLIC_URL = "https://protes.example.org/"
 
 
 def test_backends_credentials_missing(
@@ -320,7 +326,7 @@ def test_backends_logged(
         tmp_path / "overlay.yaml",
         TOKEN_BACKEND,
         BASIC_BACKEND,
-        {"url": "https://tes3.example.org", "auth": "none"},
+        {"type": "ga4gh-tes", "url": "https://tes3.example.org", "auth": "none"},
     )
     set_overlays(monkeypatch, overlay)
     init_app()
@@ -343,27 +349,62 @@ def test_no_backends(
     """Without backends, and with `http` allowed, the app warns."""
     overlay = write_overlay(
         tmp_path / "overlay.yaml",
-        {"custom": {"tes": {"service_list": [], "url_schemes": ["https", "http"]}}},
+        {"custom": {"tes": {"backends": [], "url_schemes": ["https", "http"]}}},
     )
     set_overlays(monkeypatch, overlay)
     init_app()
     err = capsys.readouterr().err
     assert "No TES backends are configured" in err
-    assert "scheme 'http' are allowed" in err
+    assert "scheme 'http' are allowed for the identity provider" in err
 
 
-def test_backends_invalid(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, app_env: None
+def test_http_backend_logged(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    app_env: None,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """The app refuses to start with backends with tokens, but no issuer."""
-    overlay = write_overlay(
+    """Entries that allow `http` are named in a warning."""
+    overlay = backends_overlay(
         tmp_path / "overlay.yaml",
-        {"custom": {"tes": {"service_list": [TOKEN_BACKEND]}}},
+        {
+            "type": "ga4gh-tes",
+            "url": "http://tes.example.org",
+            "url_schemes": ["http"],
+            "auth": "none",
+        },
     )
+    set_overlays(monkeypatch, overlay)
+    init_app()
+    err = capsys.readouterr().err
+    assert "allowed (`url_schemes`) for http://tes.example.org" in err
+
+
+@pytest.mark.parametrize(
+    "tes, match",
+    [
+        ({"backends": [TOKEN_BACKEND]}, "need `client_credentials"),
+        ({"service_list": []}, "`custom.tes.service_list` removed"),
+        ({"discovery": {}}, "`custom.tes.discovery` removed"),
+    ],
+)
+def test_backends_invalid(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    app_env: None,
+    tes: dict[str, Any],
+    match: str,
+) -> None:
+    """The app refuses to start with invalid or removed backend settings.
+
+    E.g., backends with tokens, but no issuer; or the keys replaced by the
+    backend list.
+    """
+    overlay = write_overlay(tmp_path / "overlay.yaml", {"custom": {"tes": tes}})
     set_overlays(monkeypatch, overlay)
     with pytest.raises(ValueError, match="custom configuration") as exc_info:
         init_app()
-    assert "need `client_credentials" in str(exc_info.value.__cause__)
+    assert match in str(exc_info.value.__cause__)
 
 
 def test_basic_backend_unvalidated() -> None:
@@ -371,67 +412,67 @@ def test_basic_backend_unvalidated() -> None:
 
     Validation prevents them, unless the config is changed afterwards.
     """
-    backend = TesBackend.model_construct(
-        url="https://tes.example.org", auth="basic", basic=None
+    entry = ServiceEntry.model_construct(
+        type="ga4gh-tes",
+        url="https://tes.example.org",
+        url_schemes=["https"],
+        auth="basic",
+        basic=None,
     )
-    conf = Tes.model_construct(service_list=[backend], url_schemes=["https"])
+    conf = Tes.model_construct(
+        backends=BackendListConfig.model_construct([entry]), url_schemes=["https"]
+    )
     with pytest.raises(RuntimeError, match="without `basic`"):
         check_backends(conf)
 
 
-def discovery_overlay(path: Path, **discovery: Any) -> Path:
-    """Write a config overlay with discovery of backends, and no static ones.
-
-    Args:
-        path: Path of the overlay.
-        **discovery: Discovery settings, besides the registry URL.
-
-    Returns:
-        Path of the overlay.
-    """
-    return write_overlay(
-        path,
-        {
-            "custom": {
-                "tes": {
-                    "service_list": [],
-                    "discovery": {
-                        "registry_url": "https://registry.example.org/api",
-                        **discovery,
-                    },
-                    "client_credentials": {"issuer": "https://idp.example.org/"},
-                }
-            }
-        },
-    )
-
-
-def test_discovery_credentials_missing(
+def test_registry_public_url_missing(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, app_env: None
 ) -> None:
-    """With discovery, the app refuses to start without proTES' client.
+    """With registries, the app refuses to start without its public URL.
+
+    So that it never discovers, and forwards tasks to, itself.
+    """
+    monkeypatch.setenv(CLIENT_ID_ENV, "protes")
+    monkeypatch.setenv(CLIENT_SECRET_ENV, "client-secret")
+    set_overlays(monkeypatch, backends_overlay(tmp_path / "overlay.yaml", REGISTRY))
+    with pytest.raises(RuntimeError, match=r"`server\.public_url` is not set"):
+        init_app()
+
+
+def test_registry_credentials_missing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, app_env: None
+) -> None:
+    """With registries, the app refuses to start without proTES' client.
 
     Discovered backends get proTES' token by default.
     """
     for name in (CLIENT_ID_ENV, CLIENT_SECRET_ENV):
         monkeypatch.delenv(name, raising=False)
-    set_overlays(monkeypatch, discovery_overlay(tmp_path / "overlay.yaml"))
+    overlay = backends_overlay(
+        tmp_path / "overlay.yaml", REGISTRY, public_url=PUBLIC_URL
+    )
+    set_overlays(monkeypatch, overlay)
     with pytest.raises(RuntimeError, match=CLIENT_SECRET_ENV):
         init_app()
 
 
-def test_discovery_logged(
+def test_registry_logged(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     app_env: None,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Discovery is logged, with warnings for its less safe settings.
-
-    The registry is unreachable in the tests, so no backends are discovered.
-    """
-    overlay = discovery_overlay(
-        tmp_path / "overlay.yaml", auth="none", allow_private_addresses=True
+    """Registries are logged, with warnings for their less safe settings."""
+    overlay = backends_overlay(
+        tmp_path / "overlay.yaml",
+        {
+            **REGISTRY,
+            "auth": "none",
+            "allow_private_addresses": True,
+            "registry_allow_private_addresses": True,
+        },
+        public_url=PUBLIC_URL,
     )
     set_overlays(monkeypatch, overlay)
     init_app()
@@ -439,7 +480,9 @@ def test_discovery_logged(
     assert "Discovering TES backends at registry https://registry.example.org/api" in (
         err
     )
-    assert "Discovered TES backends get no credentials" in err
+    assert "discovered at registry https://registry.example.org/api get no" in err
     assert "may have private addresses" in err
-    assert "keeping 0 backends discovered earlier" in err
+    assert "Registry https://registry.example.org/api may have a private address" in (
+        err
+    )
     assert "No TES backends are configured" not in err

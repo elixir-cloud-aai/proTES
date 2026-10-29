@@ -5,8 +5,8 @@ The tests create the app from `pro_tes/config.yaml` and the test overlay
 and have no network access, except to the test database: the identity
 provider is mocked, TES backends are replaced by fakes (e.g.,
 `tests/ga4gh/tes/test_server.py`), and the hosts of task inputs and TES
-backends are not resolved (distance-based task distribution, discovery of
-TES backends). The test client sends the access token of a user (`USER`)
+backends are not resolved (distance-based task distribution, checks of
+discovered TES backends). The test client sends the access token of a user (`USER`)
 with each request.
 
 The tests use an in-memory database (mongomock), or, if the environment
@@ -21,6 +21,7 @@ refuse to start if one of the databases exists already.
 
 from collections.abc import Iterator
 import errno
+import ipaddress
 import os
 from pathlib import Path
 import socket
@@ -31,6 +32,7 @@ from connexion import FlaskApp
 from cryptography.hazmat.primitives.asymmetric import rsa
 from flask.testing import FlaskClient
 from foca.database import register_mongodb
+from foca.plugins.backends import clear_caches
 from foca.security import auth
 import jwt
 import mongomock
@@ -38,7 +40,6 @@ from pymongo import MongoClient, uri_parser
 import pytest
 
 from pro_tes.app import init_app
-from pro_tes.ga4gh.tes import discovery
 from pro_tes.plugins.middlewares.task_distribution import distance
 
 # Database of the tasks (`db.dbs` of `config.yaml`)
@@ -51,6 +52,7 @@ DBS = (DB, OTHER_DB)
 MONGODB_TEST_URI = os.environ.get("MONGODB_TEST_URI", "")
 _CONNECT = socket.socket.connect
 _CONNECT_EX = socket.socket.connect_ex
+_GETADDRINFO = socket.getaddrinfo
 # Config overlay with the settings each deployment must make (issuer,
 # audience, groups of the roles)
 CONFIG_OVERLAY = Path(__file__).parent / "config_overlay.yaml"
@@ -119,6 +121,12 @@ def _db_addresses(uri: str) -> frozenset[tuple[str, int]]:
 
 # Addresses that the tests may connect to
 DB_ADDRESSES = _db_addresses(MONGODB_TEST_URI)
+# Hosts that the tests may resolve: those of the test database
+DB_HOSTS = (
+    frozenset(host for host, _ in uri_parser.parse_uri(MONGODB_TEST_URI)["nodelist"])
+    if MONGODB_TEST_URI
+    else frozenset()
+)
 
 
 def _no_network(sock: socket.socket, address: object) -> None:
@@ -172,33 +180,46 @@ def _no_name_resolution(host: str) -> str:
     raise socket.gaierror(f"Name resolution blocked in tests: {host}")
 
 
-def _no_address_info(host: str, *args: Any, **kwargs: Any) -> list[Any]:
-    """Replace `getaddrinfo()` of the discovery of TES backends.
+def _no_address_info(host: Any, *args: Any, **kwargs: Any) -> list[Any]:
+    """Replace `socket.getaddrinfo()`, to block name resolution.
+
+    E.g., of the hosts of discovered TES backends (cf.
+    :py:func:`foca.utils.http.check_public_host`). IP addresses and the hosts
+    of the test database (`DB_HOSTS`) are resolved.
 
     Args:
-        host: Host name.
-        *args: Other arguments of `getaddrinfo()`; ignored.
-        **kwargs: Other keyword arguments of `getaddrinfo()`; ignored.
+        host: Host name or address.
+        *args: Other arguments of `getaddrinfo()`.
+        **kwargs: Other keyword arguments of `getaddrinfo()`.
+
+    Returns:
+        The addresses of IP addresses and of the hosts of the test database.
 
     Raises:
-        socket.gaierror: Always.
+        socket.gaierror: The host is another host name.
     """
-    raise socket.gaierror(f"Name resolution blocked in tests: {host}")
+    name = host.decode() if isinstance(host, bytes) else host
+    try:
+        ipaddress.ip_address(name)
+    except (TypeError, ValueError):
+        if name not in DB_HOSTS:
+            raise socket.gaierror(f"Name resolution blocked in tests: {host}") from None
+    return _GETADDRINFO(host, *args, **kwargs)
 
 
 @pytest.fixture(autouse=True)
 def no_network(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """Block network access of all tests, except to the test database.
 
-    The cache of discovered TES backends is empty.
+    The caches of TES backends discovered in registries are empty.
     """
     monkeypatch.setattr(socket.socket, "connect", _no_network)
     monkeypatch.setattr(socket.socket, "connect_ex", _no_network_ex)
+    monkeypatch.setattr(socket, "getaddrinfo", _no_address_info)
     monkeypatch.setattr(distance, "gethostbyname", _no_name_resolution)
-    monkeypatch.setattr(discovery, "getaddrinfo", _no_address_info)
-    discovery.discovery.clear()
+    clear_caches()
     yield
-    discovery.discovery.clear()
+    clear_caches()
 
 
 def _check_no_db(client: MongoClient[dict[str, Any]]) -> None:

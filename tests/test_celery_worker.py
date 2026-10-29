@@ -4,7 +4,7 @@ from foca.models.config import Config
 import pytest
 
 from pro_tes import celery_worker
-from pro_tes.config_models import ClientCredentials, CustomConfig, Tes, TesBackend
+from pro_tes.config_models import ClientCredentials, CustomConfig, Tes
 from pro_tes.ga4gh.tes.backends import CLIENT_ID_ENV, CLIENT_SECRET_ENV
 
 
@@ -23,7 +23,7 @@ def test_worker_backends_checked(
 ) -> None:
     """The worker doesn't start without the credentials of its backends."""
     custom.tes = Tes(
-        service_list=[TesBackend(url="https://tes.example.org")],
+        backends=[{"type": "ga4gh-tes", "url": "https://tes.example.org"}],  # type: ignore[arg-type]
         client_credentials=ClientCredentials(issuer="https://idp.example.org/"),
     )
     monkeypatch.delenv(CLIENT_ID_ENV, raising=False)

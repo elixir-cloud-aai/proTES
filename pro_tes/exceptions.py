@@ -29,6 +29,8 @@ class BackendAuthError(RuntimeError):
 class BackendAddressNotAllowed(requests.ConnectionError):
     """Raised when the host of a discovered TES backend is not public.
 
+    Or can't be resolved (cf. :py:func:`foca.utils.http.check_public_host`).
+
     A connection error, so that proTES handles it as it handles unreachable
     backends; no request is sent.
     """
@@ -42,14 +44,6 @@ class BackendOutcomeUnknown(RuntimeError):
     requests (to create or cancel tasks) are not sent again, neither to the
     backend nor to other backends, so that tasks are never created twice.
     """
-
-
-class HostNotResolved(BackendAddressNotAllowed):
-    """Raised when the host of a discovered TES backend can't be resolved."""
-
-
-class RegistryError(ValueError):
-    """Raised when a response of the service registry is unavailable or invalid."""
 
 
 class BackendNotConfigured(ValueError):

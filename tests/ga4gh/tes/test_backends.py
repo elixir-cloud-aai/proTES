@@ -9,6 +9,8 @@ from typing import Any, ClassVar
 
 from connexion import FlaskApp
 from foca import get_custom_config
+from foca.plugins import Backend
+from foca.plugins.backends import BackendListConfig, ServiceEntry
 import pydantic
 import pytest
 import requests
@@ -22,19 +24,14 @@ from urllib3.exceptions import (
     SSLError,
 )
 
-from pro_tes.config_models import (
-    BasicCredentials,
-    ClientCredentials,
-    CustomConfig,
-    Tes,
-    TesBackend,
-)
+from pro_tes.config_models import ClientCredentials, CustomConfig, Tes
 from pro_tes.exceptions import (
     BackendAuthError,
     BackendNotConfigured,
     BackendOutcomeUnknown,
 )
 from pro_tes.ga4gh.tes import backends
+from tests.ga4gh.tes.conftest import tes_backends
 
 ISSUER = "https://idp.example.org/oidc/"
 TOKEN_ENDPOINT = "https://idp.example.org/oidc/token"  # noqa: S105 (a URL)
@@ -179,7 +176,7 @@ def tes_config(**idp: Any) -> Tes:
         TES configuration.
     """
     return Tes(
-        service_list=[TesBackend(url=BACKEND_URL)],
+        backends=tes_backends(BACKEND_URL, auth="client_credentials"),
         client_credentials=ClientCredentials(**(idp or {"issuer": ISSUER})),
     )
 
@@ -370,18 +367,21 @@ def configured(app: FlaskApp) -> Iterator[None]:
     """App context with backends of each authentication mode."""
     with app.app.app_context():
         conf = get_custom_config(CustomConfig).tes
-        conf.service_list = [
-            TesBackend(url=f"{BACKEND_URL}/token/"),
-            TesBackend(
-                url=f"{BACKEND_URL}/basic",
-                auth="basic",
-                basic=BasicCredentials(
-                    username_env="TES_BASIC_USERNAME",
-                    password_env="TES_BASIC_PASSWORD",  # noqa: S106 (a name)
-                ),
-            ),
-            TesBackend(url=f"{BACKEND_URL}/none", auth="none"),
-        ]
+        conf.backends = BackendListConfig.model_validate(
+            [
+                {"type": "ga4gh-tes", "url": f"{BACKEND_URL}/token/"},
+                {
+                    "type": "ga4gh-tes",
+                    "url": f"{BACKEND_URL}/basic",
+                    "auth": "basic",
+                    "basic": {
+                        "username_env": "TES_BASIC_USERNAME",
+                        "password_env": "TES_BASIC_PASSWORD",
+                    },
+                },
+                {"type": "ga4gh-tes", "url": f"{BACKEND_URL}/none", "auth": "none"},
+            ]
+        )
         conf.client_credentials = ClientCredentials(issuer=ISSUER)
         yield
 
@@ -428,9 +428,21 @@ def test_client_basic(
 
 def test_client_basic_unset(configured: None) -> None:
     """Backends with `auth: basic`, but no `basic` (not validated), get none."""
-    backend = TesBackend.model_construct(url=BACKEND_URL, auth="basic", basic=None)
-    client = backends.TesClient(url=BACKEND_URL, backend=backend)
+    backend = Backend(id=BACKEND_URL, url=BACKEND_URL, auth="basic")
+    entry = ServiceEntry.model_construct(
+        type="ga4gh-tes", url=BACKEND_URL, auth="basic", basic=None
+    )
+    client = backends.TesClient(url=BACKEND_URL, backend=backend, entry=entry)
     with pytest.raises(BackendAuthError, match="No Basic credentials"):
+        client._request_params()
+
+
+def test_client_auth_unknown(configured: None) -> None:
+    """Backends with credentials of another name get none."""
+    backend = Backend(id=BACKEND_URL, url=BACKEND_URL, auth="other")
+    entry = ServiceEntry(type="ga4gh-tes", url=BACKEND_URL, auth="none")
+    client = backends.TesClient(url=BACKEND_URL, backend=backend, entry=entry)
+    with pytest.raises(BackendAuthError, match="Unknown credentials 'other'"):
         client._request_params()
 
 
@@ -500,21 +512,35 @@ def test_client_token_request(
 def test_backend_config_invalid(backend: dict[str, Any]) -> None:
     """Backends need a URL without credentials, and `basic` for Basic auth."""
     with pytest.raises(pydantic.ValidationError):
-        TesBackend(**backend)
+        Tes(
+            backends=[{"type": "ga4gh-tes", **backend}],  # type: ignore[arg-type]
+            client_credentials=ClientCredentials(issuer=ISSUER),
+        )
 
 
 def test_backend_config_default() -> None:
-    """Backends get proTES' token by default."""
-    assert TesBackend(url=BACKEND_URL).auth == "client_credentials"
+    """Backends get proTES' token by default; URLs are normalized."""
+    config = Tes(
+        backends=[{"type": "ga4gh-tes", "url": f"{BACKEND_URL}/"}],  # type: ignore[arg-type]
+        client_credentials=ClientCredentials(issuer=ISSUER),
+    )
+    (entry,) = config.backends.root
+    assert entry.auth == "client_credentials"
+    assert entry.url == BACKEND_URL
+    assert config.uses_tokens
+    assert not Tes().uses_tokens
 
 
 @pytest.mark.parametrize(
     "config, match",
     [
-        ({"service_list": [{"url": "http://tes.example.org"}]}, "not allowed"),
+        (
+            {"backends": [{"type": "ga4gh-tes", "url": "http://tes.example.org"}]},
+            "scheme",
+        ),
         (
             {
-                "service_list": [{"url": BACKEND_URL, "auth": "none"}],
+                "backends": [{"type": "ga4gh-tes", "url": BACKEND_URL, "auth": "none"}],
                 "client_credentials": {"issuer": "http://idp.example.org/"},
             },
             "not allowed",
@@ -523,15 +549,26 @@ def test_backend_config_default() -> None:
             {"client_credentials": {"token_endpoint": "http://idp.example.org/t"}},
             "not allowed",
         ),
-        ({"service_list": [{"url": BACKEND_URL}]}, "need `client_credentials"),
+        (
+            {"backends": [{"type": "ga4gh-tes", "url": BACKEND_URL}]},
+            "need `client_credentials",
+        ),
         (
             {
-                "service_list": [
-                    {"url": BACKEND_URL, "auth": "none"},
-                    {"url": f"{BACKEND_URL}/", "auth": "none"},
+                "backends": [
+                    {"type": "ga4gh-service-registry", "url": BACKEND_URL},
                 ]
             },
-            "more than once",
+            "need `client_credentials",
+        ),
+        (
+            {
+                "backends": [
+                    {"type": "ga4gh-tes", "url": BACKEND_URL, "auth": "none"},
+                    {"type": "ga4gh-tes", "url": f"{BACKEND_URL}/", "auth": "none"},
+                ]
+            },
+            "same id",
         ),
         (
             {"client_credentials": {"issuer": "https:///realms/protes"}},
@@ -552,13 +589,43 @@ def test_tes_config_invalid(config: dict[str, Any], match: str) -> None:
 
 
 def test_tes_config_http() -> None:
-    """URLs with scheme `http` can be allowed (e.g., for local tests)."""
+    """URLs with scheme `http` can be allowed (e.g., for local tests).
+
+    For each backend, and for the identity provider.
+    """
     config = Tes(
-        service_list=[{"url": "http://tes.example.org"}],  # type: ignore[list-item]
+        backends=[  # type: ignore[arg-type]
+            {
+                "type": "ga4gh-tes",
+                "url": "http://tes.example.org",
+                "url_schemes": ["http"],
+            }
+        ],
         url_schemes=["http"],
         client_credentials={"issuer": "http://idp.example.org/"},  # type: ignore[arg-type]
     )
-    assert config.service_list[0].url == "http://tes.example.org"
+    assert config.backends.root[0].url == "http://tes.example.org"
+
+
+@pytest.mark.parametrize(
+    "config, match",
+    [
+        ({"service_list": []}, "`custom.tes.service_list` removed"),
+        (
+            {"discovery": {"registry_url": None}},
+            "`custom.tes.discovery` removed",
+        ),
+        (
+            {"service_list": [], "discovery": {}},
+            "`custom.tes.service_list` and `custom.tes.discovery` removed",
+        ),
+    ],
+)
+def test_tes_config_removed(config: dict[str, Any], match: str) -> None:
+    """The keys replaced by the backend list are refused, with the mapping."""
+    with pytest.raises(pydantic.ValidationError, match=match) as error:
+        Tes.model_validate(config)
+    assert "`type: ga4gh-service-registry`" in str(error.value)
 
 
 NONE_URL = f"{BACKEND_URL}/none"
@@ -626,8 +693,9 @@ def test_client_timeout(configured: None) -> None:
     """
     get_custom_config(CustomConfig).tes.timeout = 120
     assert request_kwargs(NONE_URL)["timeout"] == (5, 120)
+    entry = ServiceEntry(type="ga4gh-tes", url=BACKEND_URL, auth="none")
     client = backends.TesClient(
-        url=BACKEND_URL, backend=TesBackend(url=BACKEND_URL, auth="none"), timeout=3
+        url=BACKEND_URL, backend=entry.backend(), entry=entry, timeout=3
     )
     assert client._request_params()["timeout"] == (3, 3)
 
@@ -722,8 +790,14 @@ def test_post_redirect_not_followed(
     thread.start()
     try:
         url = f"http://127.0.0.1:{server.server_address[1]}"
-        get_custom_config(CustomConfig).tes.service_list.append(
-            TesBackend(url=url, auth="none")
+        conf = get_custom_config(CustomConfig).tes
+        conf.backends = BackendListConfig(
+            [
+                *conf.backends.root,
+                ServiceEntry(
+                    type="ga4gh-tes", url=url, url_schemes=["http"], auth="none"
+                ),
+            ]
         )
         client = backends.create_client(host=url)
         with pytest.raises(requests.HTTPError, match="status 302"):

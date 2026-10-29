@@ -20,8 +20,11 @@ custom:
   # fake identity provider (client ID and secret in `compose.yaml`), over
   # plain HTTP inside the Compose network
   tes:
-    service_list:
-      - url: http://fake-tes:8080
+    backends:
+      - type: ga4gh-tes
+        url: http://fake-tes:8080
+        url_schemes:
+          - http
         auth: client_credentials
     url_schemes:
       - http

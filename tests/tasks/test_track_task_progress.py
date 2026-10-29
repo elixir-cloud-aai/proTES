@@ -10,6 +10,8 @@ from celery.exceptions import Reject
 from connexion import FlaskApp
 from foca import get_collection, get_custom_config
 from foca.models.config import Config
+from foca.plugins import Backend
+from foca.plugins.backends import BackendListConfig, RegistryEntry, ServiceEntry
 from kombu.exceptions import OperationalError
 from pydantic import ValidationError
 from pymongo import MongoClient
@@ -21,7 +23,7 @@ import tes
 
 from pro_tes.app import init_app
 from pro_tes.celery_worker import celery
-from pro_tes.config_models import CustomConfig, Discovery, Polling, TesBackend
+from pro_tes.config_models import CustomConfig, Polling
 from pro_tes.ga4gh.tes import backends
 from pro_tes.tasks import track_task_progress
 from pro_tes.utils.db import DbDocumentConnector
@@ -55,10 +57,13 @@ class FakeClient:
     clients: ClassVar[list["FakeClient"]] = []
     requested: ClassVar[list[str]] = []
 
-    def __init__(self, url: str, backend: TesBackend) -> None:
+    def __init__(
+        self, url: str, backend: Backend, entry: ServiceEntry | RegistryEntry
+    ) -> None:
         """Create the client."""
         self.url = url
         self.backend = backend
+        self.entry = entry
         self.clients.append(self)
 
     def get_task(self, task_id: str, **kwargs: Any) -> tes.Task:
@@ -276,7 +281,10 @@ def test_backend_client(
     run()
     (cli,) = client_class.clients
     assert cli.url == "https://tes.example.org/api"
-    assert cli.backend == TesBackend(url="https://tes.example.org/", auth="none")
+    assert cli.backend == Backend(
+        id="https://tes.example.org", url="https://tes.example.org", auth="none"
+    )
+    assert cli.entry.url == "https://tes.example.org"
     assert set(client_class.requested) == {"remote-1"}
 
 
@@ -297,11 +305,17 @@ def test_backend_not_configured(
     """
     polling.attempts = 2
     tes_config = get_custom_config(CustomConfig).tes
-    tes_config.service_list = []
-    if discovered:
-        tes_config.discovery = Discovery(
-            registry_url="https://registry.example.org/api", auth="none"
-        )
+    tes_config.backends = BackendListConfig.model_validate(
+        [
+            {
+                "type": "ga4gh-service-registry",
+                "url": "https://registry.example.org/api",
+                "auth": "none",
+            }
+        ]
+        if discovered
+        else []
+    )
     run()
     run(**scheduled.pop()["kwargs"])
     assert stored_states == ["UNKNOWN"]

@@ -65,6 +65,6 @@ def check_worker_backends(**kwargs: Any) -> None:
     if not isinstance(custom, CustomConfig):
         raise SystemExit("Celery worker without the custom configuration of proTES")
     try:
-        check_backends(conf=custom.tes)
+        check_backends(conf=custom.tes, public_url=celery.conf.foca.server.public_url)
     except RuntimeError as exc:
         raise SystemExit(str(exc)) from exc
