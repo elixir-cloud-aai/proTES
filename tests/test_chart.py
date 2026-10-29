@@ -887,7 +887,15 @@ def test_tes_backends_default() -> None:
         ({"type": "ga4gh-tes"}, "missing property 'url'"),
         ({"type": "ga4gh-wes", "url": "https://wes.example.org"}, "/tes/backends/0"),
         (
-            {"type": "ga4gh-tes", "url": "https://tes.example.org", "url_schemes": []},
+            {"type": "ga4gh-tes", "url": "https://tes.example.org", "urlSchemes": []},
+            "/tes/backends/0",
+        ),
+        (
+            {
+                "type": "ga4gh-tes",
+                "url": "https://tes.example.org",
+                "url_schemes": ["https"],
+            },
             "/tes/backends/0",
         ),
         (

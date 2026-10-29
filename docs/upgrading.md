@@ -302,7 +302,9 @@ rejected. Tasks are only forwarded to configured and discovered TES
 instances, also if middlewares add others (`tes_urls`). Custom middlewares
 that read the TES instances get them from
 `pro_tes.ga4gh.tes.backends.get_backends()` (FOCA's `Backend`s, in order),
-instead of `custom.tes.service_list`.
+instead of `custom.tes.service_list`; `get_backend(url)` returns the
+backend together with its entry of `custom.tes.backends` (`(backend,
+entry)`), and `TesClient` takes both.
 
 Tasks with credentials in the URLs of their inputs or outputs
 (`https://user:password@host/...`) are rejected with `400 Bad Request`, for
