@@ -6,15 +6,14 @@ from typing import Any
 
 from connexion import FlaskApp
 from flask.testing import FlaskClient
-from foca import get_config
+from foca import get_config, get_custom_config
 from pymongo import MongoClient
 import pytest
 import yaml
 
 from pro_tes.app import init_app, run_app
-from pro_tes.config_models import TesBackend
+from pro_tes.config_models import CustomConfig, TesBackend
 from pro_tes.ga4gh.tes.backends import CLIENT_ID_ENV, CLIENT_SECRET_ENV
-from pro_tes.utils.misc import get_custom_config
 from tests.conftest import DB, set_overlays
 
 BASE_PATH = "/ga4gh/tes/v1"
@@ -117,20 +116,26 @@ def test_spec_extensions(client: FlaskClient) -> None:
     assert "detail" in spec["components"]["schemas"]["ProblemDetails"]["properties"]
 
 
+def test_validation_details(client: FlaskClient) -> None:
+    """Requests rejected by the API's validation get the reason as detail.
+
+    FOCA's validation details (`exceptions.validation_details`), instead of
+    the detail mapped to the exception.
+    """
+    response = client.post(f"{BASE_PATH}/tasks", json={"executors": "none"})
+    assert response.status_code == 400
+    detail = response.get_json()["detail"]
+    assert detail == "'none' is not of type 'array' - 'executors'"
+
+
 @pytest.mark.parametrize(
     "service, fields",
     [
-        ({}, "`id`, `organization`"),
-        ({"id": "org.example.tes-proxy"}, "`organization`"),
-        ({"organization": {"name": "My org"}}, "`id`, `organization`"),
-        (
-            {"organization": {"name": "My org", "url": "https://my.example.org"}},
-            "`id`",
-        ),
+        ({}, "'id', 'organization.url'"),
         (
             {
-                "id": "org.example.tes-proxy",
-                "organization": {"name": "My org", "url": "https://my.example.org"},
+                "id": "org.tes-proxy",
+                "organization": {"name": "My org", "url": "https://my.org"},
             },
             None,
         ),
@@ -144,10 +149,10 @@ def test_placeholder_service_info(
     service: dict[str, Any],
     fields: str | None,
 ) -> None:
-    """The app warns of placeholders in the service info, naming the fields.
+    """FOCA warns of placeholders of the base config in the service info.
 
-    The fields are `id`, and `organization` while its name or URL is the
-    placeholder's; there is no warning once both are set.
+    That is, of values in reserved example domains, naming the fields; there
+    is no warning once they are set.
     """
     overlay = tmp_path / "overlay.yaml"
     overlay.write_text(
@@ -158,10 +163,10 @@ def test_placeholder_service_info(
     # FOCA configures logging to stderr
     err = capsys.readouterr().err
     if fields is None:
-        assert "placeholder values" not in err
+        assert "reserved example domains" not in err
     else:
-        assert err.count("placeholder values") == 1
-        assert f"placeholder values; set {fields} to" in err
+        assert err.count("reserved example domains") == 1
+        assert f"from a template: {fields};" in err
 
 
 def test_smoke_test_config(
@@ -178,7 +183,7 @@ def test_smoke_test_config(
         monkeypatch.setenv(name, smoke["services"]["protes"]["environment"][name])
     app = init_app()
     with app.app.app_context():
-        custom = get_custom_config()
+        custom = get_custom_config(CustomConfig)
     assert custom.tes.service_list == [
         TesBackend(url="http://fake-tes:8080", auth="client_credentials")
     ]

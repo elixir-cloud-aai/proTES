@@ -559,43 +559,48 @@ class Middlewares(RootModel[list[list[str]]]):
     ]
 
 
-class AccessControl(ConfigModel):
-    """Access control settings of the app.
-
-    Args:
-        require_admin: Whether the app refuses to start unless a group is
-            mapped to the role `admin` (in
-            `security.access_control.group_mapping`).
-
-    Attributes:
-        require_admin: Whether the app refuses to start unless a group is
-            mapped to the role `admin` (in
-            `security.access_control.group_mapping`).
-    """
-
-    require_admin: bool = True
-
-
 class CustomConfig(ConfigModel):
     """Custom app configuration.
 
     Args:
-        access_control: Access control settings of the app.
         controllers: All controller-related config.
         tes: TES service list and defaults.
         storeLogs: Logging preferences (camelCase, unlike other keys).
         middlewares: Middleware class paths.
 
     Attributes:
-        access_control: Access control settings of the app.
         controllers: All controller-related config.
         tes: TES service list and defaults.
         storeLogs: Logging preferences (camelCase, unlike other keys).
         middlewares: Middleware class paths.
     """
 
-    access_control: AccessControl = AccessControl()
     controllers: Controllers = Controllers()
     tes: Tes = Tes()
     storeLogs: StoreLogs = StoreLogs()
     middlewares: Middlewares = Middlewares()
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_removed_keys(cls, data: object) -> object:
+        """Refuse keys that moved to FOCA's config, naming their new place.
+
+        Args:
+            data: Custom config, as given.
+
+        Returns:
+            The custom config, unchanged.
+
+        Raises:
+            ValueError: The config has `access_control`, whose only setting
+                (`require_admin`) moved to FOCA's
+                `security.access_control.require_admin`.
+        """
+        if isinstance(data, dict) and "access_control" in data:
+            raise ValueError(
+                "`custom.access_control` was removed: set "
+                "`security.access_control.require_admin` instead of "
+                "`custom.access_control.require_admin` (see Upgrading in the "
+                "docs)"
+            )
+        return data

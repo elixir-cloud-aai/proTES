@@ -5,8 +5,9 @@
 
 # Server configuration; `host` and `port` apply to Flask's development server
 # only (`python -m pro_tes.app`): the image serves the app with Gunicorn, on
-# the address set in `pro_tes/gunicorn_config.py` (port 8080; change it via
-# `GUNICORN_CMD_ARGS`, together with the published port and health check)
+# the address of FOCA's settings, `foca.gunicorn_config` (port 8080; change
+# it via `GUNICORN_CMD_ARGS`, together with the published port and health
+# check)
 # Cf. https://foca.readthedocs.io/en/latest/configuration/server/
 server:
   host: "0.0.0.0"
@@ -72,6 +73,9 @@ security:
     collection_name: policy_rules
     # Owners only, tasks are not shared
     resource_roles: [owner]
+    # The app refuses to start unless a group is mapped to the role `admin`
+    # (`group_mapping`); set to false to run without admins (FOCA's check)
+    require_admin: True
     # Managed on startup (removed rules are deleted); cannot be changed via
     # the permissions API. Named, so that overlays can change, add or remove
     # single rules by name (`null` removes a rule)
@@ -198,14 +202,12 @@ service_info:
 exceptions:
   mapping: pro_tes.exceptions.exceptions
   media_type: application/json
+  # Requests rejected by the validation of the API specification get the
+  # reason as `detail` (e.g., `'none' is not of type 'array'`)
+  validation_details: True
 
 # Custom configuration
 custom:
-  # The app refuses to start unless a group is mapped to the role `admin`
-  # (`security.access_control.group_mapping`); set `require_admin` to false
-  # to run without admins
-  access_control:
-    require_admin: True
   controllers:
     post_task:
       db:

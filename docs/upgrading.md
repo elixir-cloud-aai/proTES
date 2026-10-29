@@ -7,11 +7,60 @@ FOCA 0.12).
 
 ## Configuration
 
-proTES runs on FOCA 0.17 and Python 3.13. Custom configs must apply the
-config changes of FOCA 0.14 to 0.17 (see the FOCA release notes and
+proTES runs on FOCA 0.18 and Python 3.13. Custom configs must apply the
+config changes of FOCA 0.14 to 0.18 (see the FOCA release notes and
 migration guides), e.g., `exceptions.mapping` instead of the old exception
 members, and no `validation_methods`, `validation_checks`, `environment` or
 `use_reloader`.
+
+With FOCA 0.18, settings and checks that proTES had of its own are FOCA's:
+
+- `custom.access_control.require_admin` moved to
+  `security.access_control.require_admin` (`true` in the base config, as
+  before); the old key is refused, also by the Helm chart.
+- FOCA refuses group mappings without a group claim
+  (`security.access_control.claim_groups`) with a `ValueError` (before, a
+  warning, and proTES then refused to start without admins), and counts
+  configured rules (`security.access_control.policies`) that grant the role
+  `admin` as admins, too.
+- FOCA warns of values of the service info in reserved example domains
+  (e.g., `id`, `organization.url`), and no longer of `organization.name`.
+- Requests rejected by the validation of the API specification (e.g., a task
+  with an invalid field) get the reason as `detail` (e.g., `'none' is not of
+  type 'array' - 'executors'`) instead of `The request is malformed.`
+  (`exceptions.validation_details`).
+- Rules of access control changed in the database directly (e.g., with
+  `mongosh`) apply only after a restart of proTES (see [Task
+  owners](operations.md#task-owners)). Instances of earlier versions don't
+  record their changes of rules, and proTES adds owner roles with each new
+  task: once all instances run this version, restart them once more (e.g.,
+  `kubectl rollout restart deployment/<app>` with the Helm chart, `<app>` as
+  in its README, Names and labels), so that they apply the owner roles of
+  tasks created during the rolling update; until then, owners of such tasks
+  may get `404` from instances of this version. To avoid this window, stop
+  the instances of the earlier version before starting those of this version
+  (e.g., scale the app's Deployment to 0 first), at the cost of a short
+  downtime (see FOCA's [migration guide to
+  0.18](https://foca.readthedocs.io/en/latest/migration-0.18/)).
+- With several trusted issuers (`security.auth.issuers`), subjects are now
+  namespaced by issuer (`<issuer>|<sub>`), so that equal subjects of
+  different issuers are different users. Owners of stored tasks
+  (`user_id`, owner roles) and roles granted to users via the permissions
+  API are stored with bare subjects and then no longer apply: list the
+  issuer whose users own the stored tasks with `namespace: ""` (e.g.,
+  `issuers: [{issuer: "https://login.example.org/oidc/", namespace: ""},
+  "https://other.example.org/"]`; not supported by the Helm chart yet,
+  which accepts issuers as URLs only, see
+  [#337](https://github.com/elixir-cloud-aai/proTES/issues/337)), or rewrite
+  the stored subjects to the namespaced form, both the owner roles
+  (`policy_rules`, `user:<issuer>|<sub>`) and the owners of the tasks
+  (`user_id` of the documents in `tasks`, `<issuer>|<sub>`): access depends
+  on the owner roles, and operators find tasks by `user_id` (see FOCA's [migration
+  guide](https://foca.readthedocs.io/en/latest/migration-0.18/#subjects-of-several-issuers)).
+  The owners of tasks created since are stored in the namespaced form, too
+  (see [Task owners](operations.md#task-owners)).
+  Deployments with a single trusted issuer are not affected.
+
 The service info is configured in `service_info.service` (see [Service
 info](configuration.md#service-info)); it is no longer stored in the
 database, so the `service_info` collection can be dropped.
@@ -48,7 +97,7 @@ the trusted issuers (`security.auth.issuers`), the audience
 (`security.auth.audience`) and the groups of the roles
 (`security.access_control.claim_groups` and `group_mapping`, at least one
 group of the role `admin`): proTES doesn't start without them (unless
-`custom.access_control.require_admin` is false). Clients send
+`security.access_control.require_admin` is false). Clients send
 `Authorization: Bearer <token>` with each request. HTTP Basic credentials of
 requests are no longer passed through to TES instances: proTES uses
 credentials of its own for them (see [TES instances and their
@@ -344,8 +393,10 @@ created, so it can be dropped.
 ## Image
 
 The image installs proTES as a package: it serves the app with `gunicorn
---config python:pro_tes.gunicorn_config 'pro_tes.app:init_app()'` (its
-default command), and runs the Celery worker with `celery --app
+--config python:foca.gunicorn_config 'pro_tes.app:init_app()'` (its
+default command, with FOCA's settings for containers; earlier images of this
+layout loaded the same settings from `pro_tes.gunicorn_config`, which is
+gone), and runs the Celery worker with `celery --app
 pro_tes.celery_worker worker`. `/app/pro_tes`, `gunicorn.py` and `wsgi.py` are
 gone, and the environment variables `GUNICORN_PROCESSES` and
 `GUNICORN_THREADS` are replaced by `GUNICORN_CMD_ARGS` (see

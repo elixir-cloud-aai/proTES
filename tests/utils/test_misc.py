@@ -1,11 +1,8 @@
 """Tests of the miscellaneous utilities."""
 
-import flask
-from foca.config.access import set_app_config
-from foca.models.config import Config
 import pytest
 
-from pro_tes.utils.misc import get_custom_config, has_credentials, strip_auth
+from pro_tes.utils.misc import has_credentials, strip_auth
 
 
 @pytest.mark.parametrize(
@@ -47,14 +44,3 @@ def test_has_credentials_malformed() -> None:
     """Malformed URLs are reported."""
     with pytest.raises(ValueError):
         has_credentials("https://[invalid/x")
-
-
-def test_get_custom_config_missing() -> None:
-    """Apps without the custom config model are reported."""
-    app = flask.Flask(__name__)
-    set_app_config(app, Config())
-    with (
-        app.app_context(),
-        pytest.raises(RuntimeError, match="No custom configuration"),
-    ):
-        get_custom_config()

@@ -3,16 +3,16 @@
 import random
 
 from connexion import FlaskApp
+from foca import get_custom_config
 import pytest
 
-from pro_tes.config_models import TesBackend
+from pro_tes.config_models import CustomConfig, TesBackend
 from pro_tes.plugins.middlewares.task_distribution.base import (
     TaskDistributionBaseClass,
 )
 from pro_tes.plugins.middlewares.task_distribution.random import (
     TaskDistributionRandom,
 )
-from pro_tes.utils.misc import get_custom_config
 
 TES_URLS = [f"https://tes{index}.example.org" for index in range(10)]
 # Order of `random.shuffle()` of 10 items after `random.seed(1)`
@@ -39,7 +39,9 @@ def test_tes_urls_added(
 ) -> None:
     """The configured backends are added to the task, once each."""
     with app.app.app_context():
-        get_custom_config().tes.service_list = backends([*TES_URLS, TES_URLS[0]])
+        get_custom_config(CustomConfig).tes.service_list = backends(
+            [*TES_URLS, TES_URLS[0]]
+        )
         task = middleware().apply_middleware({"name": "task"})
         assert task["name"] == "task"
         assert sorted(task["tes_urls"]) == TES_URLS
@@ -49,7 +51,7 @@ def test_order_kept(app: FlaskApp) -> None:
     """The base class keeps the order of the backends (first occurrences)."""
     urls = list(reversed(TES_URLS))
     with app.app.app_context():
-        get_custom_config().tes.service_list = backends([*urls, urls[0]])
+        get_custom_config(CustomConfig).tes.service_list = backends([*urls, urls[0]])
         task = TaskDistributionBaseClass().apply_middleware({})
         assert task["tes_urls"] == urls
 
@@ -61,7 +63,7 @@ def test_shuffled_reproducibly(app: FlaskApp) -> None:
     hashes (`set()`), which differs between processes.
     """
     with app.app.app_context():
-        get_custom_config().tes.service_list = backends(TES_URLS)
+        get_custom_config(CustomConfig).tes.service_list = backends(TES_URLS)
         random.seed(1)
         middleware = TaskDistributionRandom()
         middleware.apply_middleware({})
@@ -73,7 +75,7 @@ def test_shuffled(app: FlaskApp) -> None:
     random.seed(1)
     orders = set()
     with app.app.app_context():
-        get_custom_config().tes.service_list = backends(TES_URLS)
+        get_custom_config(CustomConfig).tes.service_list = backends(TES_URLS)
         for _ in range(5):
             middleware = TaskDistributionRandom()
             middleware.apply_middleware({})

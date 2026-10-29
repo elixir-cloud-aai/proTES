@@ -9,6 +9,7 @@ from unittest.mock import ANY
 
 from connexion import FlaskApp
 from flask.testing import FlaskClient
+from foca import get_custom_config
 from pydantic import ValidationError
 from pymongo import MongoClient
 from pymongo.errors import DuplicateKeyError, PyMongoError
@@ -16,7 +17,7 @@ import pytest
 import requests
 import tes
 
-from pro_tes.config_models import ListTasks, PostTask
+from pro_tes.config_models import CustomConfig, ListTasks, PostTask
 from pro_tes.exceptions import BackendAuthError, BackendOutcomeUnknown, BadRequest
 from pro_tes.ga4gh.tes import ownership, server, task_runs
 from pro_tes.ga4gh.tes.models import DbDocument, TesTask
@@ -25,7 +26,6 @@ from pro_tes.plugins.middlewares.task_distribution.random import (
 )
 from pro_tes.tasks import track_task_progress
 from pro_tes.utils.db import DbDocumentConnector
-from pro_tes.utils.misc import get_custom_config
 from tests.conftest import DB, OTHER_USER, USER
 from tests.ga4gh.tes.conftest import (
     BACKENDS,
@@ -141,7 +141,7 @@ def test_create_task_no_backend_selected(
         lambda self, **kwargs: stores.append(kwargs),
     )
     with app.app.app_context():
-        get_custom_config().tes.service_list = []
+        get_custom_config(CustomConfig).tes.service_list = []
     response = client.post(f"{BASE_PATH}/tasks", json=TASK)
     assert response.status_code == 500
     assert response.get_json()["detail"] == "No TES instance accepted the task."
@@ -565,7 +565,7 @@ def test_list_tasks_page_sizes(
 ) -> None:
     """Pages have the default size, and at most the maximum size."""
     with app.app.app_context():
-        config = get_custom_config().controllers.list_tasks
+        config = get_custom_config(CustomConfig).controllers.list_tasks
         config.default_page_size = 2
         config.max_page_size = 3
     create_tasks(client, ["a", "b", "c", "d"])
@@ -581,7 +581,7 @@ def test_list_tasks_page_sizes_full(
     Also by default, and at most the maximum size of all views.
     """
     with app.app.app_context():
-        config = get_custom_config().controllers.list_tasks
+        config = get_custom_config(CustomConfig).controllers.list_tasks
         config.default_page_size = 3
         config.max_page_size = 4
         config.max_page_size_full = 2
@@ -704,7 +704,7 @@ def test_create_task_inline_content(
         accepted: Whether the task is accepted.
     """
     with app.app.app_context():
-        get_custom_config().controllers.post_task.max_inline_content = 16
+        get_custom_config(CustomConfig).controllers.post_task.max_inline_content = 16
     task = {
         **TASK,
         "inputs": [
@@ -741,7 +741,7 @@ def test_create_task_inline_content_middleware(
 
     monkeypatch.setattr(TaskDistributionRandom, "apply_middleware", add_content)
     with app.app.app_context():
-        get_custom_config().controllers.post_task.max_inline_content = 16
+        get_custom_config(CustomConfig).controllers.post_task.max_inline_content = 16
     response = client.post(f"{BASE_PATH}/tasks", json=TASK)
     assert response.status_code == 413
     assert not relayed(backend)
@@ -838,7 +838,7 @@ def test_create_task_url_credentials_stripped(
     Inputs with content are kept.
     """
     with app.app.app_context():
-        get_custom_config().controllers.post_task.url_credentials = "strip"
+        get_custom_config(CustomConfig).controllers.post_task.url_credentials = "strip"
     response = client.post(f"{BASE_PATH}/tasks", json=TASK_CREDENTIALS)
     assert response.status_code == 200
     ((_, task),) = relayed(backend)
@@ -972,7 +972,7 @@ def test_cancel_task_without_trace(
 ) -> None:
     """Tasks are canceled without forwards in their logs (`execution_trace`)."""
     with app.app.app_context():
-        get_custom_config().storeLogs.execution_trace = False
+        get_custom_config(CustomConfig).storeLogs.execution_trace = False
     response = client.post(f"{BASE_PATH}/tasks", json=TASK)
     task_id = response.get_json()["id"]
     assert stored(mongo_client, task_id)["task"]["logs"][0]["metadata"] == {}
@@ -1128,7 +1128,7 @@ def test_cancel_task_backend_not_configured(
     """Tasks of backends that are no longer configured can't be canceled."""
     set_state(mongo_client, task_id, "RUNNING")
     with app.app.app_context():
-        get_custom_config().tes.service_list = []
+        get_custom_config(CustomConfig).tes.service_list = []
     response = client.post(f"{BASE_PATH}/tasks/{task_id}:cancel")
     assert response.status_code == 500
     assert response.get_json()["detail"] == (
@@ -1409,7 +1409,7 @@ def test_create_task_body_unchanged(
     monkeypatch.setattr(task_runs, "get_owner", lambda: USER)
     task = deepcopy(TASK_CREDENTIALS)
     with app.app.test_request_context():
-        get_custom_config().controllers.post_task.url_credentials = "strip"
+        get_custom_config(CustomConfig).controllers.post_task.url_credentials = "strip"
         task_runs.TaskRuns().create_task(task=task, collection=f"{BASE_PATH}/tasks")
     assert task == TASK_CREDENTIALS
 

@@ -3,8 +3,7 @@ language: python
 severity: error
 message: Untyped access to the FOCA config
 note: |
-  Use `get_custom_config()` from `pro_tes.utils.misc` (or
-  `foca.get_config()`). Only direct attribute access is detected.
+  Use `foca.get_custom_config(CustomConfig)` (or `foca.get_config()`). Only direct attribute access is detected.
 # Scoped to app code: tests may access and change the config of test apps
 files:
   - pro_tes/**

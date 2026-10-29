@@ -1,4 +1,8 @@
-"""Helpers for tests of the Gunicorn settings of the image."""
+"""Helpers for tests of the image's command and Gunicorn settings.
+
+The settings are FOCA's (`foca.gunicorn_config`), loaded as the image's
+command does, e.g., with the Helm chart's `GUNICORN_CMD_ARGS`.
+"""
 
 import json
 import os

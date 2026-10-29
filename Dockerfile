@@ -2,7 +2,7 @@
 ## Pinned by digest, so that rebuilds (e.g., of a release) use the same base
 ## image; Dependabot updates the tag and digest together
 ## (`.github/dependabot.yml`)
-FROM elixircloud/foca:0.17.0-py3.13@sha256:9790ac2c07b6373ab10235d3ad39cb7eb9a29b0828419acfe71ac77a8a7a7291
+FROM elixircloud/foca:0.18.0-py3.13@sha256:dd8dd927d8d5e7ccb616d441c8db7a5e2c0b24c52a3329f484f6edac082b7a26
 
 ##### METADATA #####
 ## OCI annotations; images built from the FOCA image inherit its own, so all
@@ -52,10 +52,10 @@ ENV HEALTHCHECK_URL=http://localhost:8080/ga4gh/tes/v1/ui/
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
   CMD ["python", "-c", "import os, urllib.request; urllib.request.urlopen(os.environ['HEALTHCHECK_URL'], timeout=4)"]
 
-## Serve with Gunicorn (settings in `pro_tes/gunicorn_config.py`; override
-## them via `GUNICORN_CMD_ARGS`, e.g., `--workers 2`); each worker creates the
-## app (no preloading). The Celery worker runs
+## Serve with Gunicorn (FOCA's settings for containers, `foca.gunicorn_config`;
+## override them via `GUNICORN_CMD_ARGS`, e.g., `--workers 2`); each worker
+## creates the app (no preloading). The Celery worker runs
 ## `celery --app pro_tes.celery_worker worker`; `python -m pro_tes.app` runs
 ## Flask's development server instead
-CMD ["gunicorn", "--config", "python:pro_tes.gunicorn_config", \
+CMD ["gunicorn", "--config", "python:foca.gunicorn_config", \
   "pro_tes.app:init_app()"]

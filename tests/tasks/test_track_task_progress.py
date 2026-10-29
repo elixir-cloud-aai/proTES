@@ -8,7 +8,7 @@ from typing import Any, ClassVar
 from bson.objectid import ObjectId
 from celery.exceptions import Reject
 from connexion import FlaskApp
-from foca import get_collection
+from foca import get_collection, get_custom_config
 from foca.models.config import Config
 from kombu.exceptions import OperationalError
 from pydantic import ValidationError
@@ -21,11 +21,10 @@ import tes
 
 from pro_tes.app import init_app
 from pro_tes.celery_worker import celery
-from pro_tes.config_models import Discovery, Polling, TesBackend
+from pro_tes.config_models import CustomConfig, Discovery, Polling, TesBackend
 from pro_tes.ga4gh.tes import backends
 from pro_tes.tasks import track_task_progress
 from pro_tes.utils.db import DbDocumentConnector
-from pro_tes.utils.misc import get_custom_config
 from tests.conftest import DB, OTHER_DB
 
 # Arguments of the Celery task
@@ -169,7 +168,7 @@ def stored_states(monkeypatch: pytest.MonkeyPatch) -> list[str]:
 @pytest.fixture
 def polling(app: FlaskApp) -> Polling:
     """Polling configuration of the app (changed by tests)."""
-    return get_custom_config().controllers.post_task.polling
+    return get_custom_config(CustomConfig).controllers.post_task.polling
 
 
 def run(**kwargs: Any) -> None:
@@ -297,7 +296,7 @@ def test_backend_not_configured(
     tracked again once its backend is known.
     """
     polling.attempts = 2
-    tes_config = get_custom_config().tes
+    tes_config = get_custom_config(CustomConfig).tes
     tes_config.service_list = []
     if discovered:
         tes_config.discovery = Discovery(
@@ -673,7 +672,9 @@ def test_cut_off_creates_failed(
     time); not tasks being created, tasks with a remote identifier (also in
     the logs, of earlier versions), or tasks in other states.
     """
-    max_create_time = get_custom_config().controllers.post_task.max_create_time
+    max_create_time = get_custom_config(
+        CustomConfig
+    ).controllers.post_task.max_create_time
     old = max_create_time + 60
     endpoint = {"host": ARGS["remote_host"], "base_path": "", "task_id": "remote-1"}
     tasks.delete_many({})

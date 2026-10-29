@@ -284,10 +284,11 @@ instances (see the Helm chart's [README](deployment.md)).
 
 ## Server
 
-The image serves the app with [Gunicorn](https://gunicorn.org/), configured by
-[`pro_tes/gunicorn_config.py`](https://github.com/elixir-cloud-aai/proTES/blob/dev/pro_tes/gunicorn_config.py),
-which documents its settings: it listens on port 8080, with one worker
-process with four threads. Override settings with the environment variable
+The image serves the app with [Gunicorn](https://gunicorn.org/), with FOCA's
+settings for containers (`foca.gunicorn_config`, see [Running in
+production](https://foca.readthedocs.io/en/latest/deployment/#running-in-production)
+in FOCA's docs): it listens on port 8080, with one worker process with four
+threads. Override settings with the environment variable
 `GUNICORN_CMD_ARGS` (e.g., `--workers 2 --threads 8`), but not `--bind`: the
 image's health check and the Helm chart expect port 8080. Behind a reverse
 proxy, set its addresses in `FORWARDED_ALLOW_IPS`, so that Gunicorn trusts

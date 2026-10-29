@@ -704,7 +704,7 @@ def test_legacy_values_first() -> None:
             "group_mapping must map a group to the role admin",
         ),
         (
-            ("--set", "config.custom.access_control.require_admin=maybe"),
+            ("--set", "config.security.access_control.require_admin=maybe"),
             {"admin_group": None},
             "require_admin must be true or false, not maybe",
         ),
@@ -727,11 +727,29 @@ def test_admins_not_required(value: str) -> None:
     """Admins are not required if `require_admin` is false, as the app parses it."""
     docs = _render(
         "--set-json",
-        f"config.custom.access_control.require_admin={value}",
+        f"config.security.access_control.require_admin={value}",
         admin_group=None,
         group_claim=None,
     )
     assert ("Deployment", APP) in docs
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ("--set", "config.custom.access_control.require_admin=false"),
+        ("--set-json", "config.custom.access_control={}"),
+    ],
+)
+def test_custom_access_control_removed(args: tuple[str, ...]) -> None:
+    """Rendering fails with `custom.access_control`, as the app refuses it.
+
+    Naming FOCA's `security.access_control.require_admin`, where its only
+    setting moved.
+    """
+    error = _render_error(*args, admin_group=None)
+    assert "config.custom.access_control was removed" in error
+    assert "config.security.access_control.require_admin" in error
 
 
 @pytest.mark.parametrize(

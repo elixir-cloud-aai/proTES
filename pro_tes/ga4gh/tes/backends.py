@@ -40,6 +40,7 @@ import time
 from typing import Any
 from urllib.parse import quote, quote_plus
 
+from foca import get_custom_config
 import requests
 import tes
 from tes.utils import unmarshal
@@ -47,6 +48,7 @@ from urllib3.exceptions import ConnectTimeoutError
 
 from pro_tes.config_models import (
     ClientCredentials,
+    CustomConfig,
     DiscoveredBackend,
     Tes,
     TesBackend,
@@ -58,7 +60,6 @@ from pro_tes.exceptions import (
     BackendOutcomeUnknown,
 )
 from pro_tes.ga4gh.tes.discovery import check_public_host, get_backends, url_key
-from pro_tes.utils.misc import get_custom_config
 
 logger = logging.getLogger(__name__)
 
@@ -344,7 +345,7 @@ def get_backend(url: str) -> TesBackend:
         for backend in get_backends(refresh=refresh):
             if url_key(backend.url) == key:
                 return backend
-        if not get_custom_config().tes.discovery.enabled:
+        if not get_custom_config(CustomConfig).tes.discovery.enabled:
             break
     raise BackendNotConfigured(f"TES backend not configured: {url}")
 
@@ -446,7 +447,7 @@ class TesClient(tes.HTTPClient):
                 `custom.tes.timeout`.
         """
         if timeout is None:
-            timeout = get_custom_config().tes.timeout
+            timeout = get_custom_config(CustomConfig).tes.timeout
         super().__init__(url=url, timeout=timeout)
         self.backend = backend
 
@@ -592,7 +593,7 @@ class TesClient(tes.HTTPClient):
         """
         kwargs: dict[str, Any] = super()._request_params(data=data, params=params)
         kwargs["timeout"] = (min(CONNECT_TIMEOUT, self.timeout), self.timeout)
-        config = get_custom_config().tes
+        config = get_custom_config(CustomConfig).tes
         if isinstance(self.backend, DiscoveredBackend):
             # redirects could lead to any address
             kwargs["allow_redirects"] = False

@@ -86,6 +86,19 @@ def create_task(client: FlaskClient, user: str) -> str:
     return str(response.get_json()["id"])
 
 
+def mark_rules_changed(client: FlaskClient) -> None:
+    """Apply rules changed in the database directly, as operators do.
+
+    FOCA's enforcer is kept up to date with the changes recorded by its
+    adapter only, so changes in the database directly need `mark_changed()`
+    (or a restart).
+
+    Args:
+        client: Test client of the app.
+    """
+    client.application.config["casbin_adapter"].mark_changed()
+
+
 def list_ids(client: FlaskClient, user: str) -> list[str]:
     """List the identifiers of the tasks a user sees.
 
@@ -148,6 +161,7 @@ def test_owner_without_role(
     # left the groups with the role `user`)
     rules = mongo_client[DB]["policy_rules"]
     rules.update_many({"ptype": "g2"}, {"$set": {"v0": f"user:{OUTSIDER}"}})
+    mark_rules_changed(client)
     headers = make_headers(OUTSIDER)
     for method, path in task_item_operations(task_id):
         response = client.open(path, method=method, headers=headers)
@@ -314,6 +328,7 @@ def test_tasks_without_owner(
     Also not to admins.
     """
     mongo_client[DB]["policy_rules"].delete_many({"ptype": "g2"})
+    mark_rules_changed(client)
     tasks = mongo_client[DB]["tasks"]
     tasks.update_one({"task.id": task_id}, {"$unset": {"user_id": ""}})
     # as in the docs for operators

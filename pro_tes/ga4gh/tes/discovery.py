@@ -39,12 +39,12 @@ import time
 from typing import Any
 from urllib.parse import urlsplit
 
+from foca import get_custom_config
 from foca.utils.urls import InvalidURL, normalize_url
 import requests
 
-from pro_tes.config_models import DiscoveredBackend, Discovery, TesBackend
+from pro_tes.config_models import CustomConfig, DiscoveredBackend, Discovery, TesBackend
 from pro_tes.exceptions import BackendAddressNotAllowed, HostNotResolved, RegistryError
-from pro_tes.utils.misc import get_custom_config
 
 logger = logging.getLogger(__name__)
 
@@ -597,7 +597,7 @@ def get_backends(refresh: bool = False) -> list[TesBackend]:
         The backends of `custom.tes.service_list`, followed by those
         discovered in the registry (`custom.tes.discovery`) with other URLs.
     """
-    conf = get_custom_config().tes
+    conf = get_custom_config(CustomConfig).tes
     backends: list[TesBackend] = list(conf.service_list)
     known = {url_key(backend.url) for backend in backends}
     for backend in discovery.get_backends(conf=conf.discovery, refresh=refresh):

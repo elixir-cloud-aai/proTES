@@ -7,8 +7,6 @@ HTTP API, see [API](api.md) and the Swagger UI of a deployment.
 
 ::: pro_tes.app
 
-::: pro_tes.gunicorn_config
-
 ## Configuration
 
 ::: pro_tes.config_models

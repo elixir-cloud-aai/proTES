@@ -3,11 +3,10 @@
 import logging
 import os
 
-from foca import get_config
+from foca import get_config, get_custom_config
 
-from pro_tes.config_models import Tes
+from pro_tes.config_models import CustomConfig, Tes
 from pro_tes.ga4gh.tes.backends import CLIENT_ID_ENV, CLIENT_SECRET_ENV
-from pro_tes.utils.misc import get_custom_config
 
 logger = logging.getLogger(__name__)
 
@@ -31,59 +30,31 @@ def check_task_ownership() -> None:
     Owners are enforced by access control (cf.
     :py:mod:`pro_tes.ga4gh.tes.ownership`), so it must be enabled and
     enforced. Tasks are owned by the users of the access tokens only, so
-    service clients, which are enforced as clients, are not supported yet.
-    Must be called in an app context.
+    service clients are refused too, by FOCA's
+    :py:func:`foca.security.auth.require_no_service_clients`, which the app
+    calls on startup. Must be called in an app context.
 
     Raises:
-        RuntimeError: Access control is not enabled and enforced, or service
-            clients (`security.auth.service_clients`,
-            `on_behalf_of_header` or `security.access_control.client_mapping`)
-            are configured.
+        RuntimeError: Access control is not enabled and enforced.
     """
-    security = get_config().security
-    conf = security.access_control
+    conf = get_config().security.access_control
     if not (conf.enabled and conf.enforce):
         raise RuntimeError(
             "Access control must be enabled and enforced "
             "(`security.access_control.enabled` and `enforce`), so that only "
             "the owners of tasks can access them"
         )
-    if (
-        security.auth.service_clients
-        or security.auth.on_behalf_of_header is not None
-        or conf.client_mapping
-    ):
-        raise RuntimeError(
-            "Service clients (`security.auth.service_clients`, "
-            "`on_behalf_of_header` and `security.access_control.client_mapping`) "
-            "are not supported yet: tasks are owned by the users of access "
-            "tokens only"
-        )
 
 
-def check_role_groups() -> None:
-    """Check that groups are mapped to the role `admin`, and log the mapping.
+def check_user_groups() -> None:
+    """Log the groups mapped to the role `user`, or warn if there are none.
 
-    Without such groups, nobody has the role `admin` (who may use the
-    permissions API), so this is an error unless
-    `custom.access_control.require_admin` is false; so is a group mapping
-    without the claim of the groups (`claim_groups`), which no group would
-    match. A warning is logged if no group is mapped to the role `user`, as
-    nobody can create tasks then. Must be called in an app context.
-
-    Raises:
-        RuntimeError: No group is mapped to the role `admin` (or
-            `claim_groups` is not set), and
-            `custom.access_control.require_admin` is true.
+    Nobody can create or list tasks without such groups. FOCA checks the
+    groups of the role `admin` (`security.access_control.require_admin`) and
+    that groups are only mapped with a group claim (`claim_groups`). Must be
+    called in an app context.
     """
-    conf = get_config().security.access_control
-    mapping = conf.group_mapping or {}
-    if mapping and conf.claim_groups is None:
-        logger.warning(
-            "`security.access_control.group_mapping` is set, but not "
-            "`claim_groups`, so no group gets a role"
-        )
-        mapping = {}
+    mapping = get_config().security.access_control.group_mapping or {}
     users = _groups_of_role(mapping, "user")
     if users:
         logger.info("Groups mapped to the role 'user': %s", ", ".join(users))
@@ -91,19 +62,6 @@ def check_role_groups() -> None:
         logger.warning(
             "No group is mapped to the role 'user', so nobody can create or list tasks"
         )
-    admins = _groups_of_role(mapping, "admin")
-    if admins:
-        logger.info("Groups mapped to the role 'admin': %s", ", ".join(admins))
-    elif get_custom_config().access_control.require_admin:
-        raise RuntimeError(
-            "No group is mapped to the role 'admin': set "
-            "`security.access_control.claim_groups` and `group_mapping` (e.g., "
-            "to map an admin group of the identity provider to 'admin'), or "
-            "set `custom.access_control.require_admin` to false to run "
-            "without admins"
-        )
-    else:
-        logger.warning("No group is mapped to the role 'admin'")
 
 
 def _missing_env(*names: str) -> list[str]:
@@ -137,7 +95,7 @@ def check_backends(conf: Tes | None = None) -> None:
             Basic credentials of a backend with `auth: basic`.
     """
     if conf is None:
-        conf = get_custom_config().tes
+        conf = get_custom_config(CustomConfig).tes
     discovery = conf.discovery
     if discovery.enabled:
         logger.info(

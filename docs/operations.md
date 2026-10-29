@@ -78,7 +78,10 @@ Only the owner of a task can read and cancel it through the API, not admins
 the database instead (database `taskStore`, or the one in `MONGO_DBNAME`),
 e.g., with `mongosh`; the owner of a task is in `user_id` of its document in
 the collection `tasks`, and as owner roles (`g2` rules) in the collection
-`policy_rules`:
+`policy_rules`. Owners are subjects (`sub` claims) of the users' access
+tokens; with several trusted issuers, they are namespaced by issuer
+(`<issuer>|<sub>`, or the issuer's `namespace`; bare for an issuer with
+`namespace: ""`), so `<sub>` below stands for that form:
 
 ```js
 // tasks of a user
@@ -109,10 +112,17 @@ db.tasks.deleteMany({ user_id: { $exists: false } })
 
 Owner roles left by deleted tasks don't give access to other tasks (their
 owners get `404 Not Found`, and their identifiers are not used for new
-tasks), but are loaded on each request; delete them together with the
-documents, via the permissions API, or in the database
+tasks), but are kept in memory by each instance of proTES; delete them
+together with the documents, via the permissions API, or in the database
 (`db.policy_rules.deleteMany({ ptype: "g2", v2: { $in: [...] } })`, with the
 paths of the deleted tasks, and those ending in `:cancel`).
+
+Rules of access control changed in the database directly (e.g., with
+`mongosh`) apply only once proTES is restarted (all instances; e.g.,
+`kubectl rollout restart deployment/<app>` with the Helm chart, `<app>` as in its README, Names and labels), as
+proTES keeps the rules in memory and notices only the changes made through
+FOCA, e.g., via the permissions API (see FOCA's [migration guide to
+0.18](https://foca.readthedocs.io/en/latest/migration-0.18/#rules-changed-in-the-database-directly)).
 
 ## Abusive tasks
 
