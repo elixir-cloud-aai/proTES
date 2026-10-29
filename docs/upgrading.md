@@ -34,9 +34,13 @@ With FOCA 0.18, settings and checks that proTES had of its own are FOCA's:
   owners](operations.md#task-owners)). Instances of earlier versions don't
   record their changes of rules, and proTES adds owner roles with each new
   task: once all instances run this version, restart them once more (e.g.,
-  `kubectl rollout restart deployment/<app>` with the Helm chart, `<app>` as in its README, Names and labels), so
-  that they apply the owner roles of tasks created during the rolling update
-  (see FOCA's [migration guide to
+  `kubectl rollout restart deployment/<app>` with the Helm chart, `<app>` as
+  in its README, Names and labels), so that they apply the owner roles of
+  tasks created during the rolling update; until then, owners of such tasks
+  may get `404` from instances of this version. To avoid this window, stop
+  the instances of the earlier version before starting those of this version
+  (e.g., scale the app's Deployment to 0 first), at the cost of a short
+  downtime (see FOCA's [migration guide to
   0.18](https://foca.readthedocs.io/en/latest/migration-0.18/)).
 - With several trusted issuers (`security.auth.issuers`), subjects are now
   namespaced by issuer (`<issuer>|<sub>`), so that equal subjects of
@@ -46,9 +50,15 @@ With FOCA 0.18, settings and checks that proTES had of its own are FOCA's:
   issuer whose users own the stored tasks with `namespace: ""` (e.g.,
   `issuers: [{issuer: "https://login.example.org/oidc/", namespace: ""},
   "https://other.example.org/"]`; not supported by the Helm chart yet,
-  which accepts issuers as URLs only, see [#337](https://github.com/elixir-cloud-aai/proTES/issues/337)), or rewrite the stored subjects to the
-  namespaced form (see FOCA's [migration
+  which accepts issuers as URLs only, see
+  [#337](https://github.com/elixir-cloud-aai/proTES/issues/337)), or rewrite
+  the stored subjects to the namespaced form, both the owner roles
+  (`policy_rules`, `user:<issuer>|<sub>`) and the owners of the tasks
+  (`user_id` of the documents in `tasks`, `<issuer>|<sub>`): access depends
+  on the owner roles, and operators find tasks by `user_id` (see FOCA's [migration
   guide](https://foca.readthedocs.io/en/latest/migration-0.18/#subjects-of-several-issuers)).
+  The owners of tasks created since are stored in the namespaced form, too
+  (see [Task owners](operations.md#task-owners)).
   Deployments with a single trusted issuer are not affected.
 
 The service info is configured in `service_info.service` (see [Service

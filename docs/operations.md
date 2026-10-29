@@ -78,7 +78,10 @@ Only the owner of a task can read and cancel it through the API, not admins
 the database instead (database `taskStore`, or the one in `MONGO_DBNAME`),
 e.g., with `mongosh`; the owner of a task is in `user_id` of its document in
 the collection `tasks`, and as owner roles (`g2` rules) in the collection
-`policy_rules`:
+`policy_rules`. Owners are subjects (`sub` claims) of the users' access
+tokens; with several trusted issuers, they are namespaced by issuer
+(`<issuer>|<sub>`, or the issuer's `namespace`; bare for an issuer with
+`namespace: ""`), so `<sub>` below stands for that form:
 
 ```js
 // tasks of a user
