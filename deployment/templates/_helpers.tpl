@@ -6,9 +6,12 @@ these settings (`settings`). They follow the base config in the image
 (`pro_tes/config.yaml`): its size limit of request bodies
 (`server.max_content_length`), its token issuers (so an audience is
 required), its database (`db.dbs`) and that of access control
-(`security.access_control.db_name`). Every template includes the settings,
-so the app's checks (`protes.validate`) run first, before those of the
-library and whichever template Helm renders first.
+(`security.access_control.db_name`). The generated config sets the public
+URL of the app (`server.public_url`, cf. `protes.publicUrl`), if known,
+and the TES backends
+(`custom.tes.backends`) to those of `tes.backends`, if any. Every template
+includes the settings, so the app's checks (`protes.validate`) run first,
+before those of the library and whichever template Helm renders first.
 */}}
 {{- define "protes.settings" -}}
 {{- include "protes.validate" . -}}
@@ -18,6 +21,67 @@ requireAudience: true
 mongodb:
   databases: [taskStore]
   accessControlDatabase: taskStore
+config:
+  {{- with include "protes.publicUrl" . }}
+  server:
+    public_url: {{ toJson . }}
+  {{- end }}
+  {{- $backends := include "protes.tesBackends" . | fromJsonArray }}
+  {{- if $backends }}
+  custom:
+    tes:
+      backends: {{ toJson $backends }}
+  {{- else }}
+  # Empty, so that `config.custom: null` is like no custom config (merged
+  # into this), not a null section, which the app would refuse
+  custom: {}
+  {{- end }}
+{{- end -}}
+
+{{/*
+Public URL of the app: `publicUrl`, or else from `hostName`, with HTTPS, as
+TLS is usually terminated by the ingress, the route or a proxy in front of
+the cluster; empty without both.
+*/}}
+{{- define "protes.publicUrl" -}}
+{{- if .Values.publicUrl -}}
+{{- .Values.publicUrl -}}
+{{- else if .Values.hostName -}}
+{{- printf "https://%s/" .Values.hostName -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+The TES backends of `tes.backends`, with the keys of the app config
+(`custom.tes.backends`, e.g., `url_schemes` for `urlSchemes`; the keys of
+`labels` are kept), as a JSON list.
+*/}}
+{{- define "protes.tesBackends" -}}
+{{- $keys := dict
+  "urlSchemes" "url_schemes"
+  "refreshInterval" "refresh_interval"
+  "maxStale" "max_stale"
+  "allowPrivateAddresses" "allow_private_addresses"
+  "registryAllowPrivateAddresses" "registry_allow_private_addresses"
+  "usernameEnv" "username_env"
+  "passwordEnv" "password_env"
+-}}
+{{- $entries := list -}}
+{{- range $entry := get (.Values.tes | default dict) "backends" | default list -}}
+{{- $converted := dict -}}
+{{- range $key, $value := $entry -}}
+{{- if and (eq $key "basic") (kindIs "map" $value) -}}
+{{- $basic := dict -}}
+{{- range $name, $env := $value -}}
+{{- $_ := set $basic (get $keys $name | default $name) $env -}}
+{{- end -}}
+{{- $value = $basic -}}
+{{- end -}}
+{{- $_ := set $converted (get $keys $key | default $key) $value -}}
+{{- end -}}
+{{- $entries = append $entries $converted -}}
+{{- end -}}
+{{- toJson $entries -}}
 {{- end -}}
 
 {{/*
@@ -29,6 +93,7 @@ consequences (e.g., a missing `hostName` for `applicationDomain`).
 */}}
 {{- define "protes.validate" -}}
 {{- include "protes.checkLegacyValues" . -}}
+{{- include "protes.checkBackends" . -}}
 {{- include "protes.checkSecurity" . -}}
 {{- include "protes.checkExtraEnv" . -}}
 {{- include "protes.checkFlower" . -}}
@@ -63,6 +128,37 @@ chart), which the chart would otherwise ignore; renders nothing.
 {{- end -}}
 {{- if and (kindIs "map" .Values.flower) (hasKey .Values.flower "basicAuth") -}}
 {{- fail (printf "flower.basicAuth was removed with the chart on foca-common: create a Secret with the key basic-auth (<user>:<password>) and set flower.existingSecret %s" $hint) -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Fails on the TES backend settings replaced by `tes.backends`
+(`config.custom.tes.service_list` and `discovery`), if both `tes.backends`
+and `config.custom.tes.backends` are set, and, as the app on startup, on
+registries in `tes.backends` without a public URL of the app (`publicUrl`
+or `hostName`, unless `config.server.public_url` is set); renders nothing.
+*/}}
+{{- define "protes.checkBackends" -}}
+{{- $config := .Values.config | default dict -}}
+{{- $custom := get $config "custom" -}}
+{{- $tes := and (kindIs "map" $custom) (get $custom "tes") -}}
+{{- $server := get $config "server" -}}
+{{- $publicUrl := or (include "protes.publicUrl" .) (and (kindIs "map" $server) (get $server "public_url")) -}}
+{{- $backends := include "protes.tesBackends" . | fromJsonArray -}}
+{{- if kindIs "map" $tes -}}
+{{- range $key := list "service_list" "discovery" -}}
+{{- if hasKey $tes $key -}}
+{{- fail (printf "config.custom.tes.%s was removed: list the TES backends in tes.backends instead, first the entries of service_list (type: ga4gh-tes), then the registry of discovery (type: ga4gh-service-registry, url: its registry_url), with the chart's camelCase keys (see the Configuration section of Upgrading in the docs)" $key) -}}
+{{- end -}}
+{{- end -}}
+{{- if and $backends (hasKey $tes "backends") -}}
+{{- fail "set the TES backends either in tes.backends or in config.custom.tes.backends, not in both" -}}
+{{- end -}}
+{{- end -}}
+{{- range $entry := $backends -}}
+{{- if and (eq (get $entry "type") "ga4gh-service-registry") (not $publicUrl) -}}
+{{- fail "hostName or publicUrl must be set if tes.backends has registries (type: ga4gh-service-registry), so that the app never discovers itself" -}}
+{{- end -}}
 {{- end -}}
 {{- end -}}
 

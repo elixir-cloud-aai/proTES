@@ -54,6 +54,24 @@ sets:
 These booleans are checked as the app parses them (e.g., `"no"` is
 `false`); rendering fails on other values.
 
+The TES instances that tasks are forwarded to are listed in `tes.backends`,
+in order, with the keys of the app's `custom.tes.backends` in camelCase
+(e.g., `urlSchemes`, `refreshInterval`, `maxStale`,
+`allowPrivateAddresses`, `registryAllowPrivateAddresses`,
+`basic.usernameEnv` and `basic.passwordEnv`; the keys of `labels` are kept),
+which the chart renders into the config (see [TES
+instances](https://protes.readthedocs.io/en/latest/configuration/#tes-instances)):
+TES instances (`type: ga4gh-tes`) and service registries whose verified TES
+instances are used in their place (`type: ga4gh-service-registry`).
+Rendering fails if `config.custom.tes.backends` is set, too, and on
+`config.custom.tes.service_list` and `discovery`, which the list replaces.
+The chart sets the public URL of the app (`server.public_url`) to
+`https://<hostName>/`, or to `publicUrl` (e.g., with the path prefix of a
+proxy); the app never uses TES instances at or below it, and refuses to
+start with registries but without it, so rendering fails with registries
+but neither `hostName` nor `publicUrl` (unless
+`config.server.public_url` is set).
+
 Keep the values of each deployment in its own values file outside this
 repository (e.g., `values-prod.yaml` in the deployment's infrastructure
 repository), for example:
@@ -82,15 +100,21 @@ config:
         compute-admins: admin
   custom:
     tes:
-      # TES instances that tasks are distributed to; proTES authenticates
-      # at them with its own access token (`auth: client_credentials`, the
-      # default), unless `auth` is `basic` or `none`
-      service_list:
-        - url: "https://tes.example.org"
       # Identity provider of the client of proTES (credentials from
       # `PROTES_CLIENT_ID` and `PROTES_CLIENT_SECRET`, see Secrets)
       client_credentials:
         issuer: "https://login.example.org/oidc/"
+tes:
+  # TES instances that tasks are distributed to, in order; proTES
+  # authenticates at them with its own access token (`auth:
+  # client_credentials`, the default), unless `auth` is `basic` or `none`
+  backends:
+    - type: ga4gh-tes
+      url: "https://tes.example.org"
+    # Verified TES instances of a service registry, in its place
+    - type: ga4gh-service-registry
+      url: "https://registry.example.org/ga4gh/registry/v1"
+      environments: [prod]
 ```
 
 Set the service info (`config.service_info.service`, see [Service
