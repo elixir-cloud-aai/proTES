@@ -929,13 +929,33 @@ def test_tes_backends_twice() -> None:
     assert "either in tes.backends or in config.custom.tes.backends" in error
 
 
+def test_registry_public_url_null() -> None:
+    """`config.server.public_url: null` takes precedence over `hostName`.
+
+    Also for registries in `config.custom.tes.backends`.
+    """
+    registry = [{"type": "ga4gh-service-registry", "url": "https://r.example.org"}]
+    for args in (
+        WITH_BACKENDS,
+        ("--set-json", f"config.custom.tes.backends={json.dumps(registry)}"),
+    ):
+        error = _render_error(*args, "--set-json", "config.server.public_url=null")
+        assert "hostName or publicUrl" in error
+
+
+def test_custom_tes_null() -> None:
+    """Rendering fails on `config.custom.tes: null`, which the app refuses."""
+    error = _render_error(*WITH_BACKENDS, "--set-json", "config.custom.tes=null")
+    assert "config.custom.tes must be a map" in error
+
+
 def test_registry_without_public_url() -> None:
     """Registries need a public URL of the app, as the app requires on startup.
 
     Unless `config.server.public_url` sets it.
     """
     args = ("--set", "hostName=", *NO_INGRESS, *WITH_BACKENDS)
-    assert "hostName or publicUrl must be set" in _render_error(*args)
+    assert "hostName or publicUrl" in _render_error(*args)
     docs = _render(*args, "--set", "config.server.public_url=https://x.example.org/")
     assert _overlay(docs)["server"] == {"public_url": "https://x.example.org/"}
 

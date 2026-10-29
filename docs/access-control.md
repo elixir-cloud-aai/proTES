@@ -255,8 +255,8 @@ instance is configured again).
 URLs of TES instances, registries and of the identity provider must use
 `https` (`url_schemes` of each entry of `custom.tes.backends`, and
 `custom.tes.url_schemes` for the identity provider); allow `http` for local
-tests only, as tokens and credentials are sent unencrypted then. URLs of TES instances must not have
-credentials (`https://user:password@host`).
+tests only, as tokens and credentials are sent unencrypted then. URLs of TES
+instances must not have credentials (`https://user:password@host`).
 
 Credentials in the URLs of inputs and outputs of tasks
 (`https://user:password@host/...`) are not accepted either: such tasks are

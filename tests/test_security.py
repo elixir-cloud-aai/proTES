@@ -486,3 +486,31 @@ def test_registry_logged(
         err
     )
     assert "No TES backends are configured" not in err
+
+
+def test_backend_at_public_url(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, app_env: None
+) -> None:
+    """The app refuses to start with configured backends below its public URL.
+
+    FOCA never uses them (so that proTES never forwards tasks to itself), so
+    they would be dropped silently otherwise.
+    """
+    backend = {
+        "type": "ga4gh-tes",
+        "url": "https://protes.example.org/funnel",
+        "auth": "none",
+    }
+    overlay = backends_overlay(
+        tmp_path / "overlay.yaml", backend, public_url=PUBLIC_URL
+    )
+    set_overlays(monkeypatch, overlay)
+    with pytest.raises(RuntimeError, match=r"protes\.example\.org/funnel"):
+        init_app()
+    other = backends_overlay(
+        tmp_path / "other.yaml",
+        backend,
+        public_url="https://protes.example.org/tes/",
+    )
+    set_overlays(monkeypatch, other)
+    init_app()

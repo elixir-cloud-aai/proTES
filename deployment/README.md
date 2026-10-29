@@ -67,8 +67,10 @@ Rendering fails if `config.custom.tes.backends` is set, too, and on
 `config.custom.tes.service_list` and `discovery`, which the list replaces.
 The chart sets the public URL of the app (`server.public_url`) to
 `https://<hostName>/`, or to `publicUrl` (e.g., with the path prefix of a
-proxy); the app never uses TES instances at or below it, and refuses to
-start with registries but without it, so rendering fails with registries
+proxy); the app never uses TES instances at or below it (and refuses to
+start if a configured one is, e.g., another app under the same `hostName`:
+set `publicUrl` to the path prefix of proTES then), and refuses to start
+with registries but without it, so rendering fails with registries
 but neither `hostName` nor `publicUrl` (unless
 `config.server.public_url` is set).
 

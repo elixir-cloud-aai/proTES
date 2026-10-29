@@ -8,10 +8,10 @@ these settings (`settings`). They follow the base config in the image
 required), its database (`db.dbs`) and that of access control
 (`security.access_control.db_name`). The generated config sets the public
 URL of the app (`server.public_url`, cf. `protes.publicUrl`), if known,
-and the TES backends
-(`custom.tes.backends`) to those of `tes.backends`, if any. Every template
-includes the settings, so the app's checks (`protes.validate`) run first,
-before those of the library and whichever template Helm renders first.
+and the TES backends (`custom.tes.backends`) to those of `tes.backends`, if
+any. Every template includes the settings, so the app's checks
+(`protes.validate`) run first, before those of the library and whichever
+template Helm renders first.
 */}}
 {{- define "protes.settings" -}}
 {{- include "protes.validate" . -}}
@@ -134,17 +134,26 @@ chart), which the chart would otherwise ignore; renders nothing.
 {{/*
 Fails on the TES backend settings replaced by `tes.backends`
 (`config.custom.tes.service_list` and `discovery`), if both `tes.backends`
-and `config.custom.tes.backends` are set, and, as the app on startup, on
-registries in `tes.backends` without a public URL of the app (`publicUrl`
-or `hostName`, unless `config.server.public_url` is set); renders nothing.
+and `config.custom.tes.backends` are set, on a `config.custom.tes` that is
+no map, and, as the app on startup, on registries (in `tes.backends` or
+`config.custom.tes.backends`) without a public URL of the app (`publicUrl`
+or `hostName`; `config.server.public_url` takes precedence, also if
+`null`); renders nothing.
 */}}
 {{- define "protes.checkBackends" -}}
 {{- $config := .Values.config | default dict -}}
 {{- $custom := get $config "custom" -}}
 {{- $tes := and (kindIs "map" $custom) (get $custom "tes") -}}
 {{- $server := get $config "server" -}}
-{{- $publicUrl := or (include "protes.publicUrl" .) (and (kindIs "map" $server) (get $server "public_url")) -}}
+{{- $publicUrl := include "protes.publicUrl" . -}}
+{{- /* `config` takes precedence, also with `null` */ -}}
+{{- if and (kindIs "map" $server) (hasKey $server "public_url") -}}
+{{- $publicUrl = get $server "public_url" -}}
+{{- end -}}
 {{- $backends := include "protes.tesBackends" . | fromJsonArray -}}
+{{- if and (kindIs "map" $custom) (hasKey $custom "tes") (not (kindIs "map" $tes)) -}}
+{{- fail "config.custom.tes must be a map (the app refuses other values; leave it out for none)" -}}
+{{- end -}}
 {{- if kindIs "map" $tes -}}
 {{- range $key := list "service_list" "discovery" -}}
 {{- if hasKey $tes $key -}}
@@ -155,9 +164,12 @@ or `hostName`, unless `config.server.public_url` is set); renders nothing.
 {{- fail "set the TES backends either in tes.backends or in config.custom.tes.backends, not in both" -}}
 {{- end -}}
 {{- end -}}
+{{- if and (kindIs "map" $tes) (kindIs "slice" (get $tes "backends")) -}}
+{{- $backends = concat $backends (get $tes "backends") -}}
+{{- end -}}
 {{- range $entry := $backends -}}
-{{- if and (eq (get $entry "type") "ga4gh-service-registry") (not $publicUrl) -}}
-{{- fail "hostName or publicUrl must be set if tes.backends has registries (type: ga4gh-service-registry), so that the app never discovers itself" -}}
+{{- if and (kindIs "map" $entry) (eq (get $entry "type") "ga4gh-service-registry") (not $publicUrl) -}}
+{{- fail "hostName or publicUrl (or config.server.public_url) must be set if tes.backends or config.custom.tes.backends has registries (type: ga4gh-service-registry), so that the app never discovers itself" -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}

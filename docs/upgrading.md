@@ -208,8 +208,8 @@ order, each with `type: ga4gh-tes` (and its `url`, `auth` and `basic`),
 then the registry of `discovery`, if any, as one entry with `type:
 ga4gh-service-registry`, its `registry_url` as `url`, and its other
 settings (`refresh_interval`, `timeout`, `versions`, `environments`,
-`auth`, `allow_private_addresses`), which keeps the order of earlier versions. For example, this config of the
-previous release:
+`auth`, `allow_private_addresses`), which keeps the order of earlier
+versions. For example, this config of the previous release:
 
 ```yaml
 custom:
@@ -247,7 +247,11 @@ custom:
 
 With a registry, set the public URL of proTES (`server.public_url`; the Helm
 chart sets it from `hostName` or `publicUrl`): proTES refuses to start
-without it, and never uses TES instances at or below it. `url_schemes` is
+without it. TES instances at or below the public URL are never used, also
+without registries, and proTES refuses to start if one of the configured
+TES instances is (e.g., `https://<hostName>/funnel` behind the same
+ingress, if proTES is served at `https://<hostName>/`: set `publicUrl` to
+the path prefix of proTES). `url_schemes` is
 set per entry: entries with `http` URLs (for local tests only) need
 `url_schemes: [https, http]`; `custom.tes.url_schemes` applies to the
 identity provider only. A registry whose last good read is older than

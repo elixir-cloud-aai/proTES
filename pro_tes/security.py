@@ -4,7 +4,7 @@ import logging
 import os
 
 from foca import get_config, get_custom_config
-from foca.plugins.backends import RegistryEntry, ServiceEntry
+from foca.plugins.backends import BackendList, RegistryEntry, ServiceEntry
 
 from pro_tes.config_models import CustomConfig, Tes
 from pro_tes.ga4gh.tes.backends import CLIENT_ID_ENV, CLIENT_SECRET_ENV
@@ -150,11 +150,14 @@ def check_backends(conf: Tes | None = None, public_url: str | None = None) -> No
         conf: TES backend configuration; by default, that of the current app
             (in an app context).
         public_url: Public URL of proTES (`server.public_url`); by default,
-            that of the current app, if `conf` is not given.
+            that of the current app if `conf` is not given (callers that
+            give `conf` give the public URL of the same config).
 
     Raises:
         RuntimeError: The list has registries, but proTES has no public URL
-            (so that it might discover itself); or environment variables
+            (so that it might discover itself), or configured backends at or
+            below the public URL (which are never used); or environment
+            variables
             with credentials are not set: the client ID and secret of proTES
             if a backend has (or discovered backends get) `auth:
             client_credentials`, or the HTTP Basic credentials of a backend
@@ -162,7 +165,8 @@ def check_backends(conf: Tes | None = None, public_url: str | None = None) -> No
     """
     if conf is None:
         conf = get_custom_config(CustomConfig).tes
-        public_url = get_config().server.public_url
+        if public_url is None:
+            public_url = get_config().server.public_url
     entries = conf.backends.root
     if not entries:
         logger.warning(
@@ -195,6 +199,21 @@ def check_backends(conf: Tes | None = None, public_url: str | None = None) -> No
             _check_registry(entry)
         else:
             missing.extend(_check_service(entry))
+    # after the checks of the entries, which the backend list validates again
+    own = [
+        entry.url
+        for entry in entries
+        if isinstance(entry, ServiceEntry)
+        and not BackendList([entry], api="tes", public_url=public_url).expand()
+    ]
+    if own:
+        raise RuntimeError(
+            f"TES backends at or below the public URL of proTES ({public_url},"
+            " `server.public_url`) would never be used, as proTES never"
+            f" forwards tasks to itself: {', '.join(own)}; correct"
+            " `server.public_url` (e.g., with the path prefix of proTES) or the"
+            " backends"
+        )
     token_backends = [
         entry.url
         for entry in entries

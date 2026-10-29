@@ -332,8 +332,8 @@ token_provider = TokenProvider()
 def get_backend_list(public_url: str | None = None) -> BackendList:
     """Get the backend list of proTES.
 
-    Cheap: the backends discovered in registries are cached per process.
-    Must be called in an app context.
+    The entries are validated again (a small cost); the backends discovered
+    in registries are cached per process. Must be called in an app context.
 
     Args:
         public_url: Public URL of proTES; by default, `server.public_url`
