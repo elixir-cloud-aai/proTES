@@ -1,10 +1,11 @@
 """Tests of the custom config, and its examples in the docs and the chart.
 
-Examples of TES backends (`custom.tes`) must validate against the config
-model, so that deployments copying them get a config the app accepts; the
-model rejects unknown keys.
+Examples of TES backends (`custom.tes`, and `tes.backends` of the chart) must
+validate against the config model, so that deployments copying them get a
+config the app accepts; the model rejects unknown keys.
 """
 
+import json
 from pathlib import Path
 import re
 import textwrap
@@ -16,6 +17,7 @@ import pytest
 import yaml
 
 from pro_tes.config_models import CustomConfig
+from tests.helm import HELM, render
 
 ROOT = Path(__file__).resolve().parents[1]
 # Markdown files with config examples
@@ -28,13 +30,15 @@ MARKDOWN = [
 # further info, e.g., a title)
 YAML_BLOCK = re.compile(r"^```ya?ml\b[^\n]*\n(.*?)^```", re.DOTALL | re.MULTILINE)
 # Sources that must contribute examples (collection by heuristics must not
-# silently miss them)
+# silently miss them): of the app config, and of the chart's values
 EXPECTED_SOURCES = {
-    "deployment/README.md",
-    "deployment/values.yaml",
     "docs/access-control.md",
     "docs/configuration.md",
+    "docs/upgrading.md",
 }
+EXPECTED_CHART_SOURCES = {"deployment/README.md", "deployment/values.yaml"}
+# Marker of examples of backend lists
+BACKEND_ENTRY = "type: ga4gh-"
 
 
 def _custom(example: dict[str, Any]) -> dict[str, Any] | None:
@@ -52,51 +56,90 @@ def _custom(example: dict[str, Any]) -> dict[str, Any] | None:
     return example.get("custom")
 
 
-def _examples() -> list[Any]:
-    """Collect the examples with TES backends (`service_list`).
+def _examples() -> tuple[list[Any], list[Any]]:
+    """Collect the examples with TES backends (`backends`).
 
     Returns:
-        Parameters of the examples (custom config), with the source as ID.
+        Parameters of the examples of the app config (custom config) and of
+        the chart's values (`tes.backends`), with the source as ID.
     """
     examples: list[Any] = []
+    chart_examples: list[Any] = []
     for path in MARKDOWN:
         blocks = YAML_BLOCK.findall(path.read_text(encoding="utf-8"))
         for index, block in enumerate(blocks):
-            if "service_list:" not in block:
+            if BACKEND_ENTRY not in block:
                 continue
-            custom = _custom(yaml.safe_load(block))
-            assert custom is not None, f"{path.name}, block {index}: no custom"
-            examples.append(
-                pytest.param(custom, id=f"{path.relative_to(ROOT)}[{index}]")
-            )
-    # The commented example of `config` in the chart's values
+            example = yaml.safe_load(block)
+            param_id = f"{path.relative_to(ROOT)}[{index}]"
+            if "tes" in example:
+                chart_examples.append(pytest.param(example, id=param_id))
+                continue
+            custom = _custom(example)
+            assert custom is not None, f"{param_id}: no custom"
+            examples.append(pytest.param(custom, id=param_id))
+    # The commented example of `tes.backends` in the chart's values
     values = (ROOT / "deployment/values.yaml").read_text(encoding="utf-8")
-    match = re.search(r"^config: \{\}\n((?:#.*\n)+)", values, re.MULTILINE)
-    assert match is not None, "no example of `config` in values.yaml"
-    commented = textwrap.dedent(re.sub(r"^#", "", match.group(1), flags=re.M))
-    examples.append(
-        pytest.param(_custom(yaml.safe_load(commented)), id="deployment/values.yaml")
+    match = re.search(r"^  backends: \[\]\n((?:  #.*\n)+)", values, re.MULTILINE)
+    assert match is not None, "no example of `tes.backends` in values.yaml"
+    commented = textwrap.dedent(re.sub(r"^  #", "", match.group(1), flags=re.M))
+    chart_examples.append(
+        pytest.param(
+            {"tes": {"backends": yaml.safe_load(commented)}},
+            id="deployment/values.yaml",
+        )
     )
-    return examples
+    return examples, chart_examples
 
 
-EXAMPLES = _examples()
+EXAMPLES, CHART_EXAMPLES = _examples()
 
 
 def test_examples_collected() -> None:
     """Each source with examples of TES backends contributes some."""
-    sources = {str(param.id).split("[")[0] for param in EXAMPLES}
-    assert sources >= EXPECTED_SOURCES
+    for params, expected in (
+        (EXAMPLES, EXPECTED_SOURCES),
+        (CHART_EXAMPLES, EXPECTED_CHART_SOURCES),
+    ):
+        sources = {str(param.id).split("[")[0] for param in params}
+        assert sources >= expected
 
 
 @pytest.mark.parametrize("custom", EXAMPLES)
 def test_tes_examples_valid(custom: dict[str, Any]) -> None:
     """The examples, merged into the base config, validate."""
     config = CustomConfig.model_validate(deep_merge(base_custom(), custom))
-    backends = custom["tes"]["service_list"]
-    assert [backend.url for backend in config.tes.service_list] == [
-        backend["url"] for backend in backends
+    assert len(config.tes.backends.root) == len(custom["tes"]["backends"])
+
+
+@pytest.mark.skipif(HELM is None, reason="helm not installed")
+@pytest.mark.parametrize("values", CHART_EXAMPLES)
+def test_chart_examples_valid(values: dict[str, Any], tmp_path: Path) -> None:
+    """The examples of the chart's values render a valid config.
+
+    The rendered custom config, merged into the base config, validates; the
+    identity provider of proTES is set unless the example sets the config
+    (as the example of `config` in values.yaml does).
+    """
+    idp = {"client_credentials": {"issuer": "https://login.example.org/oidc/"}}
+    path = tmp_path / "values.yaml"
+    path.write_text(
+        json.dumps(
+            {
+                "hostName": "tes.example.org",
+                "config": {"custom": {"tes": idp}},
+                **values,
+            }
+        )
+    )
+    (configmap,) = [
+        doc
+        for doc in render("-f", str(path))
+        if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "protes-config"
     ]
+    overlay = yaml.safe_load(configmap["data"]["overlay.yaml"])
+    config = CustomConfig.model_validate(deep_merge(base_custom(), overlay["custom"]))
+    assert len(config.tes.backends.root) == len(values["tes"]["backends"])
 
 
 def base_custom() -> dict[str, Any]:
@@ -120,9 +163,29 @@ def test_base_config_valid() -> None:
     [
         {"celery": {"monitor": {"timeout": 0.1}}},
         {"controllers": {"celery": {"message_maxsize": 1}}},
-        {"tes": {"servce_list": [{"url": "https://tes.example.org"}]}},
-        {"tes": {"service_list": [{"url": "https://tes.example.org", "ath": "none"}]}},
-        {"tes": {"discovery": {"registry": "https://registry.example.org"}}},
+        {"tes": {"backens": []}},
+        {
+            "tes": {
+                "backends": [
+                    {
+                        "type": "ga4gh-tes",
+                        "url": "https://tes.example.org",
+                        "ath": "none",
+                    }
+                ]
+            }
+        },
+        {
+            "tes": {
+                "backends": [
+                    {
+                        "type": "ga4gh-service-registry",
+                        "url": "https://registry.example.org",
+                        "refresh": 60,
+                    }
+                ]
+            }
+        },
         {"controllers": {"post_task": {"task_id": {"lenght": 8}}}},
         {"storeLogs": {"execution_traces": False}},
     ],

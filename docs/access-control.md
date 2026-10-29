@@ -181,8 +181,9 @@ identity provider, the [smoke test](development.md) brings a fake one.
 proTES authenticates at TES instances with credentials of its own, never
 with those of its callers: the access tokens of requests are not forwarded,
 and no credentials of callers are stored or queued for the Celery worker.
-How proTES authenticates is set for each TES instance of
-`custom.tes.service_list`, by `auth`:
+How proTES authenticates is set for each entry of `custom.tes.backends`, by
+`auth` (TES instances discovered in a service registry get the `auth` of
+the registry's entry, `client_credentials` or `none`):
 
 - `client_credentials` (the default): with an access token of proTES itself,
   which it gets from its identity provider with the OAuth 2.0 client
@@ -210,9 +211,11 @@ provider of proTES in a [config overlay](configuration.md), e.g.:
 ```yaml
 custom:
   tes:
-    service_list:
-      - url: https://tes.example.org
-      - url: https://tes.example.com
+    backends:
+      - type: ga4gh-tes
+        url: https://tes.example.org
+      - type: ga4gh-tes
+        url: https://tes.example.com
         auth: basic
         basic:
           username_env: TES_EXAMPLE_COM_USERNAME
@@ -239,9 +242,9 @@ ends whose tokens proTES accepts (`security.auth.audience`). All TES
 instances with `client_credentials` get the same token, so each of them
 could use it at the others until it expires: configure only TES instances
 that you trust, and keep the lifetime of the tokens short. Tasks are only
-forwarded to configured TES instances, and to those discovered in a service
-registry (`custom.tes.discovery`, which get the credentials of its `auth`;
-only verified ones, see [Discovery in a service
+forwarded to configured TES instances, and to those discovered in the
+service registries of `custom.tes.backends` (only verified ones, see
+[Discovery in a service
 registry](configuration.md#discovery-in-a-service-registry)): TES instances
 that middlewares add (`tes_urls`) are skipped, as proTES has no credentials
 for them. Keep TES instances in the list until their tasks have finished:
@@ -249,9 +252,10 @@ tasks of TES instances that are no longer configured can't be tracked or
 canceled (their state becomes `UNKNOWN`, and is tracked again once the TES
 instance is configured again).
 
-URLs of TES instances and of the identity provider must use `https`
-(`custom.tes.url_schemes`); allow `http` for local tests only, as tokens and
-credentials are sent unencrypted then. URLs of TES instances must not have
+URLs of TES instances, registries and of the identity provider must use
+`https` (`url_schemes` of each entry of `custom.tes.backends`, and
+`custom.tes.url_schemes` for the identity provider); allow `http` for local
+tests only, as tokens and credentials are sent unencrypted then. URLs of TES instances must not have
 credentials (`https://user:password@host`).
 
 Credentials in the URLs of inputs and outputs of tasks

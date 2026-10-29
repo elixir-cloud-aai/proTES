@@ -11,8 +11,8 @@ that can be applied is used.
 
 Two middlewares are shipped with proTES, as proofs of concept for different
 ways of distributing tasks. Both forward to the TES instances of
-`custom.tes.service_list` and those discovered in a service registry (see
-[TES instances](configuration.md#tes-instances)).
+`custom.tes.backends`, including those discovered in service registries
+(see [TES instances](configuration.md#tes-instances)).
 
 - **Bringing compute to the data:**
   `pro_tes.plugins.middlewares.task_distribution.distance.TaskDistributionDistance`
@@ -48,7 +48,7 @@ middleware gets its own copy of the task, which it may change in place. To
 select TES instances, set the key `tes_urls` of the task to the list of their
 URLs, in the order in which they are tried; proTES removes the key before it
 forwards the task, and skips URLs that are neither in
-`custom.tes.service_list` nor discovered (it has no credentials for them).
+`custom.tes.backends` nor discovered (it has no credentials for them).
 If no middleware leaves a list of URL strings in `tes_urls`, the request
 fails (`500`) and the task is not kept.
 Credentials that middlewares add to the URLs of inputs and outputs are
@@ -58,8 +58,9 @@ task fails the middleware, too. The changes of a failed middleware are
 discarded: the next alternative gets the task as it was before the step.
 The task distribution middlewares derive from
 [`TaskDistributionBaseClass`](reference.md#pro_tes.plugins.middlewares.task_distribution.base.TaskDistributionBaseClass),
-which sets `tes_urls` from the URLs of `custom.tes.service_list` and the
-discovered TES instances, once each, in that order; override its
+which sets `tes_urls` from the URLs of the TES instances of
+`custom.tes.backends`, discovered ones in the places of their registries,
+once each, in that order; override its
 `_set_tes_urls()` to order them differently.
 
 Middlewares are imported by their import path, so they can live in any
