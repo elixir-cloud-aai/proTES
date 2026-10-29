@@ -49,7 +49,10 @@ def test_worker_without_custom_config(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_worker_registry_needs_public_url(
     custom: CustomConfig, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The worker doesn't start with registries, but without a public URL."""
+    """The worker doesn't start with registries, but without a public URL.
+
+    It starts with one.
+    """
     custom.tes = Tes(
         backends=[  # type: ignore[arg-type]
             {

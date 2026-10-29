@@ -56,10 +56,10 @@ These booleans are checked as the app parses them (e.g., `"no"` is
 
 The TES instances that tasks are forwarded to are listed in `tes.backends`,
 in order, with the keys of the app's `custom.tes.backends` in camelCase
-(e.g., `urlSchemes`, `refreshInterval`, `maxStale`,
-`allowPrivateAddresses`, `registryAllowPrivateAddresses`,
-`basic.usernameEnv` and `basic.passwordEnv`; the keys of `labels` are kept),
-which the chart renders into the config (see [TES
+(e.g., `urlSchemes`, `refreshInterval`, `maxStale`, `allowPrivateAddresses`,
+`registryAllowPrivateAddresses`, `basic.usernameEnv` and
+`basic.passwordEnv`; the keys of `labels` are kept), which the chart renders
+into the config (see [TES
 instances](https://protes.readthedocs.io/en/latest/configuration/#tes-instances)):
 TES instances (`type: ga4gh-tes`) and service registries whose verified TES
 instances are used in their place (`type: ga4gh-service-registry`).
@@ -68,11 +68,11 @@ Rendering fails if `config.custom.tes.backends` is set, too, and on
 The chart sets the public URL of the app (`server.public_url`) to
 `https://<hostName>/`, or to `publicUrl` (e.g., with the path prefix of a
 proxy); the app never uses TES instances at or below it (and refuses to
-start if a configured one is, e.g., another app under the same `hostName`:
-set `publicUrl` to the path prefix of proTES then), and refuses to start
-with registries but without it, so rendering fails with registries
-but neither `hostName` nor `publicUrl` (unless
-`config.server.public_url` is set).
+start, which rendering doesn't check, if a configured one is, e.g., another
+app under the same `hostName`: serve proTES under a host or path prefix of
+its own then, and set `publicUrl` to it), and refuses to start with
+registries but without it, so rendering fails with registries but neither
+`hostName` nor `publicUrl` (unless `config.server.public_url` is set).
 
 Keep the values of each deployment in its own values file outside this
 repository (e.g., `values-prod.yaml` in the deployment's infrastructure

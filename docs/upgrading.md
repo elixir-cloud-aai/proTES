@@ -248,18 +248,19 @@ custom:
 With a registry, set the public URL of proTES (`server.public_url`; the Helm
 chart sets it from `hostName` or `publicUrl`): proTES refuses to start
 without it. TES instances at or below the public URL are never used, also
-without registries, and proTES refuses to start if one of the configured
-TES instances is (e.g., `https://<hostName>/funnel` behind the same
-ingress, if proTES is served at `https://<hostName>/`: set `publicUrl` to
-the path prefix of proTES). `url_schemes` is
-set per entry: entries with `http` URLs (for local tests only) need
-`url_schemes: [https, http]`; `custom.tes.url_schemes` applies to the
-identity provider only. A registry whose last good read is older than
-`max_stale` seconds (default: 3600) yields no TES instances until it can be
-read again (earlier versions kept its last list indefinitely), and its own
-host must have public addresses, unless `registry_allow_private_addresses`
-is set. The service info lists the TES instances as objects (`backends`:
-`id`, `url`, `source`, `group` and `labels` of each) instead of URLs.
+without registries, and proTES refuses to start if one of the configured TES
+instances is (e.g., `https://<hostName>/funnel` behind the same ingress, if
+proTES is served at `https://<hostName>/`: serve proTES under a host or path
+prefix of its own, and set `publicUrl` to it, or move the TES instance to
+another host). `url_schemes` is set per entry: entries with `http` URLs (for
+local tests only) need `url_schemes: [https, http]`;
+`custom.tes.url_schemes` applies to the identity provider only. A registry
+whose last good read is older than `max_stale` seconds (default: 3600)
+yields no TES instances until it can be read again (earlier versions kept
+its last list indefinitely), and its own host must have public addresses,
+unless `registry_allow_private_addresses` is set. The service info lists the
+TES instances as objects (`backends`: `id`, `url`, `source`, `group` and
+`labels` of each) instead of URLs.
 
 Each entry of a TES instance has the URL of the TES instance (`url`) and how
 proTES authenticates at it (`auth`), instead of a URL; `auth` defaults to

@@ -76,9 +76,10 @@ custom:
 URLs are normalized (e.g., lowercase host, without default port and trailing
 slashes) and must use one of the schemes of the entry's `url_schemes`
 (default: `https` only; add `http` for local tests only, as credentials are
-sent unencrypted), without user info. Each entry has an identifier (`id`,
-by default its normalized URL); entries with the same identifier are
-rejected, and a URL listed twice is used once, at its first place. `custom.tes.url_schemes` applies to the identity provider of
+sent unencrypted), without user info. Each entry has an identifier (`id`, by
+default its normalized URL); entries with the same identifier are rejected,
+and a URL listed twice is used once, at its first place.
+`custom.tes.url_schemes` applies to the identity provider of
 `custom.tes.client_credentials` only. The [middlewares](middlewares.md)
 decide which of the TES instances are tried, and in which order (see
 [Tasks](api.md#tasks)). The service info, which anyone can read, lists the
@@ -86,9 +87,9 @@ TES instances (`backends`: identifier, URL, source, group and labels of
 each, without credentials; the group of discovered TES instances is the
 identifier of their registry entry, by default its URL, so set `id` for
 registries at internal URLs). TES instances at or below the public URL of
-proTES (`server.public_url`, if set; the Helm chart sets it from
-`hostName`) are never used, so that proTES never forwards tasks to itself:
-proTES refuses to start if a configured one is.
+proTES (`server.public_url`, if set; the Helm chart sets it from `hostName`)
+are never used, so that proTES never forwards tasks to itself: proTES
+refuses to start if a configured one is.
 
 Requests to TES instances time out after `custom.tes.timeout` seconds
 (default: 15), and after 5 seconds while connecting. proTES creates, gets

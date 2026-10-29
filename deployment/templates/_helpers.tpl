@@ -161,7 +161,7 @@ or `hostName`; `config.server.public_url` takes precedence, also if
 {{- end -}}
 {{- end -}}
 {{- if and $backends (hasKey $tes "backends") -}}
-{{- fail "set the TES backends either in tes.backends or in config.custom.tes.backends, not in both" -}}
+{{- fail "set the TES backends either in tes.backends or in config.custom.tes.backends, not in both (config.custom.tes.backends must not be set, also not to null, with tes.backends)" -}}
 {{- end -}}
 {{- end -}}
 {{- if and (kindIs "map" $tes) (kindIs "slice" (get $tes "backends")) -}}

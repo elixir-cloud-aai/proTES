@@ -514,3 +514,21 @@ def test_backend_at_public_url(
     )
     set_overlays(monkeypatch, other)
     init_app()
+
+
+def test_backend_at_public_url_unchecked() -> None:
+    """Only configured backends are checked against the public URL, if set.
+
+    Registries at or below it are allowed (they are read, not forwarded to).
+    """
+    tes = {"type": "ga4gh-tes", "url": "https://protes.example.org/tes"}
+    registry = {
+        "type": "ga4gh-service-registry",
+        "url": "https://protes.example.org/registry",
+    }
+    conf = Tes(backends=[{**tes, "auth": "none"}])  # type: ignore[arg-type]
+    check_backends(conf, public_url=None)
+    with pytest.raises(RuntimeError, match="at or below the public URL"):
+        check_backends(conf, public_url="https://protes.example.org")
+    conf = Tes(backends=[{**registry, "auth": "none"}])  # type: ignore[arg-type]
+    check_backends(conf, public_url="https://protes.example.org")

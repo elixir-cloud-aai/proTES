@@ -156,10 +156,9 @@ def check_backends(conf: Tes | None = None, public_url: str | None = None) -> No
     Raises:
         RuntimeError: The list has registries, but proTES has no public URL
             (so that it might discover itself), or configured backends at or
-            below the public URL (which are never used); or environment
-            variables
-            with credentials are not set: the client ID and secret of proTES
-            if a backend has (or discovered backends get) `auth:
+            below the public URL (which are never used). Or environment
+            variables with credentials are not set: the client ID and secret
+            of proTES if a backend has (or discovered backends get) `auth:
             client_credentials`, or the HTTP Basic credentials of a backend
             with `auth: basic`.
     """
@@ -210,9 +209,9 @@ def check_backends(conf: Tes | None = None, public_url: str | None = None) -> No
         raise RuntimeError(
             f"TES backends at or below the public URL of proTES ({public_url},"
             " `server.public_url`) would never be used, as proTES never"
-            f" forwards tasks to itself: {', '.join(own)}; correct"
-            " `server.public_url` (e.g., with the path prefix of proTES) or the"
-            " backends"
+            f" forwards tasks to itself: {', '.join(own)}; serve proTES under a"
+            " host or path prefix of its own (and set `server.public_url` to"
+            " it), or move the backends to other hosts"
         )
     token_backends = [
         entry.url
