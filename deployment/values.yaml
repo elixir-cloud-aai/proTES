@@ -15,8 +15,16 @@ nameOverride: ""
 fullnameOverride: ""
 
 # Public host name of the app (of the Ingress, HTTPRoute or OpenShift Route),
-# e.g., `tes.example.org`
+# e.g., `tes.example.org`; also sets the public URL of the app
+# (`server.public_url` in the app config) to `https://<hostName>/`, unless
+# `publicUrl` is set
 hostName: ""
+
+# Public URL of the app as clients see it, if not `https://<hostName>/`,
+# e.g., with the path prefix of a proxy (`https://example.org/tes/`); sets
+# `server.public_url` in the app config, so that TES backends discovered in
+# registries are never the app itself
+publicUrl: ""
 
 # App config overriding the base config in the image (`pro_tes/config.yaml`
 # of the image's version); mappings are merged recursively, other values
@@ -46,11 +54,6 @@ config: {}
 #         compute-admins: admin
 #   custom:
 #     tes:
-#       # TES instances that tasks are distributed to; proTES authenticates
-#       # at them with its own access token (`auth: client_credentials`, the
-#       # default), unless `auth` is `basic` or `none`
-#       service_list:
-#         - url: "https://tes.example.org"
 #       # Identity provider of the client of proTES (credentials from
 #       # `PROTES_CLIENT_ID` and `PROTES_CLIENT_SECRET`, see
 #       # deployment/README.md, Secrets)
@@ -68,6 +71,30 @@ config: {}
 #         url: "https://organization.example.org"
 #       contactUrl: "mailto:tes@example.org"
 #       environment: "prod"
+
+tes:
+  # TES backends that tasks may be forwarded to, in order (rendered into
+  # `custom.tes.backends` of the app config, with the keys of the app config:
+  # e.g., `urlSchemes` as `url_schemes`): TES instances (`type: ga4gh-tes`)
+  # and service registries whose verified TES instances are used in their
+  # place (`type: ga4gh-service-registry`). proTES authenticates at them with
+  # its own access token (`auth: client_credentials`, the default; see
+  # `config.custom.tes.client_credentials`), with HTTP Basic credentials from
+  # environment variables (`auth: basic`, set via `protes.extraEnv`) or not
+  # at all (`auth: none`); see deployment/README.md, Configuration.
+  # Examples:
+  backends: []
+  #   - type: ga4gh-tes
+  #     url: "https://tes.example.org"
+  #   - type: ga4gh-service-registry
+  #     url: "https://registry.example.org/ga4gh/registry/v1"
+  #     versions: ["1.1"]
+  #   - type: ga4gh-tes
+  #     url: "https://tes.example.com"
+  #     auth: basic
+  #     basic:
+  #       usernameEnv: TES_EXAMPLE_COM_USERNAME
+  #       passwordEnv: TES_EXAMPLE_COM_PASSWORD
 
 protes:
   # Image repository; may include a tag or digest instead of setting `tag`

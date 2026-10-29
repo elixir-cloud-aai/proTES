@@ -152,7 +152,7 @@ class TaskDistributionDistance(TaskDistributionBaseClass):
     Sorts the available TES instances by the sum of minimum geodesic distances
     between a given TES instance and all of the task's inputs, in ascending
     order; instances at the same distance keep their order (that of
-    `custom.tes.service_list`, followed by the discovered backends).
+    `custom.tes.backends`, with the backends of registries in their places).
     Distances are calculated based on IP geolocations of the TES instance and
     the inputs.
 

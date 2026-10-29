@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from pro_tes.ga4gh.tes.discovery import get_backends
+from pro_tes.ga4gh.tes.backends import get_backends
 from pro_tes.middleware.abstract_middleware import AbstractMiddleware
 
 
@@ -41,8 +41,9 @@ class TaskDistributionBaseClass(AbstractMiddleware):
     ) -> None:
         """Set TES URIs, once each, in the given order.
 
-        The order is that of `custom.tes.service_list`, followed by the
-        discovered backends (cf. :py:func:`pro_tes.ga4gh.tes.discovery.get_backends`).
+        The order is that of `custom.tes.backends`, with the backends of
+        registries in their places (cf.
+        :py:func:`pro_tes.ga4gh.tes.backends.get_backends`).
 
         Args:
             tes_urls: List of TES URIs.

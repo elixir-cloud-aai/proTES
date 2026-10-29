@@ -10,6 +10,7 @@ from unittest.mock import ANY
 from connexion import FlaskApp
 from flask.testing import FlaskClient
 from foca import get_custom_config
+from foca.plugins.backends import BackendListConfig
 from pydantic import ValidationError
 from pymongo import MongoClient
 from pymongo.errors import DuplicateKeyError, PyMongoError
@@ -141,7 +142,7 @@ def test_create_task_no_backend_selected(
         lambda self, **kwargs: stores.append(kwargs),
     )
     with app.app.app_context():
-        get_custom_config(CustomConfig).tes.service_list = []
+        get_custom_config(CustomConfig).tes.backends = BackendListConfig([])
     response = client.post(f"{BASE_PATH}/tasks", json=TASK)
     assert response.status_code == 500
     assert response.get_json()["detail"] == "No TES instance accepted the task."
@@ -1128,7 +1129,7 @@ def test_cancel_task_backend_not_configured(
     """Tasks of backends that are no longer configured can't be canceled."""
     set_state(mongo_client, task_id, "RUNNING")
     with app.app.app_context():
-        get_custom_config(CustomConfig).tes.service_list = []
+        get_custom_config(CustomConfig).tes.backends = BackendListConfig([])
     response = client.post(f"{BASE_PATH}/tasks/{task_id}:cancel")
     assert response.status_code == 500
     assert response.get_json()["detail"] == (

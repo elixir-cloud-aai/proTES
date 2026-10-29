@@ -5,12 +5,14 @@ from typing import Any, ClassVar
 from connexion import FlaskApp
 from flask.testing import FlaskClient
 from foca import get_custom_config
+from foca.plugins import Backend
+from foca.plugins.backends import BackendListConfig
 from pymongo import MongoClient
 import pytest
 import requests
 import tes
 
-from pro_tes.config_models import CustomConfig, TesBackend
+from pro_tes.config_models import CustomConfig
 from pro_tes.ga4gh.tes import backends, task_runs
 from tests.conftest import DB
 
@@ -30,7 +32,7 @@ TASK_FILES: dict[str, Any] = {
     ],
     "outputs": [{"url": "s3://bucket/out", "path": "/out", "type": "FILE"}],
 }
-# TES backends of the tests (`custom.tes.service_list`)
+# TES backends of the tests (`custom.tes.backends`)
 BACKENDS = ["https://tes1.example.org", "https://tes2.example.org"]
 
 
@@ -42,21 +44,21 @@ class FakeBackend:
 
     Attributes:
         url: URL of the backend.
-        backend: Configuration of the backend.
+        backend: The backend.
     """
 
     # Tasks by backend URL
     tasks: ClassVar[dict[str, list[tes.Task]]] = {}
     canceled: ClassVar[list[str]] = []
-    # Configurations of the backends that clients were created for
-    clients: ClassVar[list[TesBackend]] = []
+    # Backends that clients were created for
+    clients: ClassVar[list[Backend]] = []
     # Backends whose URL is invalid, that reject tasks, and that don't serve
     # their tasks
     invalid: ClassVar[set[str]] = set()
     failing: ClassVar[set[str]] = set()
     no_tasks: ClassVar[set[str]] = set()
 
-    def __init__(self, url: str, backend: TesBackend, **kwargs: Any) -> None:
+    def __init__(self, url: str, backend: Backend, **kwargs: Any) -> None:
         """Create a client of a backend; other arguments are ignored.
 
         Raises:
@@ -122,10 +124,24 @@ def backend(
     monkeypatch.setattr(FakeBackend, "clients", [])
     monkeypatch.setattr(backends, "TesClient", FakeBackend)
     with app.app.app_context():
-        get_custom_config(CustomConfig).tes.service_list = [
-            TesBackend(url=url, auth="none") for url in BACKENDS
-        ]
+        get_custom_config(CustomConfig).tes.backends = tes_backends(*BACKENDS)
     return FakeBackend
+
+
+def tes_backends(*urls: str, **settings: Any) -> BackendListConfig:
+    """Get a backend list of TES backends.
+
+    Args:
+        *urls: URLs of the backends.
+        **settings: Settings of each backend; by default `auth: none`.
+
+    Returns:
+        The backend list (`custom.tes.backends`).
+    """
+    settings = {"auth": "none", **settings}
+    return BackendListConfig.model_validate(
+        [{"type": "ga4gh-tes", "url": url, **settings} for url in urls]
+    )
 
 
 def relayed(backend: type[FakeBackend]) -> list[tuple[str, tes.Task]]:

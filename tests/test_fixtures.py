@@ -11,7 +11,6 @@ import mongomock
 from pymongo import MongoClient
 import pytest
 
-from pro_tes.ga4gh.tes import discovery
 from pro_tes.plugins.middlewares.task_distribution import distance
 from tests import conftest
 from tests.conftest import DB, DBS
@@ -126,4 +125,13 @@ def test_no_name_resolution() -> None:
     with pytest.raises(socket.gaierror, match="Name resolution blocked in tests"):
         distance.gethostbyname("tes.example.org")
     with pytest.raises(socket.gaierror, match="Name resolution blocked in tests"):
-        discovery.getaddrinfo("tes.example.org", 443)
+        socket.getaddrinfo("tes.example.org", 443)
+    with pytest.raises(socket.gaierror, match="Name resolution blocked in tests"):
+        socket.getaddrinfo(b"tes.example.org", 443)
+    assert socket.getaddrinfo("127.0.0.1", 443)[0][4][0] == "127.0.0.1"
+
+
+def test_db_hosts_resolved(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The hosts of the test database are resolved."""
+    monkeypatch.setattr(conftest, "DB_HOSTS", frozenset({"localhost"}))
+    assert socket.getaddrinfo("localhost", 27017)

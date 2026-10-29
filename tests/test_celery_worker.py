@@ -4,13 +4,17 @@ from foca.models.config import Config
 import pytest
 
 from pro_tes import celery_worker
-from pro_tes.config_models import ClientCredentials, CustomConfig, Tes, TesBackend
+from pro_tes.config_models import ClientCredentials, CustomConfig, Tes
 from pro_tes.ga4gh.tes.backends import CLIENT_ID_ENV, CLIENT_SECRET_ENV
 
 
 @pytest.fixture
 def custom(monkeypatch: pytest.MonkeyPatch) -> CustomConfig:
-    """Custom configuration of the worker, restored after the test."""
+    """Custom configuration of the worker, restored after the test.
+
+    Returns:
+        A copy of the custom configuration, used by the worker.
+    """
     conf = celery_worker.celery.conf.foca
     original = conf.model_extra["custom"]
     copy = original.model_copy(deep=True)
@@ -23,7 +27,7 @@ def test_worker_backends_checked(
 ) -> None:
     """The worker doesn't start without the credentials of its backends."""
     custom.tes = Tes(
-        service_list=[TesBackend(url="https://tes.example.org")],
+        backends=[{"type": "ga4gh-tes", "url": "https://tes.example.org"}],  # type: ignore[arg-type]
         client_credentials=ClientCredentials(issuer="https://idp.example.org/"),
     )
     monkeypatch.delenv(CLIENT_ID_ENV, raising=False)
@@ -40,3 +44,27 @@ def test_worker_without_custom_config(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setitem(celery_worker.celery.conf, "foca", Config())
     with pytest.raises(SystemExit, match="custom configuration"):
         celery_worker.check_worker_backends()
+
+
+def test_worker_registry_needs_public_url(
+    custom: CustomConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The worker doesn't start with registries, but without a public URL.
+
+    It starts with one.
+    """
+    custom.tes = Tes(
+        backends=[  # type: ignore[arg-type]
+            {
+                "type": "ga4gh-service-registry",
+                "url": "https://registry.example.org",
+                "auth": "none",
+            }
+        ]
+    )
+    server = celery_worker.celery.conf.foca.server
+    monkeypatch.setattr(server, "public_url", None)
+    with pytest.raises(SystemExit, match=r"server\.public_url"):
+        celery_worker.check_worker_backends()
+    monkeypatch.setattr(server, "public_url", "https://protes.example.org")
+    celery_worker.check_worker_backends()

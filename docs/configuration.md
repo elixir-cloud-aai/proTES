@@ -42,20 +42,30 @@ services:
 
 ## TES instances
 
-Tasks are forwarded to the TES instances listed in `custom.tes.service_list`:
-each with its base URL (`url`, without the API path `/ga4gh/tes/v1`), and
-how proTES authenticates at it (`auth`: with its own access token, the
-default, with HTTP Basic credentials from environment variables, or not at
-all; see [Credentials of TES
-instances](access-control.md#credentials-of-tes-instances)). The base config
-lists none; deployments set their own list, e.g.:
+Tasks are forwarded to the TES instances of the backend list,
+`custom.tes.backends`, in order (a typed backend list of FOCA,
+`foca.plugins.backends`). Each
+entry is either a TES instance (`type: ga4gh-tes`), with its base URL
+(`url`, without the API path `/ga4gh/tes/v1`) and how proTES authenticates
+at it (`auth`: with its own access token, the default, with HTTP Basic
+credentials from environment variables, or not at all; see [Credentials of
+TES instances](access-control.md#credentials-of-tes-instances)), or a
+service registry, whose verified TES instances are used in its place (`type:
+ga4gh-service-registry`, see [Discovery in a service
+registry](#discovery-in-a-service-registry)). The base config lists none;
+deployments set their own list, e.g.:
 
 ```yaml
 custom:
   tes:
-    service_list:
-      - url: https://tes.example.org
-      - url: https://tes.example.com
+    backends:
+      - type: ga4gh-tes
+        url: https://tes.example.org
+        # Labels and location, e.g., for routing
+        labels: {region: eu-north}
+        location: {latitude: 60.17, longitude: 24.94}
+      - type: ga4gh-tes
+        url: https://tes.example.com
         auth: none
     # Identity provider of proTES, for the TES instances with
     # `auth: client_credentials` (the default)
@@ -63,9 +73,23 @@ custom:
       issuer: https://login.example.org/oidc/
 ```
 
-URLs must use one of the schemes of `custom.tes.url_schemes` (default:
-`https` only). The [middlewares](middlewares.md) decide which of the TES
-instances are tried, and in which order (see [Tasks](api.md#tasks)).
+URLs are normalized (e.g., lowercase host, without default port and trailing
+slashes) and must use one of the schemes of the entry's `url_schemes`
+(default: `https` only; add `http` for local tests only, as credentials are
+sent unencrypted), without user info. Each entry has an identifier (`id`, by
+default its normalized URL); entries with the same identifier are rejected,
+and a URL listed twice is used once, at its first place.
+`custom.tes.url_schemes` applies to the identity provider of
+`custom.tes.client_credentials` only. The [middlewares](middlewares.md)
+decide which of the TES instances are tried, and in which order (see
+[Tasks](api.md#tasks)). The service info, which anyone can read, lists the
+TES instances (`backends`: identifier, URL, source, group and labels of
+each, without credentials; the group of discovered TES instances is the
+identifier of their registry entry, by default its URL, so set `id` for
+registries at internal URLs). TES instances at or below the public URL of
+proTES (`server.public_url`, if set; the Helm chart sets it from `hostName`)
+are never used, so that proTES never forwards tasks to itself: proTES
+refuses to start if a configured one is.
 
 Requests to TES instances time out after `custom.tes.timeout` seconds
 (default: 15), and after 5 seconds while connecting. proTES creates, gets
@@ -98,34 +122,53 @@ the chart).
 
 ### Discovery in a service registry
 
-proTES can also take TES instances from a service registry implementing the
+proTES can also take TES instances from service registries implementing the
 [GA4GH Service Registry
 API](https://github.com/ga4gh-discovery/ga4gh-service-registry) with a list
 of verified services, such as the [Cloud
 Registry](https://github.com/elixir-cloud-aai/cloud-registry)
 (`GET /verifications`), so that new TES instances are used once they are
-registered and verified, without config change. Discovery is off unless
-`custom.tes.discovery.registry_url` is set to the base URL of the registry's
-API; there is no default registry:
+registered and verified, without config change. Each registry is an entry
+of `custom.tes.backends` (`type: ga4gh-service-registry`), whose TES
+instances take its place in the list; there is no default registry. With
+registries, proTES needs its public URL (`server.public_url`, e.g.,
+`https://tes.example.org/`; the Helm chart sets it from `hostName` or
+`publicUrl`), and refuses to start without it: TES instances at or below it
+are never used, so that proTES never forwards tasks to itself:
 
 ```yaml
+server:
+  public_url: https://protes.example.org/
 custom:
   tes:
-    discovery:
-      registry_url: https://registry.example.org/ga4gh/registry/v1
-      # Seconds between reads of the registry
-      refresh_interval: 300
-      # Timeout of each request to the registry, in seconds
-      timeout: 10
-      # Accepted TES versions, as prefixes (`1.1` accepts `1.1.0`)
-      versions: ["1.0", "1.1"]
-      # Accepted environments of services (`environment`); any if empty
-      environments: [prod]
-      # How proTES authenticates at discovered TES instances:
-      # `client_credentials` (the default) or `none`
-      auth: client_credentials
-      # For local setups only
-      allow_private_addresses: false
+    backends:
+      - type: ga4gh-tes
+        url: https://tes.example.org
+      - type: ga4gh-service-registry
+        # Identifier, e.g., in the service info (`group` of its TES
+        # instances); by default, the normalized URL
+        id: cloud-registry
+        url: https://registry.example.org/ga4gh/registry/v1
+        # Seconds between reads of the registry
+        refresh_interval: 300
+        # Seconds that the last good list is used while the registry can't
+        # be read; at least `refresh_interval`
+        max_stale: 3600
+        # Timeout of each request to the registry, in seconds
+        timeout: 10
+        # Accepted TES versions, as prefixes (`1.1` accepts `1.1.0`)
+        versions: ["1.0", "1.1"]
+        # Accepted environments of services (`environment`); any if empty
+        environments: [prod]
+        # How proTES authenticates at discovered TES instances:
+        # `client_credentials` (the default) or `none`
+        auth: client_credentials
+        # For local setups only
+        allow_private_addresses: false
+        # Labels of the discovered TES instances, e.g., for routing
+        labels: {source: cloud-registry}
+    client_credentials:
+      issuer: https://login.example.org/oidc/
 ```
 
 Anyone who can register services in the registry could point an entry at a
@@ -135,14 +178,14 @@ is the trust anchor, and a registered service is only used if all of the
 following hold:
 
 - the registry lists it as verified by an admin, with its current
-  identifier, URL and API type (`type.group`, `type.artifact`);
+  identifier, URL and API type (`type.group`, `type.artifact`, and the
+  version offered);
 - it is a TES service (`org.ga4gh` `tes`) of one of the `versions`, and, if
   `environments` is set, of one of the `environments`;
-- its URL is a valid `https` URL without user info (`url_schemes` applies
-  to `service_list`, the registry and the identity provider only); the URL
-  is normalized (e.g., lowercase host, without default port and trailing
-  slashes), and the API path `/ga4gh/tes/v1`, which registries list as part
-  of the URL, is removed;
+- its URL is a valid `https` URL without user info (`url_schemes` of the
+  entry applies to the registry only); the URL is normalized, and the API
+  path `/ga4gh/tes/v1`, which registries list as part of the URL, is
+  removed;
 - its host has public addresses only: hosts with private, loopback,
   link-local or other special-purpose addresses (e.g., `10.0.0.1`,
   `localhost`, `169.254.169.254`) are rejected, unless
@@ -151,24 +194,26 @@ following hold:
   instances don't follow redirects.
 
 The registry is read without access token (its reads are public), over a
-URL with a scheme of `custom.tes.url_schemes`; redirects are not followed.
-Each process (each Gunicorn worker and Celery worker) reads it every
-`refresh_interval` seconds, and keeps the last good list while the
-registry is unreachable or returns invalid responses, retrying after 30
-seconds at most; TES instances whose hosts can't be resolved for the time
-being are kept for one more read, too. A process that doesn't know the
-TES instance of a task (e.g., the Celery worker, for a TES instance that
-the app's process discovered first) reads the registry again, at most every
-10 seconds; polls of a task whose TES instance is unknown fail like other
+URL with a scheme of the entry's `url_schemes`, at public addresses (unless
+`registry_allow_private_addresses`, e.g., for a registry in the same
+cluster); redirects are not followed. Each process (each Gunicorn worker and
+Celery worker) reads it every `refresh_interval` seconds, and keeps the
+last good list while the registry is unreachable or returns invalid
+responses, for `max_stale` seconds at most, retrying after 30 seconds at
+most; then, and before the first good read, the registry yields no TES
+instances. TES instances whose hosts can't be resolved for the time being
+are kept for one more read. A process that doesn't know the TES instance
+of a task (e.g., the Celery worker, for a TES instance that the app's
+process discovered first) reads the registries again, at most every 10
+seconds; polls of a task whose TES instance is unknown fail like other
 polls, so its tracking goes on (see `post_task.polling` in
-[Tasks](#tasks)). A service whose verification is removed is no longer used
-once the registry has been read again. Changes of the list and rejected verified
-services are logged. `timeout` applies to each request to the registry; the
-hosts of the services are resolved with the timeouts of the system's
-resolver. TES instances of `custom.tes.service_list` are used, too, and come
-first; their settings take precedence over those of discovered ones with the
-same URL. Discovered TES instances get the credentials of `auth` (see
-[Credentials of TES
+[Tasks](#tasks)). A service whose verification is removed is no longer
+used once the registry has been read again. Changes of the list and
+rejected verified services are logged. TES instances listed in
+`custom.tes.backends` themselves keep their settings, also where a
+registry lists them, too; a TES instance listed by several registries is
+used once, at its first place. Discovered TES instances get the
+credentials of the registry entry's `auth` (see [Credentials of TES
 instances](access-control.md#credentials-of-tes-instances)); tasks of a TES
 instance that is no longer discovered can't be tracked or canceled (their
 state becomes `UNKNOWN` until it is discovered again).

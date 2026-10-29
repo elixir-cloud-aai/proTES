@@ -67,7 +67,7 @@ database, so the `service_info` collection can be dropped.
 
 Unknown keys in `custom` are errors: the app and the Celery worker refuse
 to start with them, naming them, instead of ignoring them (e.g., a
-misspelled `service_list`, which left the list of TES instances empty).
+misspelled list of TES instances, which left it empty).
 Remove the keys that had no effect from config overlays: all of
 `custom.celery` (`custom.celery.monitor.timeout` and
 `custom.celery.message_maxsize`) and of `custom.controllers.celery`
@@ -197,13 +197,77 @@ e.g., with `mongosh` (`use <database>`), and start proTES again:
 
 ## TES instances and their credentials
 
-The entries of `custom.tes.service_list` are objects with the URL of the TES
-instance (`url`) and how proTES authenticates at it (`auth`), instead of
-URLs; `auth` defaults to `client_credentials`, an access token of proTES
-itself (see [Credentials of TES
-instances](access-control.md#credentials-of-tes-instances)). Replace each
-URL with an entry, e.g., `- url: https://tes.example.org`, and choose its
-`auth`:
+TES instances are listed in `custom.tes.backends`, a typed backend list of
+FOCA, in order (see [TES instances](configuration.md#tes-instances)): TES
+instances (`type: ga4gh-tes`) and service registries whose verified TES
+instances are used in their place (`type: ga4gh-service-registry`). It
+replaces `custom.tes.service_list` and `custom.tes.discovery` (of the
+previous release; before, `service_list` was a list of URLs), which stop
+the app with a hint of the mapping: first the entries of `service_list`, in
+order, each with `type: ga4gh-tes` (and its `url`, `auth` and `basic`),
+then the registry of `discovery`, if any, as one entry with `type:
+ga4gh-service-registry`, its `registry_url` as `url`, and its other
+settings (`refresh_interval`, `timeout`, `versions`, `environments`,
+`auth`, `allow_private_addresses`), which keeps the order of earlier
+versions. For example, this config of the previous release:
+
+```yaml
+custom:
+  tes:
+    service_list:
+      - url: https://tes.example.org
+      - url: https://tes.example.com
+        auth: none
+    discovery:
+      registry_url: https://registry.example.org/ga4gh/registry/v1
+      environments: [prod]
+    client_credentials:
+      issuer: https://login.example.org/oidc/
+```
+
+becomes:
+
+```yaml
+server:
+  public_url: https://protes.example.org/
+custom:
+  tes:
+    backends:
+      - type: ga4gh-tes
+        url: https://tes.example.org
+      - type: ga4gh-tes
+        url: https://tes.example.com
+        auth: none
+      - type: ga4gh-service-registry
+        url: https://registry.example.org/ga4gh/registry/v1
+        environments: [prod]
+    client_credentials:
+      issuer: https://login.example.org/oidc/
+```
+
+With a registry, set the public URL of proTES (`server.public_url`; the Helm
+chart sets it from `hostName` or `publicUrl`): proTES refuses to start
+without it. TES instances at or below the public URL are never used, also
+without registries, and proTES refuses to start if one of the configured TES
+instances is (e.g., `https://<hostName>/funnel` behind the same ingress, if
+proTES is served at `https://<hostName>/`: serve proTES under a host or path
+prefix of its own, and set `publicUrl` to it, or move the TES instance to
+another host). `url_schemes` is set per entry: entries with `http` URLs (for
+local tests only) need `url_schemes: [https, http]`;
+`custom.tes.url_schemes` applies to the identity provider only. A registry
+whose last good read is older than `max_stale` seconds (default: 3600)
+yields no TES instances until it can be read again (earlier versions kept
+its last list indefinitely), and its own host must have public addresses,
+unless `registry_allow_private_addresses` is set. The service info lists the
+TES instances as objects (`backends`: `id`, `url`, `source`, `group` and
+`labels` of each) instead of URLs.
+
+Each entry of a TES instance has the URL of the TES instance (`url`) and how
+proTES authenticates at it (`auth`), instead of a URL; `auth` defaults to
+`client_credentials`, an access token of proTES itself (see [Credentials of
+TES instances](access-control.md#credentials-of-tes-instances)). For each
+URL of the old list, add an entry, e.g., `- type: ga4gh-tes` with `url:
+https://tes.example.org`, and choose its `auth`:
 
 - `client_credentials` for TES instances that accept tokens of proTES' own
   client: register a client for the client credentials grant at the
@@ -231,11 +295,16 @@ Requests to TES instances time out after `custom.tes.timeout` seconds
 from config overlays.
 
 The base config no longer lists public TES instances; deployments list
-their own. URLs of TES instances must use `https`, unless
-`custom.tes.url_schemes` allows `http`, and must not have credentials;
-duplicate entries are rejected. Tasks are only forwarded to configured TES
+their own. URLs of TES instances must use `https`, unless the entry's
+`url_schemes` allows `http`, and must not have credentials; duplicate
+entries (with the same identifier, by default the normalized URL) are
+rejected. Tasks are only forwarded to configured and discovered TES
 instances, also if middlewares add others (`tes_urls`). Custom middlewares
-that read `custom.tes.service_list` get these entries instead of URLs.
+that read the TES instances get them from
+`pro_tes.ga4gh.tes.backends.get_backends()` (FOCA's `Backend`s, in order),
+instead of `custom.tes.service_list`; `get_backend(url)` returns the
+backend together with its entry of `custom.tes.backends` (`(backend,
+entry)`), and `TesClient` takes both.
 
 Tasks with credentials in the URLs of their inputs or outputs
 (`https://user:password@host/...`) are rejected with `400 Bad Request`, for
@@ -415,6 +484,13 @@ the image tag from `protes.tag`, which defaults to the chart's `appVersion`:
 `elixircloud/protes:{{ version }}`); the Celery worker runs the app's image.
 
 ## Helm chart
+
+TES instances are listed in the chart's value `tes.backends`, with the
+chart's camelCase keys (e.g., `urlSchemes`, `basic.usernameEnv`), instead
+of `config.custom.tes.service_list` and `discovery`, on which rendering
+fails (see the chart's README, Configuration). The chart sets the public URL
+of proTES (`server.public_url`) to `https://<hostName>/`, or to `publicUrl`
+if set.
 
 The Helm chart is replaced by a chart on FOCA's library chart `foca-common`
 (see [Deployment](deployment.md)): other values (camelCase, e.g., `hostName`

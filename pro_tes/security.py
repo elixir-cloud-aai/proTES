@@ -4,6 +4,7 @@ import logging
 import os
 
 from foca import get_config, get_custom_config
+from foca.plugins.backends import BackendList, RegistryEntry, ServiceEntry
 
 from pro_tes.config_models import CustomConfig, Tes
 from pro_tes.ga4gh.tes.backends import CLIENT_ID_ENV, CLIENT_SECRET_ENV
@@ -76,84 +77,154 @@ def _missing_env(*names: str) -> list[str]:
     return [name for name in names if not os.environ.get(name)]
 
 
-def check_backends(conf: Tes | None = None) -> None:
-    """Check the credentials of the TES backends, and log how they are used.
+def _check_registry(entry: RegistryEntry) -> None:
+    """Log how the backends of a registry entry are discovered and called.
 
-    A warning is logged if no backend is configured and discovery is off,
-    for each backend without token authentication (`auth: basic` or `none`),
-    if discovered backends get no tokens or may have private addresses, and
-    if URLs with scheme `http` are allowed.
+    Args:
+        entry: Registry entry of `custom.tes.backends`.
+    """
+    logger.info(
+        "Discovering TES backends at registry %s every %d seconds, with `auth: %s`",
+        entry.url,
+        entry.refresh_interval,
+        entry.auth,
+    )
+    if entry.auth == "none":
+        logger.warning(
+            "TES backends discovered at registry %s get no credentials (`auth: none`)",
+            entry.url,
+        )
+    if entry.allow_private_addresses:
+        logger.warning(
+            "TES backends discovered at registry %s may have private"
+            " addresses (`allow_private_addresses`); for local setups only",
+            entry.url,
+        )
+    if entry.registry_allow_private_addresses:
+        logger.warning(
+            "Registry %s may have a private address"
+            " (`registry_allow_private_addresses`)",
+            entry.url,
+        )
+
+
+def _check_service(entry: ServiceEntry) -> list[str]:
+    """Log how a configured backend is called.
+
+    Args:
+        entry: Configured backend of `custom.tes.backends`.
+
+    Returns:
+        The environment variables with its HTTP Basic credentials that are
+        not set, if any.
+
+    Raises:
+        RuntimeError: The backend has `auth: basic`, but no `basic`.
+    """
+    if entry.auth == "basic":
+        logger.warning(
+            "TES backend %s: HTTP Basic credentials (`auth: basic`), a"
+            " transitional mode for backends that don't accept tokens",
+            entry.url,
+        )
+        if entry.basic is None:
+            # prevented by validation, unless the config was changed later
+            raise RuntimeError(
+                f"TES backend {entry.url}: `auth: basic` without `basic`"
+            )
+        return _missing_env(entry.basic.username_env, entry.basic.password_env)
+    if entry.auth == "none":
+        logger.warning("TES backend %s: no authentication (`auth: none`)", entry.url)
+    return []
+
+
+def check_backends(conf: Tes | None = None, public_url: str | None = None) -> None:
+    """Check the TES backends and their credentials, and log how they are used.
+
+    A warning is logged if no backend is configured, for each backend
+    without token authentication (`auth: basic` or `none`), for registries
+    whose backends get no tokens or may have private addresses, and for
+    entries that allow URLs with scheme `http`.
 
     Args:
         conf: TES backend configuration; by default, that of the current app
             (in an app context).
+        public_url: Public URL of proTES (`server.public_url`); by default,
+            that of the current app if `conf` is not given (callers that
+            give `conf` give the public URL of the same config).
 
     Raises:
-        RuntimeError: Environment variables with credentials are not set:
-            the client ID and secret of proTES if a backend has (or
-            discovered backends get) `auth: client_credentials`, or the HTTP
-            Basic credentials of a backend with `auth: basic`.
+        RuntimeError: The list has registries, but proTES has no public URL
+            (so that it might discover itself), or configured backends at or
+            below the public URL (which are never used). Or environment
+            variables with credentials are not set: the client ID and secret
+            of proTES if a backend has (or discovered backends get) `auth:
+            client_credentials`, or the HTTP Basic credentials of a backend
+            with `auth: basic`.
     """
     if conf is None:
         conf = get_custom_config(CustomConfig).tes
-    discovery = conf.discovery
-    if discovery.enabled:
-        logger.info(
-            "Discovering TES backends at registry %s every %d seconds"
-            " (`custom.tes.discovery`), with `auth: %s`",
-            discovery.registry_url,
-            discovery.refresh_interval,
-            discovery.auth,
-        )
-        if discovery.auth == "none":
-            logger.warning("Discovered TES backends get no credentials (`auth: none`)")
-        if discovery.allow_private_addresses:
-            logger.warning(
-                "Discovered TES backends may have private addresses"
-                " (`custom.tes.discovery.allow_private_addresses`); for local"
-                " setups only"
-            )
-    elif not conf.service_list:
+        if public_url is None:
+            public_url = get_config().server.public_url
+    entries = conf.backends.root
+    if not entries:
         logger.warning(
-            "No TES backends are configured (`custom.tes.service_list`) or"
-            " discovered (`custom.tes.discovery`), so tasks can't be forwarded"
+            "No TES backends are configured (`custom.tes.backends`), so tasks"
+            " can't be forwarded"
+        )
+    registries = [entry for entry in entries if isinstance(entry, RegistryEntry)]
+    if registries and public_url is None:
+        raise RuntimeError(
+            "TES backends are discovered in registries (`custom.tes.backends`),"
+            " but `server.public_url` is not set: set it to the public URL of"
+            " proTES, so that proTES never forwards tasks to itself"
+        )
+    http = [entry.id for entry in entries if "http" in entry.url_schemes]
+    if http:
+        logger.warning(
+            "URLs with scheme 'http' are allowed (`url_schemes`) for %s:"
+            " credentials are sent unencrypted; for local tests only",
+            ", ".join(http),
         )
     if "http" in conf.url_schemes:
         logger.warning(
-            "URLs with scheme 'http' are allowed (`custom.tes.url_schemes`):"
-            " credentials are sent unencrypted to such backends and identity"
-            " providers; for local tests only"
+            "URLs with scheme 'http' are allowed for the identity provider"
+            " (`custom.tes.url_schemes`): credentials are sent unencrypted; for"
+            " local tests only"
         )
     missing: list[str] = []
-    token_backends: list[str] = []
-    for backend in conf.service_list:
-        if backend.auth == "client_credentials":
-            token_backends.append(backend.url)
-        elif backend.auth == "basic":
-            logger.warning(
-                "TES backend %s: HTTP Basic credentials (`auth: basic`), a"
-                " transitional mode for backends that don't accept tokens",
-                backend.url,
-            )
-            if backend.basic is None:
-                # prevented by validation, unless the config was changed later
-                raise RuntimeError(
-                    f"TES backend {backend.url}: `auth: basic` without `basic`"
-                )
-            missing.extend(
-                _missing_env(backend.basic.username_env, backend.basic.password_env)
-            )
+    for entry in entries:
+        if isinstance(entry, RegistryEntry):
+            _check_registry(entry)
         else:
-            logger.warning(
-                "TES backend %s: no authentication (`auth: none`)", backend.url
-            )
+            missing.extend(_check_service(entry))
+    # after the checks of the entries, which the backend list validates again
+    own = [
+        entry.url
+        for entry in entries
+        if isinstance(entry, ServiceEntry)
+        and not BackendList([entry], api="tes", public_url=public_url).expand()
+    ]
+    if own:
+        raise RuntimeError(
+            f"TES backends at or below the public URL of proTES ({public_url},"
+            " `server.public_url`) would never be used, as proTES never"
+            f" forwards tasks to itself: {', '.join(own)}; serve proTES under a"
+            " host or path prefix of its own (and set `server.public_url` to"
+            " it), or move the backends to other hosts"
+        )
+    token_backends = [
+        entry.url
+        for entry in entries
+        if isinstance(entry, ServiceEntry) and entry.auth == "client_credentials"
+    ]
     if token_backends:
         # logs the URLs of the backends, not tokens
         # nosemgrep  # logger-credential-disclosure: see above
         logger.info(
             "TES backends with access tokens of proTES: %s", ", ".join(token_backends)
         )
-    if token_backends or discovery.uses_tokens:
+    if conf.uses_tokens:
         missing.extend(_missing_env(CLIENT_ID_ENV, CLIENT_SECRET_ENV))
     if missing:
         raise RuntimeError(

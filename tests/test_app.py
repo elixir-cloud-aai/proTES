@@ -12,7 +12,7 @@ import pytest
 import yaml
 
 from pro_tes.app import init_app, run_app
-from pro_tes.config_models import CustomConfig, TesBackend
+from pro_tes.config_models import CustomConfig
 from pro_tes.ga4gh.tes.backends import CLIENT_ID_ENV, CLIENT_SECRET_ENV
 from tests.conftest import DB, set_overlays
 
@@ -184,9 +184,9 @@ def test_smoke_test_config(
     app = init_app()
     with app.app.app_context():
         custom = get_custom_config(CustomConfig)
-    assert custom.tes.service_list == [
-        TesBackend(url="http://fake-tes:8080", auth="client_credentials")
-    ]
+    (entry,) = custom.tes.backends.root
+    assert entry.url == "http://fake-tes:8080"
+    assert entry.auth == "client_credentials"
     assert custom.tes.client_credentials.issuer == "http://fake-tes:8080/oidc/"
     # the Celery worker has the same client
     assert (

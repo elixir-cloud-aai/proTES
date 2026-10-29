@@ -61,8 +61,8 @@ Swagger UI at
 curl -X GET "http://localhost:8080/ga4gh/tes/v1/service-info" -H "accept: application/json"
 ```
 
-Tasks are forwarded to the TES instances listed in `custom.tes.service_list`
-of the config, with the credentials of proTES for each; list yours in
+Tasks are forwarded to the TES instances listed in `custom.tes.backends` of
+the config, with the credentials of proTES for each; list yours in
 [`config.dev.yaml`](https://github.com/elixir-cloud-aai/proTES/blob/dev/config.dev.yaml)
 (see [Credentials of TES
 instances](https://protes.readthedocs.io/en/latest/access-control/#credentials-of-tes-instances)).

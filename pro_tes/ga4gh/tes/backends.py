@@ -1,9 +1,16 @@
-"""Clients of TES backends, authenticated as configured for each backend.
+"""TES backends of proTES, and their clients, authenticated as configured.
+
+The backends that tasks may be forwarded to are those of the backend list,
+`custom.tes.backends` (cf. :py:mod:`foca.plugins.backends`), in order:
+configured ones (`type: ga4gh-tes`), and those that service registries list
+as verified (`type: ga4gh-service-registry`), which FOCA discovers and
+caches per process. Backends at or below the public URL of proTES
+(`server.public_url`) are never used, so that proTES does not forward tasks
+to itself.
 
 proTES authenticates at TES backends with credentials of its own, never with
-those of its callers (`auth` of the backends in `custom.tes.service_list`, and
-`custom.tes.discovery.auth` for the backends discovered in a registry, cf.
-:py:mod:`pro_tes.ga4gh.tes.discovery`):
+those of its callers (`auth` of each entry; discovered backends get that of
+their registry entry):
 
 - `client_credentials`: an access token of proTES, obtained from its identity
   provider with the OAuth 2.0 client credentials grant (RFC 6749, section
@@ -16,8 +23,9 @@ those of its callers (`auth` of the backends in `custom.tes.service_list`, and
 
 Credentials are looked up for each request, so that long-running Celery
 tasks get fresh tokens. Before each request to a discovered backend, its host
-is checked to have public addresses only (unless private addresses are
-allowed, `custom.tes.discovery.allow_private_addresses`), and redirects are
+is checked to have public addresses only (with
+:py:func:`foca.utils.http.check_public_host`; unless private addresses are
+allowed, `allow_private_addresses` of the registry entry), and redirects are
 not followed. Requests time out after `custom.tes.timeout` seconds (and
 after `CONNECT_TIMEOUT` seconds while connecting).
 
@@ -40,7 +48,10 @@ import time
 from typing import Any
 from urllib.parse import quote, quote_plus
 
-from foca import get_custom_config
+from foca import get_config, get_custom_config
+from foca.plugins import Backend
+from foca.plugins.backends import BackendList, RegistryEntry, ServiceEntry
+from foca.utils.http import HttpError, check_public_host
 import requests
 import tes
 from tes.utils import unmarshal
@@ -49,17 +60,15 @@ from urllib3.exceptions import ConnectTimeoutError
 from pro_tes.config_models import (
     ClientCredentials,
     CustomConfig,
-    DiscoveredBackend,
     Tes,
-    TesBackend,
     split_server_url,
 )
 from pro_tes.exceptions import (
+    BackendAddressNotAllowed,
     BackendAuthError,
     BackendNotConfigured,
     BackendOutcomeUnknown,
 )
-from pro_tes.ga4gh.tes.discovery import check_public_host, get_backends, url_key
 
 logger = logging.getLogger(__name__)
 
@@ -320,34 +329,80 @@ class TokenProvider:
 token_provider = TokenProvider()
 
 
-def get_backend(url: str) -> TesBackend:
-    """Get the configuration of a TES backend.
+def get_backend_list(public_url: str | None = None) -> BackendList:
+    """Get the backend list of proTES.
 
-    If no backend has the URL, and discovery is on, the registry is read
-    again (rate-limited), as another process (e.g., the one that forwarded a
-    task that the Celery worker tracks) may have discovered the backend
-    already.
+    The entries are validated again (a small cost); the backends discovered
+    in registries are cached per process. Must be called in an app context.
+
+    Args:
+        public_url: Public URL of proTES; by default, `server.public_url`
+            of the app's config.
+
+    Returns:
+        The backends of `custom.tes.backends`.
+    """
+    if public_url is None:
+        public_url = get_config().server.public_url
+    return BackendList(
+        get_custom_config(CustomConfig).tes.backends, api="tes", public_url=public_url
+    )
+
+
+def get_backends(refresh: bool = False) -> list[Backend]:
+    """Get the TES backends that tasks may be forwarded to, in order.
+
+    Must be called in an app context.
+
+    Args:
+        refresh: Whether to read the registries now (rate-limited).
+
+    Returns:
+        The configured backends, and those discovered in registries, in the
+        order of `custom.tes.backends` (cf.
+        :py:meth:`foca.plugins.backends.BackendList.expand`).
+    """
+    return get_backend_list().expand(refresh=refresh)
+
+
+def get_backend(url: str) -> tuple[Backend, ServiceEntry | RegistryEntry]:
+    """Get a TES backend by its URL, and the entry it comes from.
+
+    If no backend has the URL, the registries are read again (rate-limited),
+    as another process (e.g., the one that forwarded a task that the Celery
+    worker tracks) may have discovered the backend already. Must be called
+    in an app context.
 
     Args:
         url: Base URL of the backend; URLs are compared normalized (e.g.,
             ignoring trailing slashes and the case of the host).
 
     Returns:
-        The backend of `custom.tes.service_list`, or discovered in the
-        registry, with the URL (cf.
-        :py:func:`pro_tes.ga4gh.tes.discovery.get_backends`).
+        The backend, and its entry of `custom.tes.backends` (the registry
+        entry, for discovered backends), e.g., with its credentials.
 
     Raises:
         pro_tes.exceptions.BackendNotConfigured: No backend has the URL.
     """
-    key = url_key(url)
-    for refresh in (False, True):
-        for backend in get_backends(refresh=refresh):
-            if url_key(backend.url) == key:
-                return backend
-        if not get_custom_config(CustomConfig).tes.discovery.enabled:
-            break
-    raise BackendNotConfigured(f"TES backend not configured: {url}")
+    backend_list = get_backend_list()
+    backend = backend_list.find(url)
+    if backend is None:
+        raise BackendNotConfigured(f"TES backend not configured: {url}")
+    return backend, backend_list.entry_for(backend)
+
+
+def service_info_fields() -> dict[str, Any]:
+    """Get the service info fields with the TES backends of proTES.
+
+    Served with the service info (`service_info.runtime_fields`). Must be
+    called in an app context.
+
+    Returns:
+        The TES backends (`backends`): identifier, URL, source, group and
+        labels of each, without credentials (cf.
+        :py:meth:`foca.plugins.backends.BackendList.describe`).
+    """
+    return {"backends": get_backend_list().describe()}
 
 
 def _causes(exc: BaseException) -> Iterator[BaseException]:
@@ -432,17 +487,26 @@ class TesClient(tes.HTTPClient):
     task more than once); redirects of `POST` requests are not followed.
 
     Attributes:
-        backend: Configuration of the backend.
+        backend: The backend.
+        entry: Entry of the backend in `custom.tes.backends` (the registry
+            entry, for discovered backends).
     """
 
     def __init__(
-        self, url: str, backend: TesBackend, timeout: int | None = None
+        self,
+        url: str,
+        backend: Backend,
+        entry: ServiceEntry | RegistryEntry,
+        timeout: int | None = None,
     ) -> None:
         """Create a client.
 
         Args:
             url: URL of the backend, possibly with a base path.
-            backend: Configuration of the backend.
+            backend: The backend.
+            entry: Entry of the backend in `custom.tes.backends` (the
+                registry entry, for discovered backends), with its
+                credentials.
             timeout: Timeout of requests, in seconds; by default
                 `custom.tes.timeout`.
         """
@@ -450,6 +514,7 @@ class TesClient(tes.HTTPClient):
             timeout = get_custom_config(CustomConfig).tes.timeout
         super().__init__(url=url, timeout=timeout)
         self.backend = backend
+        self.entry = entry
 
     def create_task(self, task: tes.Task) -> str:
         """Create a task (`POST /tasks`), with a single request.
@@ -589,26 +654,32 @@ class TesClient(tes.HTTPClient):
             pro_tes.exceptions.BackendAuthError: No credentials are available.
             pro_tes.exceptions.BackendAddressNotAllowed: The backend was
                 discovered, and its host has an address that is not public
-                (unless allowed).
+                (unless allowed), or can't be resolved.
         """
         kwargs: dict[str, Any] = super()._request_params(data=data, params=params)
         kwargs["timeout"] = (min(CONNECT_TIMEOUT, self.timeout), self.timeout)
         config = get_custom_config(CustomConfig).tes
-        if isinstance(self.backend, DiscoveredBackend):
+        if isinstance(self.entry, RegistryEntry):
             # redirects could lead to any address
             kwargs["allow_redirects"] = False
-            if not config.discovery.allow_private_addresses:
-                check_public_host(self.backend.url)
-        if self.backend.auth == "client_credentials":
+            if not self.entry.allow_private_addresses:
+                try:
+                    check_public_host(self.backend.url)
+                except HttpError as exc:
+                    raise BackendAddressNotAllowed(str(exc)) from exc
+        auth = self.backend.auth
+        if auth == "client_credentials":
             token = token_provider.get_token(config=config)
             kwargs["headers"]["Authorization"] = f"Bearer {token}"
-        elif self.backend.auth == "basic":
-            if self.backend.basic is None:
+        elif auth == "basic":
+            basic = self.entry.basic if isinstance(self.entry, ServiceEntry) else None
+            if basic is None:
                 # prevented by the config validation
                 raise BackendAuthError(f"No Basic credentials of {self.backend.url}")
-            kwargs["auth"] = (
-                get_env(self.backend.basic.username_env),
-                get_env(self.backend.basic.password_env),
+            kwargs["auth"] = (get_env(basic.username_env), get_env(basic.password_env))
+        elif auth != "none":
+            raise BackendAuthError(
+                f"Unknown credentials {auth!r} of {self.backend.url}"
             )
         return kwargs
 
@@ -628,6 +699,6 @@ def create_client(host: str, base_path: str = "") -> TesClient:
             configured.
         ValueError: The URL is invalid.
     """
-    backend = get_backend(url=host)
+    backend, entry = get_backend(url=host)
     url = f"{host.rstrip('/')}/{base_path.strip('/')}"
-    return TesClient(url=url, backend=backend)
+    return TesClient(url=url, backend=backend, entry=entry)

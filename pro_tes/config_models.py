@@ -3,14 +3,13 @@
 from typing import Annotated, Literal
 from urllib.parse import SplitResult, urlsplit
 
-from foca.utils.urls import normalize_url
+from foca.plugins.backends import BackendListConfig
 from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
     PositiveInt,
     RootModel,
-    field_validator,
     model_validator,
 )
 
@@ -220,79 +219,6 @@ def split_server_url(url: str, name: str) -> SplitResult:
     return parts
 
 
-class BasicCredentials(ConfigModel):
-    """Names of the environment variables with HTTP Basic credentials.
-
-    The credentials themselves are never part of the config.
-
-    Args:
-        username_env: Name of the environment variable with the user name.
-        password_env: Name of the environment variable with the password.
-
-    Attributes:
-        username_env: Name of the environment variable with the user name.
-        password_env: Name of the environment variable with the password.
-    """
-
-    username_env: str = Field(min_length=1)
-    password_env: str = Field(min_length=1)
-
-
-class TesBackend(ConfigModel):
-    """TES backend that tasks may be forwarded to.
-
-    Args:
-        url: Base URL of the backend, without the API path `/ga4gh/tes/v1`;
-            without credentials.
-        auth: How proTES authenticates at the backend: with its own access
-            token (`client_credentials`, see `Tes.client_credentials`), with
-            HTTP Basic credentials from the environment (`basic`, see
-            `basic`), or not at all (`none`).
-        basic: Environment variables with the HTTP Basic credentials; must
-            be set if, and only if, `auth` is `basic`.
-
-    Attributes:
-        url: Base URL of the backend, without the API path `/ga4gh/tes/v1`;
-            without credentials.
-        auth: How proTES authenticates at the backend: with its own access
-            token (`client_credentials`, see `Tes.client_credentials`), with
-            HTTP Basic credentials from the environment (`basic`, see
-            `basic`), or not at all (`none`).
-        basic: Environment variables with the HTTP Basic credentials; must
-            be set if, and only if, `auth` is `basic`.
-    """
-
-    url: str
-    auth: Literal["client_credentials", "basic", "none"] = "client_credentials"
-    basic: BasicCredentials | None = None
-
-    @model_validator(mode="after")
-    def check_backend(self) -> "TesBackend":
-        """Check the URL, and that Basic credentials are set for `basic` only.
-
-        Returns:
-            The validated configuration.
-
-        Raises:
-            ValueError: The URL has no scheme or host, or has credentials;
-                or `basic` is missing for `auth: basic`, or set for another
-                `auth`.
-        """
-        parts = split_server_url(self.url, "TES backend URL")
-        if parts.username is not None or parts.password is not None:
-            raise ValueError(
-                "TES backend URLs must not have credentials; use `auth: basic`"
-                " with credentials from the environment"
-            )
-        if self.auth == "basic" and self.basic is None:
-            raise ValueError(f"TES backend {self.url!r}: `auth: basic` needs `basic`")
-        if self.auth != "basic" and self.basic is not None:
-            raise ValueError(
-                f"TES backend {self.url!r}: `basic` is only used with `auth: basic`"
-            )
-        return self
-
-
 class ClientCredentials(ConfigModel):
     """Client of proTES at its identity provider (OAuth 2.0 client credentials).
 
@@ -338,119 +264,28 @@ class ClientCredentials(ConfigModel):
     timeout: PositiveInt = 10
 
 
-class DiscoveredBackend(TesBackend):
-    """TES backend discovered in a service registry (`Tes.discovery`).
-
-    Args:
-        url: Base URL of the backend, normalized, without the API path
-            `/ga4gh/tes/v1`.
-        auth: How proTES authenticates at the backend (`Discovery.auth`).
-        basic: Always `None`: discovered backends get no Basic credentials.
-        service_id: Identifier of the service in the registry.
-
-    Attributes:
-        url: Base URL of the backend, normalized, without the API path
-            `/ga4gh/tes/v1`.
-        auth: How proTES authenticates at the backend (`Discovery.auth`).
-        basic: Always `None`: discovered backends get no Basic credentials.
-        service_id: Identifier of the service in the registry.
-    """
-
-    service_id: str
-
-
-class Discovery(ConfigModel):
-    """Discovery of TES backends in a service registry.
-
-    The registry implements the GA4GH Service Registry API, with the list of
-    verified services of the Cloud Registry (`GET /verifications`). Its
-    services are read without access token. Only TES services (`org.ga4gh`
-    `tes`) of the accepted versions and environments, verified with their
-    current URL and API type, with `https` URLs and (unless allowed) hosts
-    with public addresses only, are used.
-
-    Args:
-        registry_url: Base URL of the registry's API, e.g.,
-            `https://registry.example.org/ga4gh/registry/v1`; with a scheme
-            of `Tes.url_schemes`. Discovery is off if unset.
-        refresh_interval: Seconds between requests to the registry; the
-            last good list of backends is kept while the registry is
-            unreachable or returns invalid responses.
-        timeout: Timeout of each request to the registry, in seconds.
-        versions: Accepted versions of the TES API, as version prefixes
-            (e.g., `1.1` accepts `1.1` and `1.1.0`, but not `1.10`).
-        environments: Accepted environments of services (`environment`,
-            e.g., `prod`); any environment, also none, if empty.
-        auth: How proTES authenticates at discovered backends: with its own
-            access token (`client_credentials`) or not at all (`none`).
-        allow_private_addresses: Whether discovered backends may have hosts
-            with addresses that are not public (e.g., private, loopback or
-            link-local ones), e.g., for local setups.
-
-    Attributes:
-        registry_url: Base URL of the registry's API, normalized.
-        refresh_interval: Seconds between requests to the registry.
-        timeout: Timeout of each request to the registry, in seconds.
-        versions: Accepted versions of the TES API, as version prefixes.
-        environments: Accepted environments of services; any if empty.
-        auth: How proTES authenticates at discovered backends.
-        allow_private_addresses: Whether discovered backends may have hosts
-            with addresses that are not public.
-    """
-
-    registry_url: str | None = None
-    refresh_interval: PositiveInt = 300
-    timeout: PositiveInt = 10
-    versions: list[Annotated[str, Field(min_length=1)]] = Field(
-        default=["1.0", "1.1"], min_length=1
-    )
-    environments: list[Annotated[str, Field(min_length=1)]] = []
-    auth: Literal["client_credentials", "none"] = "client_credentials"
-    allow_private_addresses: bool = False
-
-    @property
-    def enabled(self) -> bool:
-        """Whether discovery is on, i.e., `registry_url` is set."""
-        return self.registry_url is not None
-
-    @property
-    def uses_tokens(self) -> bool:
-        """Whether discovery is on, with `auth: client_credentials`."""
-        return self.enabled and self.auth == "client_credentials"
-
-    @field_validator("registry_url")
-    @classmethod
-    def normalize_registry_url(cls, value: str | None) -> str | None:
-        """Check and normalize the URL of the registry.
-
-        Args:
-            value: URL of the registry, if set.
-
-        Returns:
-            The normalized URL (e.g., without trailing slashes), if set.
-
-        Raises:
-            ValueError: The URL is invalid, e.g., has user info, a query or
-                a fragment.
-        """
-        if value is None:
-            return None
-        parts = urlsplit(value)
-        if parts.query or parts.fragment:
-            raise ValueError(f"Registry URL with query or fragment: {value!r}")
-        return normalize_url(value, name="Registry URLs")
+# Hint of the startup error for the keys replaced by `custom.tes.backends`
+BACKENDS_HINT = (
+    "list the TES backends in `custom.tes.backends` instead: first the"
+    " entries of `service_list`, in order, each with `type: ga4gh-tes` (and"
+    " its `url`, `auth` and `basic`), then the registry of `discovery`, if"
+    " any, as one entry with `type: ga4gh-service-registry`, `url` set to"
+    " its `registry_url` and its other settings; entries with `http` URLs"
+    " need `url_schemes: [https, http]` (see Upgrading in the docs)"
+)
 
 
 class Tes(ConfigModel):
     """TES backend configuration.
 
     Args:
-        service_list: TES backends that tasks may be forwarded to.
-        discovery: Discovery of further TES backends in a service registry.
-        url_schemes: URL schemes allowed for the TES backends of
-            `service_list`, the registry of `discovery` and the identity
-            provider of `client_credentials`; discovered backends need
-            `https`.
+        backends: TES backends that tasks may be forwarded to, in order:
+            configured ones (`type: ga4gh-tes`) and service registries whose
+            verified TES services are used (`type: ga4gh-service-registry`;
+            cf. :py:mod:`foca.plugins.backends`).
+        url_schemes: URL schemes allowed for the identity provider of
+            `client_credentials` (those of backends and registries are set
+            per entry, `url_schemes`).
         client_credentials: Client of proTES at its identity provider, for
             the backends with `auth: client_credentials`.
         timeout: Timeout of requests to TES backends, in seconds (of
@@ -461,60 +296,74 @@ class Tes(ConfigModel):
             read timeout of a reverse proxy in front of proTES.
 
     Attributes:
-        service_list: TES backends that tasks may be forwarded to.
-        discovery: Discovery of further TES backends in a service registry.
-        url_schemes: URL schemes allowed for the TES backends of
-            `service_list`, the registry of `discovery` and the identity
-            provider of `client_credentials`; discovered backends need
-            `https`.
+        backends: TES backends that tasks may be forwarded to, in order.
+        url_schemes: URL schemes allowed for the identity provider of
+            `client_credentials`.
         client_credentials: Client of proTES at its identity provider, for
             the backends with `auth: client_credentials`.
         timeout: Timeout of requests to TES backends, in seconds.
     """
 
-    service_list: list[TesBackend] = []
-    discovery: Discovery = Discovery()
+    backends: BackendListConfig = BackendListConfig([])
     url_schemes: list[Literal["https", "http"]] = Field(default=["https"], min_length=1)
     client_credentials: ClientCredentials = ClientCredentials()
     timeout: PositiveInt = 15
 
+    @property
+    def uses_tokens(self) -> bool:
+        """Whether a backend has, or discovered ones get, proTES' token."""
+        return any(entry.auth == "client_credentials" for entry in self.backends.root)
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_removed_keys(cls, data: object) -> object:
+        """Refuse the keys replaced by `backends`, with the mapping.
+
+        Args:
+            data: TES backend configuration, as given.
+
+        Returns:
+            The configuration, unchanged.
+
+        Raises:
+            ValueError: The configuration has `service_list` or `discovery`.
+        """
+        if isinstance(data, dict):
+            removed = [key for key in ("service_list", "discovery") if key in data]
+            if removed:
+                keys = " and ".join(f"`custom.tes.{key}`" for key in removed)
+                raise ValueError(f"{keys} removed: {BACKENDS_HINT}")
+        return data
+
     @model_validator(mode="after")
     def check_urls(self) -> "Tes":
-        """Check the URL schemes, and the identity provider if it is needed.
+        """Check the URLs of the identity provider if it is needed.
 
         Returns:
             The validated configuration.
 
         Raises:
-            ValueError: A backend is listed twice, or a URL of a backend, the
-                registry or the identity provider has a scheme that is not
-                allowed; or a backend has (or discovered backends get) `auth:
-                client_credentials`, but neither the issuer nor the token
-                endpoint is set.
+            ValueError: A URL of the identity provider is invalid or has a
+                scheme that is not allowed; or a backend has (or discovered
+                backends get) `auth: client_credentials`, but neither the
+                issuer nor the token endpoint is set.
         """
-        urls = [backend.url.rstrip("/") for backend in self.service_list]
-        duplicates = sorted({url for url in urls if urls.count(url) > 1})
-        if duplicates:
-            raise ValueError(f"TES backends listed more than once: {duplicates}")
         idp = self.client_credentials
         for name, value in (
             ("issuer", idp.issuer),
             ("token endpoint", idp.token_endpoint),
         ):
-            if value is not None:
-                split_server_url(value, f"URL of the {name} of `client_credentials`")
-        discovery = self.discovery
-        for url in [*urls, discovery.registry_url, idp.issuer, idp.token_endpoint]:
-            if url is not None and urlsplit(url).scheme not in self.url_schemes:
+            if value is None:
+                continue
+            parts = split_server_url(
+                value, f"URL of the {name} of `client_credentials`"
+            )
+            if parts.scheme not in self.url_schemes:
                 raise ValueError(
-                    f"URL scheme of {url!r} not allowed (`url_schemes`:"
+                    f"URL scheme of {value!r} not allowed (`url_schemes`:"
                     f" {self.url_schemes})"
                 )
-        uses_tokens = (
-            any(backend.auth == "client_credentials" for backend in self.service_list)
-            or discovery.uses_tokens
-        )
-        if uses_tokens and idp.issuer is None and idp.token_endpoint is None:
+        if self.uses_tokens and idp.issuer is None and idp.token_endpoint is None:
             raise ValueError(
                 "TES backends with `auth: client_credentials` need"
                 " `client_credentials.issuer` or `token_endpoint`"
@@ -564,13 +413,13 @@ class CustomConfig(ConfigModel):
 
     Args:
         controllers: All controller-related config.
-        tes: TES service list and defaults.
+        tes: TES backends and how proTES calls them.
         storeLogs: Logging preferences (camelCase, unlike other keys).
         middlewares: Middleware class paths.
 
     Attributes:
         controllers: All controller-related config.
-        tes: TES service list and defaults.
+        tes: TES backends and how proTES calls them.
         storeLogs: Logging preferences (camelCase, unlike other keys).
         middlewares: Middleware class paths.
     """

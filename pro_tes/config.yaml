@@ -178,7 +178,7 @@ jobs:
 # Cf. https://foca.readthedocs.io/en/latest/configuration/service-info/
 service_info:
   package: pro-tes
-  runtime_fields: pro_tes.ga4gh.tes.discovery.service_info_fields
+  runtime_fields: pro_tes.ga4gh.tes.backends.service_info_fields
   service:
     id: org.example.protes
     name: proTES
@@ -248,48 +248,42 @@ custom:
       max_page_size: 2047
       max_page_size_full: 64
 
-  # TES backends that tasks may be forwarded to, and how proTES authenticates
-  # at them: with its own access token (`auth: client_credentials`, the
-  # default), with HTTP Basic credentials from environment variables
-  # (`auth: basic`; transitional, for backends that don't accept tokens yet)
-  # or not at all (`auth: none`). Credentials of callers are never forwarded.
-  # Deployments set their backends, e.g.:
-  # service_list:
-  #   - url: https://tes.example.org
-  #   - url: https://tes.example.com
+  # TES backends that tasks may be forwarded to, in order, and how proTES
+  # authenticates at them (`auth`): with its own access token
+  # (`client_credentials`, the default), with HTTP Basic credentials from
+  # environment variables (`basic`; transitional, for backends that don't
+  # accept tokens yet) or not at all (`none`). Credentials of callers are
+  # never forwarded. Entries are TES backends (`type: ga4gh-tes`) or service
+  # registries (`type: ga4gh-service-registry`; GA4GH Service Registry API,
+  # with verified services, e.g., a Cloud Registry), whose verified TES
+  # services of the accepted `versions` (prefixes) and `environments` (any if
+  # empty) are used in their place, with `https` URLs and hosts with public
+  # addresses (unless `allow_private_addresses`, for local setups only); they
+  # get the `auth` of the registry entry (`client_credentials` or `none`).
+  # Registries are read without access token every `refresh_interval`
+  # seconds; the last good list is kept for `max_stale` seconds while a
+  # registry is unavailable. With registries, `server.public_url` must be set
+  # (backends at or below it are never used). URLs need `https`, unless the
+  # entry's `url_schemes` allows `http` (for local tests only). Deployments
+  # set their backends, e.g.:
+  # backends:
+  #   - type: ga4gh-tes
+  #     url: https://tes.example.org
+  #   - type: ga4gh-service-registry
+  #     url: https://registry.example.org/ga4gh/registry/v1
+  #   - type: ga4gh-tes
+  #     url: https://tes.example.com
   #     auth: basic
   #     basic:
   #       username_env: TES_EXAMPLE_COM_USERNAME
   #       password_env: TES_EXAMPLE_COM_PASSWORD
   # client_credentials:
   #   issuer: https://login.example.org/oidc/
-  # See `docs/access-control.md`
+  # See `docs/configuration.md` and `docs/access-control.md`
   tes:
-    service_list: []
-    # Discovery of further TES backends in a service registry (GA4GH Service
-    # Registry API, with verified services, e.g., a Cloud Registry), read
-    # without access token; off unless `registry_url` is set, e.g., to
-    # https://registry.example.org/ga4gh/registry/v1. Only verified TES
-    # services of the accepted `versions` (prefixes) and `environments` (any
-    # if empty) are used, with `https` URLs and hosts with public addresses
-    # (unless `allow_private_addresses`, for local setups only); the backends
-    # of `service_list` take precedence. The list is read every
-    # `refresh_interval` seconds, and the last good list kept while the
-    # registry is unavailable. Discovered backends get `auth`
-    # (`client_credentials` or `none`). See `docs/configuration.md`
-    discovery:
-      registry_url: null
-      refresh_interval: 300
-      timeout: 10
-      versions:
-        - "1.0"
-        - "1.1"
-      environments: []
-      auth: client_credentials
-      allow_private_addresses: false
-    # URL schemes of backends, of the registry and of the identity provider;
-    # add `http` for local tests only (credentials are sent unencrypted);
-    # discovered backends need `https`
+    backends: []
+    # URL schemes of the identity provider of `client_credentials`; add
+    # `http` for local tests only (credentials are sent unencrypted)
     url_schemes:
       - https
     # Client of proTES (OAuth 2.0 client credentials grant) for backends with

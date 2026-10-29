@@ -316,8 +316,9 @@ def test_schema_of_library() -> None:
     """The values schema is that of the library chart, with the app's values.
 
     That is the library's `app-values.schema.json`, with the app's key
-    (`protes`, the library's app values plus `extraEnv`) and Flower
-    (`flower`).
+    (`protes`, the library's app values plus `extraEnv`), Flower
+    (`flower`), the public URL (`publicUrl`) and the TES backends
+    (`tes`).
     """
     library = json.loads(_library_file("app-values.schema.json"))
     schema = json.loads((CHART / "values.schema.json").read_text())
@@ -329,6 +330,8 @@ def test_schema_of_library() -> None:
     assert set(properties.pop("flower")["properties"]) == set(
         yaml.safe_load((CHART / "values.yaml").read_text())["flower"]
     )
+    assert set(properties.pop("tes")["properties"]) == {"backends"}
+    assert properties.pop("publicUrl")["type"] == "string"
     assert properties == library["properties"]
     assert {key: schema[key] for key in ("$schema", "type")} == {
         key: library[key] for key in ("$schema", "type")
@@ -750,6 +753,219 @@ def test_custom_access_control_removed(args: tuple[str, ...]) -> None:
     error = _render_error(*args, admin_group=None)
     assert "config.custom.access_control was removed" in error
     assert "config.security.access_control.require_admin" in error
+
+
+@pytest.mark.parametrize(
+    "args, url",
+    [
+        ((), "https://tes.example.org/"),
+        (("--set", "publicUrl=https://example.org/tes/"), "https://example.org/tes/"),
+        (
+            (
+                "--set",
+                "publicUrl=https://example.org/tes/",
+                "--set",
+                "config.server.public_url=https://other.example.org/",
+            ),
+            "https://other.example.org/",
+        ),
+    ],
+)
+def test_public_url(args: tuple[str, ...], url: str) -> None:
+    """The public URL of the app is `https://<hostName>/`.
+
+    Unless `publicUrl` sets it, or `config` (which takes precedence).
+    """
+    assert _overlay(_render(*args))["server"]["public_url"] == url
+
+
+def test_public_url_unknown() -> None:
+    """Without `hostName` and `publicUrl`, the app has no public URL."""
+    docs = _render("--set", "hostName=", *NO_INGRESS)
+    assert "server" not in _overlay(docs)
+
+
+@pytest.mark.parametrize(
+    "url", ["tes.example.org", "ftp://tes.example.org/", "https://tes.example.org/?a"]
+)
+def test_public_url_invalid(url: str) -> None:
+    """`publicUrl` must be an `http` or `https` URL without query or fragment."""
+    assert "/publicUrl" in _render_error("--set", f"publicUrl={url}")
+
+
+@pytest.mark.parametrize("section", ["server", "custom"])
+def test_generated_section_null(section: str) -> None:
+    """`config.server: null` and `config.custom: null` are like no such section.
+
+    The overlay has the generated sections (FOCA would refuse `null`).
+    """
+    docs = _render("--set-json", f"config.{section}=null")
+    assert _overlay(docs)["server"] == {"public_url": "https://tes.example.org/"}
+    assert _overlay(docs)["custom"] == {}
+
+
+# Entries of `tes.backends`, with the chart's keys, and as in the app config
+CHART_BACKENDS = [
+    {
+        "type": "ga4gh-tes",
+        "url": "https://tes.example.org",
+        "auth": "basic",
+        "basic": {"usernameEnv": "TES_USERNAME", "passwordEnv": "TES_PASSWORD"},
+        "labels": {"regionName": "eu-north"},
+        "location": {"latitude": 60.17, "longitude": 24.94},
+    },
+    {
+        "type": "ga4gh-service-registry",
+        "id": "registry",
+        "url": "https://registry.example.org/ga4gh/registry/v1",
+        "urlSchemes": ["https"],
+        "refreshInterval": 60,
+        "maxStale": 600,
+        "timeout": 2.5,
+        "versions": ["1.1"],
+        "environments": ["prod"],
+        "auth": "none",
+        "allowPrivateAddresses": True,
+        "registryAllowPrivateAddresses": True,
+        "labels": {"source": "registry"},
+    },
+]
+CONFIG_BACKENDS = [
+    {
+        "type": "ga4gh-tes",
+        "url": "https://tes.example.org",
+        "auth": "basic",
+        "basic": {"username_env": "TES_USERNAME", "password_env": "TES_PASSWORD"},
+        "labels": {"regionName": "eu-north"},
+        "location": {"latitude": 60.17, "longitude": 24.94},
+    },
+    {
+        "type": "ga4gh-service-registry",
+        "id": "registry",
+        "url": "https://registry.example.org/ga4gh/registry/v1",
+        "url_schemes": ["https"],
+        "refresh_interval": 60,
+        "max_stale": 600,
+        "timeout": 2.5,
+        "versions": ["1.1"],
+        "environments": ["prod"],
+        "auth": "none",
+        "allow_private_addresses": True,
+        "registry_allow_private_addresses": True,
+        "labels": {"source": "registry"},
+    },
+]
+WITH_BACKENDS = ("--set-json", f"tes.backends={json.dumps(CHART_BACKENDS)}")
+
+
+def test_tes_backends() -> None:
+    """`tes.backends` sets the backends of the app config, with its keys.
+
+    The keys of labels are kept; other settings of `config.custom.tes` are
+    merged.
+    """
+    docs = _render(
+        *WITH_BACKENDS,
+        "--set",
+        "config.custom.tes.client_credentials.issuer=https://idp.example.org/",
+    )
+    tes = _overlay(docs)["custom"]["tes"]
+    assert tes["backends"] == CONFIG_BACKENDS
+    assert tes["client_credentials"] == {"issuer": "https://idp.example.org/"}
+
+
+def test_tes_backends_default() -> None:
+    """Without `tes.backends`, the overlay sets no backends."""
+    assert _overlay(_render())["custom"] == {}
+    docs = _render("--set-json", f"config.custom.tes.backends={json.dumps([])}")
+    assert _overlay(docs)["custom"] == {"tes": {"backends": []}}
+
+
+@pytest.mark.parametrize(
+    "entry, error",
+    [
+        ({"type": "ga4gh-tes"}, "missing property 'url'"),
+        ({"type": "ga4gh-wes", "url": "https://wes.example.org"}, "/tes/backends/0"),
+        (
+            {"type": "ga4gh-tes", "url": "https://tes.example.org", "urlSchemes": []},
+            "/tes/backends/0",
+        ),
+        (
+            {
+                "type": "ga4gh-tes",
+                "url": "https://tes.example.org",
+                "url_schemes": ["https"],
+            },
+            "/tes/backends/0",
+        ),
+        (
+            {
+                "type": "ga4gh-tes",
+                "url": "https://tes.example.org",
+                "basic": {"usernameEnv": "TES_USERNAME"},
+            },
+            "/tes/backends/0",
+        ),
+        (
+            {
+                "type": "ga4gh-service-registry",
+                "url": "https://registry.example.org",
+                "auth": "basic",
+            },
+            "/tes/backends/0",
+        ),
+    ],
+)
+def test_tes_backends_invalid(entry: dict[str, Any], error: str) -> None:
+    """Entries of `tes.backends` must have the chart's keys and values."""
+    assert error in _render_error("--set-json", f"tes.backends={json.dumps([entry])}")
+
+
+@pytest.mark.parametrize("key", ["service_list", "discovery"])
+def test_tes_backends_removed(key: str) -> None:
+    """Rendering fails with the settings replaced by `tes.backends`."""
+    error = _render_error("--set-json", f"config.custom.tes.{key}={json.dumps([])}")
+    assert f"config.custom.tes.{key} was removed" in error
+    assert "tes.backends" in error
+
+
+def test_tes_backends_twice() -> None:
+    """Rendering fails with backends in `tes.backends` and in `config`."""
+    error = _render_error(
+        *WITH_BACKENDS, "--set-json", f"config.custom.tes.backends={json.dumps([])}"
+    )
+    assert "either in tes.backends or in config.custom.tes.backends" in error
+
+
+def test_registry_public_url_null() -> None:
+    """`config.server.public_url: null` takes precedence over `hostName`.
+
+    Also for registries in `config.custom.tes.backends`.
+    """
+    registry = [{"type": "ga4gh-service-registry", "url": "https://r.example.org"}]
+    for args in (
+        WITH_BACKENDS,
+        ("--set-json", f"config.custom.tes.backends={json.dumps(registry)}"),
+    ):
+        error = _render_error(*args, "--set-json", "config.server.public_url=null")
+        assert "hostName or publicUrl" in error
+
+
+def test_custom_tes_null() -> None:
+    """Rendering fails on `config.custom.tes: null`, which the app refuses."""
+    error = _render_error(*WITH_BACKENDS, "--set-json", "config.custom.tes=null")
+    assert "config.custom.tes must be a map" in error
+
+
+def test_registry_without_public_url() -> None:
+    """Registries need a public URL of the app, as the app requires on startup.
+
+    Unless `config.server.public_url` sets it.
+    """
+    args = ("--set", "hostName=", *NO_INGRESS, *WITH_BACKENDS)
+    assert "hostName or publicUrl" in _render_error(*args)
+    docs = _render(*args, "--set", "config.server.public_url=https://x.example.org/")
+    assert _overlay(docs)["server"] == {"public_url": "https://x.example.org/"}
 
 
 @pytest.mark.parametrize(

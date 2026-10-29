@@ -27,6 +27,7 @@ security:
 # them (see `docs/access-control.md`), e.g.:
 # custom:
 #   tes:
-#     service_list:
-#       - url: https://tes.example.org
+#     backends:
+#       - type: ga4gh-tes
+#         url: https://tes.example.org
 #         auth: none
