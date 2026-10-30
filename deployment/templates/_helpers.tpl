@@ -182,8 +182,10 @@ the owners of tasks can access them), without trusted token issuers, with a
 group mapping but no group claim (global or of an issuer), or without a
 group mapped to the role `admin` (unless admins are explicitly not
 required, `security.access_control.require_admin`, FOCA's); renders
-nothing. The audience is checked by the library (`requireAudience`, cf.
-`protes.requireAudience`). Fails on
+nothing. The audiences of issuers are checked here, and the global audience
+by the library if it is required (`requireAudience`, cf.
+`protes.requireAudience`, which relies on these checks), else its type
+here. Fails on
 `custom.access_control` (its `require_admin` moved to FOCA's setting).
 */}}
 {{- define "protes.checkSecurity" -}}
@@ -256,16 +258,17 @@ in the app, group mappings need a group claim of at least one issuer
 {{- $claim := $claimGroups -}}
 {{- if kindIs "map" $entry -}}
 {{- $issuer = get $entry "issuer" -}}
+{{- /* First, so that a misspelt `issuer` is named, too */ -}}
+{{- range $key := keys $entry | sortAlpha -}}
+{{- if not (has $key $settings) -}}
+{{- fail (printf "config.security.auth.issuers: %s of issuer %v is no setting of issuers (%s)" $key $entry (join ", " $settings)) -}}
+{{- end -}}
+{{- end -}}
 {{- end -}}
 {{- if not (and (kindIs "string" $issuer) (trim $issuer) (eq $issuer (trim $issuer))) -}}
 {{- fail $issuersError -}}
 {{- end -}}
 {{- if kindIs "map" $entry -}}
-{{- range $key := keys $entry | sortAlpha -}}
-{{- if not (has $key $settings) -}}
-{{- fail (printf "config.security.auth.issuers: %s of issuer %s is no setting of issuers (%s)" $key $issuer (join ", " $settings)) -}}
-{{- end -}}
-{{- end -}}
 {{- /* null, as unset, means the global setting (`get` returns "" for missing keys) */ -}}
 {{- $audience := get $entry "audience" -}}
 {{- if and (hasKey $entry "audience") (not (kindIs "invalid" $audience)) -}}

@@ -878,9 +878,19 @@ def test_issuer_group_claim_replaced(claims: list[Any], valid: bool) -> None:
         ({"audience": "a"}, "audience of issuer https://x.org/ must list"),
         ({"claim_groups": " g"}, "claim_groups of issuer https://x.org/ must be"),
         ({"claim_groups": 1}, "claim_groups of issuer https://x.org/ must be"),
-        ({"claim_group": "g"}, "claim_group of issuer https://x.org/ is no setting"),
+        ({"claim_group": "g"}, "claim_group of issuer map[claim_group:g"),
+        ({"iss": "https://y.org/"}, "iss of issuer map[iss:https://y.org/"),
     ],
-    ids=["empty", "blank", "number", "string", "padded", "claim-number", "typo"],
+    ids=[
+        "empty",
+        "blank",
+        "number",
+        "string",
+        "padded",
+        "claim-number",
+        "typo",
+        "issuer-typo",
+    ],
 )
 def test_issuer_settings_invalid(setting: dict[str, Any], error: str) -> None:
     """Rendering fails on settings of issuers that the app refuses.
@@ -889,6 +899,8 @@ def test_issuer_settings_invalid(setting: dict[str, Any], error: str) -> None:
     issuer's settings would replace.
     """
     issuers = [{"issuer": "https://x.org/", **setting}]
+    if "iss" in setting:
+        issuers = [setting]
     assert error in _render_error(
         "--set-json", f"config.security.auth.issuers={json.dumps(issuers)}"
     )
