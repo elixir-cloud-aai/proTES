@@ -102,7 +102,60 @@ def test_upstream_owner() -> None:
     assert checks
     assert len(checks) == text.count("github.repository_owner")
     assert set(checks) == {("==", "elixir-cloud-aai")}
-    assert (
-        '$publish == "false"'
-        in _load(WORKFLOWS / "ci.yml")["jobs"][GATE]["steps"][0]["run"]
+
+
+def test_gate_uses_shared_action() -> None:
+    """The gate of `ci.yml` uses the shared `gate` action.
+
+    It passes the results of all needed jobs and allows `push` and
+    `publish` to be skipped only where `PUBLISH` is "false", and needs no
+    permissions.
+    """
+    gate = _load(WORKFLOWS / "ci.yml")["jobs"][GATE]
+    assert gate["permissions"] == {}
+    (step,) = gate["steps"]
+    assert step["uses"].startswith("elixir-cloud-aai/.github/actions/gate@")
+    assert step["with"]["needs"] == "${{ toJSON(needs) }}"
+    assert step["with"]["allow-skipped"] == (
+        "${{ env.PUBLISH == 'false' && 'push publish' || '' }}"
     )
+
+
+def test_shared_actions_pinned() -> None:
+    """The shared actions of `elixir-cloud-aai/.github` are pinned to a commit.
+
+    All pins name the same full commit SHA (bumped together). The YAML drops
+    comments, so the test below checks the release comments (`# vX.Y.Z`) in
+    the files' text.
+    """
+    pinned = re.compile(r"elixir-cloud-aai/\.github/actions/[a-z-]+@([0-9a-f]{40})")
+    shas: set[str] = set()
+    for path in sorted(WORKFLOWS.glob("*.yml")):
+        for job in _load(path)["jobs"].values():
+            for step in job.get("steps", []):
+                uses = step.get("uses", "")
+                if uses.startswith("elixir-cloud-aai/.github/"):
+                    match = pinned.fullmatch(uses)
+                    assert match, (path.name, uses)
+                    shas.add(match.group(1))
+    assert len(shas) == 1
+
+
+def test_shared_actions_release_comments() -> None:
+    """Every pin of a shared action names its release in a comment.
+
+    Dependabot bumps a pin `@<sha> # vX.Y.Z` to new releases only if the
+    pinned commit carries a version tag, and updates the comment; all pins
+    name the same release. Whether the commit is the release's commit isn't
+    checked here (no network in the tests).
+    """
+    pin = re.compile(r"uses: elixir-cloud-aai/\.github/actions/[a-z-]+@\S+(.*)$")
+    comment = re.compile(r" # (v\d+\.\d+\.\d+)")
+    versions: set[str] = set()
+    for path in sorted(WORKFLOWS.glob("*.yml")):
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if match := pin.search(line):
+                version = comment.fullmatch(match.group(1))
+                assert version, (path.name, line.strip())
+                versions.add(version.group(1))
+    assert len(versions) == 1, versions
