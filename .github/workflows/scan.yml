@@ -6,8 +6,9 @@
 # workflow artifact `trivy-report-release-image` (JSON and table), and the
 # workflow fails on critical and high vulnerabilities that have a fix (fixed
 # by a new release). Accepted findings are listed in `.trivyignore.yaml`.
-# Scheduled runs use this workflow, the composite action and
-# `.trivyignore.yaml` as on the default branch, and file their findings under
+# Scheduled runs use this workflow (with its pin of the shared action
+# `elixir-cloud-aai/.github/actions/scan-image`) and `.trivyignore.yaml` as
+# on the default branch, and file their findings under
 # it; once that is `main`, these are the copies released with the scanned
 # image, so findings accepted on `dev` after a release apply from the next
 # release on (dismiss their alerts in code scanning until then). The image is
@@ -41,7 +42,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Scan image
-        uses: ./.github/actions/scan-image
+        uses: elixir-cloud-aai/.github/actions/scan-image@743e82d290a53768454999e413756a924e383259 # v1.0.0
         with:
           image: docker.io/${{ vars.DOCKERHUB_ORG || 'elixircloud' }}/protes:latest
           category: release-image

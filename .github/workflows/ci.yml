@@ -391,10 +391,11 @@ jobs:
           provenance: mode=max
           labels: ${{ steps.meta.outputs.labels }}
           build-args: SETUPTOOLS_SCM_PRETEND_VERSION=${{ steps.version.outputs.version }}
-  # Scans the image with Trivy (`.github/actions/scan-image`): for pull
-  # requests and pushes to forks (without `DOCKERHUB_ORG`) a local build, for
-  # other pushes exactly the digest pushed by `push`
-  # (`<image>@<digest>`; public, so pulling it needs no login), in a job
+  # Scans the image with Trivy (the shared action
+  # `elixir-cloud-aai/.github/actions/scan-image`): for pull requests and
+  # pushes to forks (without `DOCKERHUB_ORG`) a local build, for other pushes
+  # exactly the digest pushed by `push` (`<image>@<digest>`; public, so
+  # pulling it needs no login), in a job
   # without credentials or signing permissions, as the Trivy action resolves
   # the Trivy binary from a mutable tag. The findings that have a fix are
   # uploaded to code scanning of the upstream repository (not in forks, nor
@@ -449,7 +450,7 @@ jobs:
           fi
           echo "image=${IMAGE_NAME}@${DIGEST}" >> "$GITHUB_OUTPUT"
       - name: Scan image
-        uses: ./.github/actions/scan-image
+        uses: elixir-cloud-aai/.github/actions/scan-image@743e82d290a53768454999e413756a924e383259 # v1.0.0
         with:
           image: ${{ steps.image.outputs.image }}
           category: image
