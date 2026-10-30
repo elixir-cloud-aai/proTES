@@ -1023,7 +1023,7 @@ def test_forward_outbound(
     assert kwargs["params"] == {"x": ["1"]}
     assert kwargs["headers"]["X-Plugin"] == "a"
     assert kwargs["headers"]["Authorization"] == "Bearer token-1"
-    assert kwargs["timeout"] == (2, 15)
+    assert kwargs["timeout"] == (pytest.approx(2, abs=0.5), 15)
 
 
 def test_forward_auth_chosen(post: Callable[..., FakePost], idp: FakeIdp) -> None:
@@ -1064,6 +1064,29 @@ def test_forward_no_time_left(post: Callable[..., FakePost]) -> None:
         client.forward(request, TASK, connect_timeout=0)
     assert not fake.sent
     assert backends.forward_reason(requests.ConnectTimeout()) == "connect_timeout"
+
+
+def test_forward_token_takes_time(
+    post: Callable[..., FakePost], idp: FakeIdp, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Time taken to get a token counts: without time left, nothing is sent."""
+    fake = post(FakeResponse({"id": "remote-1"}))
+    times = [100.0]
+
+    def monotonic() -> float:
+        """Get the time; getting the token takes 3 seconds."""
+        now = times[0]
+        times[0] += 3
+        return now
+
+    monkeypatch.setattr(backends.time, "monotonic", monotonic)
+    client = backends.create_client(host=f"{BACKEND_URL}/token")
+    request = OutboundRequest(
+        backend=client.backend, method="POST", path="/ga4gh/tes/v1/tasks"
+    )
+    with pytest.raises(requests.ConnectTimeout, match="No time left"):
+        client.forward(request, TASK, connect_timeout=2)
+    assert not fake.sent
 
 
 def test_forward_bad_response_header(post: Callable[..., FakePost]) -> None:

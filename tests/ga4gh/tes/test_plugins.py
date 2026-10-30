@@ -144,6 +144,14 @@ class CredentialsForward(Plugin[Any, Any]):
         outbound.payload["inputs"][0]["url"] = "s3://key:secret@bucket/in"
 
 
+class RejectResponse(Plugin[Any, Any]):
+    """Rejects responses to the client."""
+
+    def on_response(self, response: BackendResponse, ctx: Context) -> None:
+        """Reject the response."""
+        raise Rejected("Not for you", status=403)
+
+
 class ContentFirst(Plugin[Any, Any]):
     """Adds a large inline content for the first backend."""
 
@@ -356,6 +364,29 @@ def test_response_plugin(
     assert body["backend"] == "remote-1"
     assert len(body["id"]) == 6
     assert response.headers["X-Annotated"] == "yes"
+
+
+def test_response_rejected(
+    with_plugins: PluginClient,
+    backend: type[FakeBackend],
+    mongo_client: MongoClient[dict[str, Any]],
+    tracked: list[dict[str, Any]],
+) -> None:
+    """Tasks whose response a plugin rejects are kept: they run at a backend.
+
+    FOCA skips steps of the `response` phase that fail or reject.
+    """
+    client = with_plugins(
+        {"test.reject": RejectResponse}, pipeline=[step("test.reject")]
+    )
+    response = client.post(f"{BASE_PATH}/tasks", json=TASK)
+    assert response.status_code == 200
+    assert len(relayed(backend)) == 1
+    (document,) = mongo_client[DB]["tasks"].find()
+    assert document["task"]["id"] == response.get_json()["id"]
+    assert document["tes_endpoint"]["host"] == BACKENDS[0]
+    assert len(tracked) == 1
+    assert mongo_client[DB]["policy_rules"].count_documents({"ptype": "g2"})
 
 
 def test_client_backends(

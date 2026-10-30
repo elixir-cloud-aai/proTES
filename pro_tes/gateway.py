@@ -175,7 +175,7 @@ def tes_task(payload: Any) -> tes.Task:
             that py-tes doesn't accept.
         ValueError: The task has values that py-tes doesn't accept.
     """
-    if not isinstance(payload, Mapping):
+    if not isinstance(payload, dict):
         raise TypeError("Tasks are JSON objects")
     task = {
         key: deepcopy(value)
@@ -205,7 +205,7 @@ def validate_task(payload: Any) -> None:
         TypeError: The task can't be relayed (cf. :py:func:`tes_task`).
         ValueError: The task can't be relayed.
     """
-    if not isinstance(payload, Mapping):
+    if not isinstance(payload, dict):
         raise TypeError("Tasks are JSON objects")
     TesTask(**payload)
     tes_task(payload)

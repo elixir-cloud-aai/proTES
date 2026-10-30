@@ -1,5 +1,6 @@
 """Tests of the callbacks of proTES for FOCA's plugin engine."""
 
+from collections import UserDict
 from dataclasses import replace
 from typing import Any
 
@@ -38,7 +39,7 @@ def test_backend_entries(app: FlaskApp) -> None:
         assert gateway.backend_entries(config) is config.custom.tes.backends
 
 
-@pytest.mark.parametrize("payload", [None, [], "task"])
+@pytest.mark.parametrize("payload", [None, [], "task", UserDict({"executors": []})])
 def test_not_an_object(payload: Any) -> None:
     """Tasks that are no JSON objects are invalid."""
     with pytest.raises(TypeError, match="JSON objects"):

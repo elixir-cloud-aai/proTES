@@ -5,7 +5,7 @@ from copy import deepcopy
 from dataclasses import replace
 import logging
 import re
-from typing import Any
+from typing import Any, NamedTuple
 
 from bson.errors import InvalidId
 from bson.objectid import ObjectId
@@ -94,6 +94,22 @@ def flatten_forwards(task: dict[str, Any]) -> dict[str, Any]:
                 metadata["forwarded_to"]
             )
     return task
+
+
+class _Accepted(NamedTuple):
+    """Attempt of the backend that accepted a task.
+
+    Attributes:
+        attempt: Attempt of the backend.
+        cli: Client of the backend.
+        response: Response of the backend.
+        remote_task_id: Identifier of the task at the backend.
+    """
+
+    attempt: Attempt
+    cli: TesClient
+    response: BackendResponse
+    remote_task_id: str
 
 
 class TaskRuns:
@@ -249,7 +265,7 @@ class TaskRuns:
             [backend.id for backend in candidates],
         )
         try:
-            return self._forward(
+            accepted = self._forward(
                 run=run,
                 candidates=candidates,
                 prefix=host.conf.tags.prefix,
@@ -263,6 +279,11 @@ class TaskRuns:
                 db_document=db_document, owner=owner, collection=collection
             )
             raise
+        # errors of the `response` phase don't discard the task: it runs at
+        # the backend, so it is kept, tracked and cancelable
+        return self._forwarded(
+            accepted=accepted, db_document=db_document, db_connector=db_connector
+        )
 
     def _forward(
         self,
@@ -271,7 +292,7 @@ class TaskRuns:
         prefix: str,
         db_document: DbDocument,
         db_connector: DbDocumentConnector,
-    ) -> tuple[Any, dict[str, str]]:
+    ) -> _Accepted:
         """Relay a stored task to the backends in turn, until one accepts it.
 
         Args:
@@ -282,7 +303,8 @@ class TaskRuns:
             db_connector: Connector to the database document.
 
         Returns:
-            Response to the client (cf. :py:meth:`_forwarded`).
+            The attempt of the backend that accepted the task, its client,
+            response and identifier of the task.
 
         Raises:
             foca.plugins.GatewayError: No backend accepted the task (in
@@ -335,12 +357,10 @@ class TaskRuns:
                     exc,
                 )
                 continue
-            return self._forwarded(
+            return _Accepted(
                 attempt=attempt,
                 cli=cli,
                 response=response,
-                db_document=db_document,
-                db_connector=db_connector,
                 remote_task_id=remote_task_id,
             )
         # the attempts end with a success, or raise
@@ -348,27 +368,28 @@ class TaskRuns:
 
     def _forwarded(
         self,
-        attempt: Attempt,
-        cli: TesClient,
-        response: BackendResponse,
+        accepted: _Accepted,
         db_document: DbDocument,
         db_connector: DbDocumentConnector,
-        remote_task_id: str,
     ) -> tuple[Any, dict[str, str]]:
         """Store and track a task that a backend accepted.
 
         Args:
-            attempt: The attempt of the backend.
-            cli: Client of the backend.
-            response: Response of the backend.
+            accepted: The attempt of the backend that accepted the task, its
+                client, response and identifier of the task.
             db_document: The stored task.
             db_connector: Connector of the stored task.
-            remote_task_id: Identifier of the task at the backend.
 
         Returns:
             Response to the client and its headers, after the `response`
             phase.
+
+        Raises:
+            foca.plugins.GatewayError: A plugin of the `response` phase
+                rejected the response, or a step of it failed; the task is
+                kept (and tracked).
         """
+        attempt, cli, response, remote_task_id = accepted
         tes_url = attempt.backend.url
         logger.info(
             "Task '%s' successfully forwarded to TES endpoint hosted at:"

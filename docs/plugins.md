@@ -42,7 +42,9 @@ phases:
    The next TES instance is also tried if a TES instance certainly did not
    accept the task, but never if it may have (see [Tasks](api.md#tasks)).
 4. `response`: once a TES instance accepted the task, plugins may change the
-   response to the client (its body and headers), in reverse order.
+   response to the client (its body and headers), in reverse order. Steps
+   whose plugins fail or reject the response are skipped: the task runs at
+   the TES instance, so it is kept and tracked.
 
 Plugins see the task, the request path, query and headers (without
 `Authorization`, `Cookie` and `Proxy-Authorization`) and the caller (its

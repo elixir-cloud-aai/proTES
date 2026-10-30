@@ -665,13 +665,18 @@ class TesClient(tes.HTTPClient):
                 (e.g., the response timed out), or it was answered with a
                 server error (5xx).
         """
+        deadline = (
+            None if connect_timeout is None else time.monotonic() + connect_timeout
+        )
         # may raise before anything is sent, e.g., without credentials
         kwargs = self._request_params(data=data, params=params, auth=auth)
         connect, read = kwargs.pop("timeout")
-        if connect_timeout is not None:
-            if connect_timeout <= 0:
+        if deadline is not None:
+            # getting a token may have taken some of the time
+            left = deadline - time.monotonic()
+            if left <= 0:
                 raise requests.ConnectTimeout(f"No time left to connect to {url}")
-            connect = min(connect, connect_timeout)
+            connect = min(connect, left)
         merged = CaseInsensitiveDict(headers or {})
         merged.update(kwargs["headers"])
         kwargs["headers"] = merged
