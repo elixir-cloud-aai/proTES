@@ -1134,3 +1134,20 @@ def test_outcome_unknown_reason(
     with pytest.raises(BackendOutcomeUnknown) as info:
         create_task(backends.create_client(host=NONE_URL))
     assert info.value.reason == reason
+
+
+def test_forward_nested_response(
+    post: Callable[..., FakePost], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Too deeply nested JSON of an accepted task leaves the outcome unknown."""
+    fake = post(FakeResponse({"id": "remote-1"}))
+
+    def nested() -> Any:
+        """Fail as `json` does for too deeply nested documents."""
+        raise RecursionError("maximum recursion depth exceeded")
+
+    monkeypatch.setattr(fake.answer, "json", nested)
+    client = backends.create_client(host=NONE_URL)
+    with pytest.raises(BackendOutcomeUnknown) as info:
+        create_task(client)
+    assert info.value.reason == "no_task_id"

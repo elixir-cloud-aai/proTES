@@ -292,9 +292,10 @@ rejected with `400 Bad Request`, or, if
 `custom.controllers.post_task.url_credentials` is `strip`, the credentials
 are removed before the task is stored and forwarded (see
 [Tasks](configuration.md#tasks)). Credentials that plugins add are
-always removed. Plugins don't get the credentials of callers either: the
-headers `Authorization`, `Cookie` and `Proxy-Authorization` are left out of
-what they see.
+always removed. The headers `Authorization`, `Cookie` and
+`Proxy-Authorization` of callers are left out of what plugins see, but
+plugins get the caller's validated access token (FOCA's `Principal.token`,
+e.g., for token exchange): enable only plugins that you trust with it.
 
 proTES doesn't tell TES instances on whose behalf it forwards tasks yet:
 they only see proTES. Tags with the identity of the user are planned, once

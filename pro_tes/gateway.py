@@ -40,6 +40,22 @@ from pro_tes.utils.misc import has_credentials, strip_auth
 TASKS_PATH = "/ga4gh/tes/v1/tasks"
 """Path of the requests to create tasks, below the URL of a backend."""
 
+RESERVED_HEADERS = frozenset(
+    {
+        "connection",
+        "content-length",
+        "host",
+        "proxy-authorization",
+        "te",
+        "trailer",
+        "transfer-encoding",
+        "upgrade",
+    }
+)
+"""Headers (lower case) that plugins can't set in requests to backends: they
+would change where or how requests are sent, e.g., to another virtual host
+with the backend's credentials."""
+
 # Fields of tasks that TES servers set (TES servers may reject tasks that set
 # them, as proTES does); never relayed
 SERVER_FIELDS = ("creation_time", "logs")
@@ -212,14 +228,29 @@ def check_outbound(outbound: OutboundRequest) -> None:
         pro_tes.exceptions.InlineContentTooLarge: An inline content is
             larger than `custom.controllers.post_task.max_inline_content`.
         TypeError: The task can't be relayed (cf. :py:func:`tes_task`).
-        ValueError: The task can't be relayed, or the method or path of
-            the request was changed.
+        ValueError: The task can't be relayed, the method or path of the
+            request was changed, its query is not a mapping of names to
+            lists of values, or it has reserved headers
+            (`RESERVED_HEADERS`).
     """
     if outbound.method != "POST" or outbound.path != TASKS_PATH:
         raise ValueError(
             f"Tasks are created with POST {TASKS_PATH}, not"
             f" {outbound.method} {outbound.path}"
         )
+    query = outbound.query
+    if not isinstance(query, dict) or not all(
+        isinstance(name, str)
+        and isinstance(values, list)
+        and all(isinstance(value, str) for value in values)
+        for name, values in query.items()
+    ):
+        raise ValueError("Query parameters must map names to lists of strings")
+    reserved = sorted(
+        name for name in outbound.headers if name.lower() in RESERVED_HEADERS
+    )
+    if reserved:
+        raise ValueError(f"Headers reserved for proTES: {', '.join(reserved)}")
     # dry run on a copy: `relayed_task` strips the credentials of the sent task
     sanitize_task(deepcopy(outbound.payload))
     tes_task(outbound.payload)

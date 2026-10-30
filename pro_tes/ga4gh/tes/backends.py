@@ -567,7 +567,8 @@ class TesClient(tes.HTTPClient):
         )
         try:
             body = response.json()
-        except ValueError:
+        except (ValueError, RecursionError):
+            # e.g., invalid or too deeply nested JSON: the outcome is unknown
             body = None
         task_id = body.get("id") if isinstance(body, dict) else None
         if not isinstance(task_id, str) or not task_id:

@@ -5,7 +5,7 @@ from typing import Any
 
 from connexion import FlaskApp
 from foca import get_custom_config
-from foca.plugins import GatewayError, OutboundRequest
+from foca.plugins import GatewayError, Headers, OutboundRequest
 from foca.plugins.backends import ServiceEntry
 from pydantic import ValidationError
 import pytest
@@ -97,6 +97,15 @@ def test_check_outbound(app: FlaskApp) -> None:
         ):
             with pytest.raises(ValueError, match="Tasks are created with POST"):
                 gateway.check_outbound(changed)
+        for query in (5, [1], {"a": "b"}, {"a": [1]}):
+            with pytest.raises(ValueError, match="Query parameters"):
+                gateway.check_outbound(replace(outbound, query=query))  # type: ignore[arg-type]
+        gateway.check_outbound(replace(outbound, query={"a": ["b"]}))
+        with pytest.raises(ValueError, match="reserved for proTES: Host"):
+            gateway.check_outbound(
+                replace(outbound, headers=Headers({"Host": "other.example.org"}))
+            )
+        gateway.check_outbound(replace(outbound, headers=Headers({"X-A": "b"})))
         outbound.payload = {"executors": "none"}
         with pytest.raises((TypeError, ValueError)):
             gateway.check_outbound(outbound)

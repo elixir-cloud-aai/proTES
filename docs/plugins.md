@@ -46,7 +46,12 @@ phases:
 
 Plugins see the task, the request path, query and headers (without
 `Authorization`, `Cookie` and `Proxy-Authorization`) and the caller (its
-identity, roles and token claims), never the credentials of TES instances.
+identity, roles, token claims and its validated access token), never the
+credentials of TES instances. Enable only plugins that you trust with the
+tokens of callers. Plugins can't set the headers `Host`, `Connection`,
+`Content-Length`, `Transfer-Encoding`, `TE`, `Trailer`, `Upgrade` and
+`Proxy-Authorization` of requests to TES instances, which would change
+where or how they are sent.
 Plugins run with time limits (`plugins.defaults`): a plugin that doesn't
 return in time counts as failed, and if no TES instance accepted the task
 after `forward_timeout` seconds (default 60), the request fails with
