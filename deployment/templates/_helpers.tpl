@@ -5,7 +5,8 @@ YAML; the templates are called with a dict of the root context (`root`) and
 these settings (`settings`). They follow the base config in the image
 (`pro_tes/config.yaml`): its size limit of request bodies
 (`server.max_content_length`), its token issuers (so an audience is
-required), its database (`db.dbs`) and that of access control
+required, unless each issuer has one, cf. `protes.requireAudience`), its
+database (`db.dbs`) and that of access control
 (`security.access_control.db_name`). The generated config sets the public
 URL of the app (`server.public_url`, cf. `protes.publicUrl`), if known,
 and the TES backends (`custom.tes.backends`) to those of `tes.backends`, if
@@ -17,7 +18,7 @@ template Helm renders first.
 {{- include "protes.validate" . -}}
 valuesKey: protes
 maxContentLength: 1048576
-requireAudience: true
+requireAudience: {{ include "protes.requireAudience" . }}
 mongodb:
   databases: [taskStore]
   accessControlDatabase: taskStore
@@ -178,10 +179,13 @@ or `hostName`; `config.server.public_url` takes precedence, also if
 As the app on startup, refuse to render unless access control is enabled
 and enforced (`security.access_control.enabled` and `enforce`, so that only
 the owners of tasks can access them), without trusted token issuers, with a
-group mapping but no group claim, or without a group mapped to the role
-`admin` (unless admins are explicitly not required,
-`security.access_control.require_admin`, FOCA's); renders nothing. The
-audience is checked by the library (`requireAudience`). Fails on
+group mapping but no group claim (global or of an issuer), or without a
+group mapped to the role `admin` (unless admins are explicitly not
+required, `security.access_control.require_admin`, FOCA's); renders
+nothing. The audiences of issuers are checked here, and the global audience
+by the library if it is required (`requireAudience`, cf.
+`protes.requireAudience`, which relies on these checks), else its type
+here. Fails on
 `custom.access_control` (its `require_admin` moved to FOCA's setting).
 */}}
 {{- define "protes.checkSecurity" -}}
@@ -236,15 +240,74 @@ audience is checked by the library (`requireAudience`). Fails on
 {{- end -}}
 {{- /*
 Issuers are compared with the `iss` claim as written, so surrounding
-whitespace is refused, too
+whitespace is refused, too. Issuers are URLs, or maps with the URL
+(`issuer`) and settings of their own (FOCA's `IssuerConfig`): their
+audiences (`audience`) and group claims (`claim_groups`) replace the global
+ones for their tokens, unless unset or null, and are checked as by the app;
+the app validates the other settings (`namespace`, `userinfo_claims`). As
+in the app, group mappings need a group claim of at least one issuer
 */ -}}
-{{- $issuersError := "config.security.auth.issuers must list the trusted token issuers (the iss claim of their tokens, e.g., https://login.example.org/oidc/, without surrounding whitespace): the app trusts none by default" -}}
+{{- $issuersError := "config.security.auth.issuers must list the trusted token issuers (the iss claim of their tokens, e.g., https://login.example.org/oidc/, without surrounding whitespace; or maps of it, as issuer, and settings of the issuer): the app trusts none by default" -}}
 {{- if not (and (kindIs "slice" $issuers) $issuers) -}}
 {{- fail $issuersError -}}
 {{- end -}}
-{{- range $issuer := $issuers -}}
+{{- $settings := list "issuer" "namespace" "audience" "claim_groups" "userinfo_claims" -}}
+{{- $anyClaim := false -}}
+{{- range $entry := $issuers -}}
+{{- $issuer := $entry -}}
+{{- $claim := $claimGroups -}}
+{{- if kindIs "map" $entry -}}
+{{- $issuer = get $entry "issuer" -}}
+{{- /* First, so that a misspelt `issuer` is named, too */ -}}
+{{- range $key := keys $entry | sortAlpha -}}
+{{- if not (has $key $settings) -}}
+{{- fail (printf "config.security.auth.issuers: %s of issuer %v is no setting of issuers (%s)" $key $entry (join ", " $settings)) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
 {{- if not (and (kindIs "string" $issuer) (trim $issuer) (eq $issuer (trim $issuer))) -}}
 {{- fail $issuersError -}}
+{{- end -}}
+{{- if kindIs "map" $entry -}}
+{{- /* null, as unset, means the global setting (`get` returns "" for missing keys) */ -}}
+{{- $audience := get $entry "audience" -}}
+{{- if and (hasKey $entry "audience") (not (kindIs "invalid" $audience)) -}}
+{{- $valid := and (kindIs "slice" $audience) $audience -}}
+{{- range $client := ternary $audience (list) (kindIs "slice" $audience) -}}
+{{- if not (and (kindIs "string" $client) (trim $client)) -}}
+{{- $valid = false -}}
+{{- end -}}
+{{- end -}}
+{{- if not $valid -}}
+{{- fail (printf "config.security.auth.issuers: audience of issuer %s must list the accepted audiences (non-blank strings), or be null for the global audience" $issuer) -}}
+{{- end -}}
+{{- end -}}
+{{- if and (hasKey $entry "claim_groups") (not (kindIs "invalid" (get $entry "claim_groups"))) -}}
+{{- $claim = get $entry "claim_groups" -}}
+{{- if not (and (kindIs "string" $claim) (eq $claim (trim $claim))) -}}
+{{- fail (printf "config.security.auth.issuers: claim_groups of issuer %s must be the name of a claim (a string, without surrounding whitespace; empty for no groups), or null for the global claim" $issuer) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- if and (kindIs "string" $claim) $claim (eq $claim (trim $claim)) -}}
+{{- $anyClaim = true -}}
+{{- end -}}
+{{- end -}}
+{{- /*
+Checked here, as the library checks the global audience only if it is
+required (`protes.requireAudience`)
+*/ -}}
+{{- /* `security` and `auth` are maps here, as the issuers are set */ -}}
+{{- $globalAudience := get (get $security "auth") "audience" -}}
+{{- if and (hasKey (get $security "auth") "audience") (not (kindIs "invalid" $globalAudience)) -}}
+{{- $strings := kindIs "slice" $globalAudience -}}
+{{- range $client := ternary $globalAudience (list) $strings -}}
+{{- if not (kindIs "string" $client) -}}
+{{- $strings = false -}}
+{{- end -}}
+{{- end -}}
+{{- if not $strings -}}
+{{- fail "config.security.auth.audience must list the accepted audiences (strings, e.g., client IDs), or be null" -}}
 {{- end -}}
 {{- end -}}
 {{- if not (kindIs "string" $claimGroups) -}}
@@ -261,12 +324,35 @@ whitespace is refused, too
 {{- if not (and (eq $enabled "true") (eq $enforce "true")) -}}
 {{- fail "config.security.access_control.enabled and enforce must be true (as by default), so that only the owners of tasks can access them" -}}
 {{- end -}}
-{{- if and $mapping (not $claimGroups) -}}
-{{- fail "config.security.access_control.claim_groups must name the claim with the groups of users (e.g., groups), as groups are mapped to roles (group_mapping); also add it to config.security.auth.userinfo_claims if the identity provider releases it via user info only" -}}
+{{- if and $mapping (not $anyClaim) -}}
+{{- fail "config.security.access_control.claim_groups must name the claim with the groups of users (e.g., groups), as groups are mapped to roles (group_mapping), unless claim_groups of each issuer in config.security.auth.issuers does (an issuer's claim replaces the global one for its tokens; an empty one takes no groups); also add it to config.security.auth.userinfo_claims if the identity provider releases it via user info only" -}}
 {{- end -}}
 {{- if and (eq $requireAdmin "true") (not (has "admin" (values $mapping))) -}}
 {{- fail "config.security.access_control.group_mapping must map a group to the role admin (e.g., the admin group of the identity provider), or set config.security.access_control.require_admin to false" -}}
 {{- end -}}
+{{- end -}}
+
+{{/*
+Whether an audience is required (`requireAudience` of the settings, checked
+by the library; renders "true" or "false"): unless each trusted issuer is a
+map with an audience of its own (`audience`, checked by
+`protes.checkSecurity`, which runs first), which replaces the global one
+(`security.auth.audience`) for its tokens, as in FOCA's `IssuerConfig`.
+Keep in line with the issuers' checks in `protes.checkSecurity`.
+*/}}
+{{- define "protes.requireAudience" -}}
+{{- $issuers := dig "security" "auth" "issuers" list (.Values.config | default dict) -}}
+{{- $required := false -}}
+{{- if and (kindIs "slice" $issuers) $issuers -}}
+{{- range $issuer := $issuers -}}
+{{- if not (and (kindIs "map" $issuer) (get $issuer "audience")) -}}
+{{- $required = true -}}
+{{- end -}}
+{{- end -}}
+{{- else -}}
+{{- $required = true -}}
+{{- end -}}
+{{- $required -}}
 {{- end -}}
 
 {{/*

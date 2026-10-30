@@ -145,7 +145,8 @@ Which identity providers are trusted, for which audiences, and which groups
 have which role is deployment configuration: the base config has no
 defaults, and the app refuses to start without trusted issuers, without an
 audience (unless `security.auth.verify_audience` is false, which accepts
-tokens for any app) and without a group mapped to the role `admin` (unless
+tokens for any app, or each issuer has an audience of its own, see below)
+and without a group mapped to the role `admin` (unless
 `security.access_control.require_admin` is false). Set them in a [config
 overlay](configuration.md), e.g.:
 
@@ -165,6 +166,31 @@ security:
       compute-users: user
       compute-admins: admin
 ```
+
+Issuers may also be maps of the issuer (`issuer`) and settings of their own
+(FOCA's `IssuerConfig`): the namespace of their users' subjects
+(`namespace`, see [Task owners](operations.md#task-owners)), and an
+`audience`, a group claim (`claim_groups`) and `userinfo_claims` that
+replace the global ones for the issuer's tokens (unless unset or null), e.g.:
+
+```yaml
+security:
+  auth:
+    issuers:
+      - issuer: https://login.example.org/oidc/
+        audience:
+          - my-portal-client-id
+      - issuer: https://other.example.org/
+        audience:
+          - my-portal-client-id
+        # take no groups from this issuer's tokens
+        claim_groups: ""
+```
+
+Group claim values are not namespaced: take groups only from issuers that
+cannot issue each other's groups, and set `claim_groups: ""` for the others
+(see [FOCA's authentication
+options](https://foca.readthedocs.io/en/latest/configuration/auth/)).
 
 The app logs the groups of each role on startup, and warns if no group has
 the role `user` (nobody can create tasks then) and if `group_mapping` is

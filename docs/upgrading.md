@@ -49,9 +49,8 @@ With FOCA 0.18, settings and checks that proTES had of its own are FOCA's:
   API are stored with bare subjects and then no longer apply: list the
   issuer whose users own the stored tasks with `namespace: ""` (e.g.,
   `issuers: [{issuer: "https://login.example.org/oidc/", namespace: ""},
-  "https://other.example.org/"]`; not supported by the Helm chart yet,
-  which accepts issuers as URLs only, see
-  [#337](https://github.com/elixir-cloud-aai/proTES/issues/337)), or rewrite
+  "https://other.example.org/"]`, also in the Helm chart's
+  `config.security.auth.issuers`), or rewrite
   the stored subjects to the namespaced form, both the owner roles
   (`policy_rules`, `user:<issuer>|<sub>`) and the owners of the tasks
   (`user_id` of the documents in `tasks`, `<issuer>|<sub>`): access depends

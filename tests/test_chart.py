@@ -14,6 +14,7 @@ import subprocess
 import tarfile
 from typing import Any
 
+from foca.models.config import SecurityConfig
 import pytest
 import yaml
 
@@ -723,6 +724,270 @@ def test_security_config_invalid(
 ) -> None:
     """Rendering fails without the settings the app refuses to start without."""
     assert error in _render_error(*args, **kwargs)
+
+
+@pytest.mark.parametrize(
+    "issuers",
+    [
+        [{"namespace": "x"}],
+        [{"issuer": ""}],
+        [{"issuer": " "}],
+        [{"issuer": 1}],
+        [{"issuer": None}],
+        [{"issuer": " https://x.org/"}],
+        ["https://x.org/", {"issuer": "https://y.org/ "}],
+        [[]],
+    ],
+    ids=[
+        "without-issuer",
+        "empty",
+        "blank",
+        "number",
+        "null",
+        "padded",
+        "second-padded",
+        "list",
+    ],
+)
+def test_issuers_invalid(issuers: list[Any]) -> None:
+    """Rendering fails on issuers that are neither URLs nor maps with one.
+
+    The app compares issuers with the `iss` claim as written, so surrounding
+    whitespace is refused, too; checked before the audience.
+    """
+    error = _render_error(
+        "--set-json",
+        f"config.security.auth.issuers={json.dumps(issuers)}",
+        issuer=None,
+        audience=None,
+    )
+    assert "config.security.auth.issuers must list" in error
+
+
+def test_issuer_settings() -> None:
+    """Issuers with settings of their own are passed to the app.
+
+    E.g., to trust a second issuer, keeping the subjects of the first one
+    bare (`namespace: ""`, see "Upgrading" in the docs); their audiences and
+    group claims replace the global ones, which are then not required. The
+    app's config model (FOCA's, the contract of the chart's checks) accepts
+    the rendered settings.
+    """
+    issuers = [
+        {
+            "issuer": "https://login.example.org/oidc/",
+            "namespace": "",
+            "audience": ["portal"],
+            "claim_groups": "memberships",
+        },
+        {"issuer": "https://other.example.org/", "audience": ["portal"]},
+    ]
+    docs = _render(
+        "--set-json",
+        f"config.security.auth.issuers={json.dumps(issuers)}",
+        issuer=None,
+        audience=None,
+        group_claim=None,
+    )
+    security = _overlay(docs)["security"]
+    assert security["auth"]["issuers"] == issuers
+    assert "audience" not in security["auth"]
+    config = SecurityConfig.model_validate(security)
+    assert config.auth.get_namespaces() == {
+        "https://login.example.org/oidc/": None,
+        "https://other.example.org/": "https://other.example.org/",
+    }
+
+
+def test_issuers_mixed() -> None:
+    """Issuers may be URLs and maps, with the global audience and claim."""
+    issuers = ["https://login.example.org/oidc/", {"issuer": "https://x.org/"}]
+    docs = _render(
+        "--set-json",
+        f"config.security.auth.issuers={json.dumps(issuers)}",
+        issuer=None,
+    )
+    assert _overlay(docs)["security"]["auth"]["issuers"] == issuers
+
+
+@pytest.mark.parametrize(
+    "issuers",
+    [
+        [{"issuer": "https://x.org/", "audience": ["a"]}, "https://y.org/"],
+        [{"issuer": "https://x.org/"}],
+        [{"issuer": "https://x.org/", "audience": None}],
+        [
+            {"issuer": "https://x.org/", "audience": ["a"]},
+            {"issuer": "https://y.org/"},
+        ],
+    ],
+    ids=["url", "unset", "null", "last-unset"],
+)
+def test_issuer_audience_required(issuers: list[Any]) -> None:
+    """Without a global audience, each issuer needs an audience of its own.
+
+    It replaces the global audience for the issuer's tokens, as in the app.
+    """
+    error = _render_error(
+        "--set-json",
+        f"config.security.auth.issuers={json.dumps(issuers)}",
+        issuer=None,
+        audience=None,
+    )
+    assert "config.security.auth.audience must list" in error
+
+
+@pytest.mark.parametrize(
+    ("claims", "valid"),
+    [
+        (["", ""], False),
+        (["", None], True),
+        ([None, None], True),
+        (["", "null"], True),
+    ],
+    ids=["all-replaced", "one-replaced", "global", "null"],
+)
+def test_issuer_group_claim_replaced(claims: list[Any], valid: bool) -> None:
+    """Group claims of issuers replace the global one, as in the app.
+
+    Unless unset (`None` in `claims`) or null (`"null"`); group mappings
+    need a valid group claim of at least one issuer.
+    """
+    issuers: list[dict[str, Any]] = []
+    for index, claim in enumerate(claims):
+        issuer: dict[str, Any] = {"issuer": f"https://{index}.example.org/"}
+        if claim == "null":
+            issuer["claim_groups"] = None
+        elif claim is not None:
+            issuer["claim_groups"] = claim
+        issuers.append(issuer)
+    args = ("--set-json", f"config.security.auth.issuers={json.dumps(issuers)}")
+    if valid:
+        assert ("Deployment", APP) in _render(*args, issuer=None)
+        return
+    error = _render_error(*args, issuer=None)
+    assert "config.security.access_control.claim_groups must name the claim" in error
+
+
+@pytest.mark.parametrize(
+    ("setting", "error"),
+    [
+        ({"audience": []}, "audience of issuer https://x.org/ must list"),
+        ({"audience": [" "]}, "audience of issuer https://x.org/ must list"),
+        ({"audience": ["a", 1]}, "audience of issuer https://x.org/ must list"),
+        ({"audience": "a"}, "audience of issuer https://x.org/ must list"),
+        ({"claim_groups": " g"}, "claim_groups of issuer https://x.org/ must be"),
+        ({"claim_groups": 1}, "claim_groups of issuer https://x.org/ must be"),
+        ({"claim_group": "g"}, "claim_group of issuer map[claim_group:g"),
+        ({"iss": "https://y.org/"}, "iss of issuer map[iss:https://y.org/"),
+    ],
+    ids=[
+        "empty",
+        "blank",
+        "number",
+        "string",
+        "padded",
+        "claim-number",
+        "typo",
+        "issuer-typo",
+    ],
+)
+def test_issuer_settings_invalid(setting: dict[str, Any], error: str) -> None:
+    """Rendering fails on settings of issuers that the app refuses.
+
+    Also next to a valid global audience and group claim, which the
+    issuer's settings would replace.
+    """
+    issuers = [{"issuer": "https://x.org/", **setting}]
+    if "iss" in setting:
+        issuers = [setting]
+    assert error in _render_error(
+        "--set-json", f"config.security.auth.issuers={json.dumps(issuers)}"
+    )
+
+
+def test_audience_invalid_with_issuer_audiences() -> None:
+    """Rendering fails on a global audience the app refuses, if not required.
+
+    The library checks it only if it is required (`requireAudience`).
+    """
+    issuers = [{"issuer": "https://x.org/", "audience": ["a"]}]
+    error = _render_error(
+        "--set-json",
+        f"config.security.auth.issuers={json.dumps(issuers)}",
+        "--set-json",
+        'config.security.auth.audience="a"',
+        audience=None,
+    )
+    assert "config.security.auth.audience must list" in error
+
+
+@pytest.mark.parametrize(
+    ("issuers", "required"),
+    [
+        (["https://x.org/"], "true"),
+        ([{"issuer": "https://x.org/"}], "true"),
+        ([{"issuer": "https://x.org/", "audience": None}], "true"),
+        (
+            [{"issuer": "https://x.org/", "audience": ["a"]}, "https://y.org/"],
+            "true",
+        ),
+        ([{"issuer": "https://x.org/", "audience": ["a"]}], "false"),
+        (
+            [
+                {"issuer": "https://x.org/", "audience": ["a"]},
+                {"issuer": "https://y.org/", "audience": ["b"]},
+            ],
+            "false",
+        ),
+    ],
+    ids=["url", "unset", "null", "one-url", "own", "all-own"],
+)
+def test_require_audience(issuers: list[Any], required: str) -> None:
+    """The library requires a global audience unless each issuer has one."""
+    template = 'required: {{ include "protes.requireAudience" . | quote }}'
+    docs = render_with(
+        {
+            "require-audience-test.yaml": (
+                "apiVersion: v1\nkind: ConfigMap\nmetadata:\n"
+                "  name: require-audience-test\ndata:\n  " + template + "\n"
+            )
+        },
+        "--set",
+        "hostName=tes.example.org",
+        "--set-json",
+        f"config.security.auth.issuers={json.dumps(issuers)}",
+    )
+    (configmap,) = [
+        doc for doc in docs if doc["metadata"]["name"] == "require-audience-test"
+    ]
+    assert configmap["data"]["required"] == required
+
+
+def test_issuer_audience_not_verified() -> None:
+    """Issuers need no audience if audiences are not verified."""
+    issuers = [{"issuer": "https://x.org/", "namespace": ""}]
+    docs = _render(
+        "--set-json",
+        f"config.security.auth.issuers={json.dumps(issuers)}",
+        "--set",
+        "config.security.auth.verify_audience=false",
+        issuer=None,
+        audience=None,
+    )
+    assert _overlay(docs)["security"]["auth"]["issuers"] == issuers
+
+
+def test_issuer_group_claim() -> None:
+    """A group claim of an issuer suffices for group mappings."""
+    issuers = [{"issuer": "https://x.org/", "claim_groups": "memberships"}]
+    docs = _render(
+        "--set-json",
+        f"config.security.auth.issuers={json.dumps(issuers)}",
+        issuer=None,
+        group_claim=None,
+    )
+    assert "claim_groups" not in _overlay(docs)["security"]["access_control"]
 
 
 @pytest.mark.parametrize("value", ["false", '"no"', "0"])
