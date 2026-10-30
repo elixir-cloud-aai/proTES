@@ -8,12 +8,16 @@ from celery.signals import worker_init
 from foca import Foca
 
 from pro_tes.config_models import CustomConfig
+from pro_tes.gateway import GATEWAY
 from pro_tes.security import check_backends
 from pro_tes.utils.db import check_unique_task_ids
 
+# The same gateway settings as the app's, so that both can be created in one
+# process (cf. :py:mod:`foca.plugins.runtime`)
 foca = Foca(
     config_file=Path(__file__).resolve().parent / "config.yaml",
     custom_config_model="pro_tes.config_models.CustomConfig",
+    gateway=GATEWAY,
 )
 
 

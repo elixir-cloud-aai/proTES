@@ -1,6 +1,7 @@
 """Tests of the clients of TES backends and their credentials."""
 
 from collections.abc import Callable, Iterator
+from dataclasses import replace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import socket
 import ssl
@@ -9,7 +10,7 @@ from typing import Any, ClassVar
 
 from connexion import FlaskApp
 from foca import get_custom_config
-from foca.plugins import Backend
+from foca.plugins import Backend, Headers, OutboundRequest
 from foca.plugins.backends import BackendListConfig, ServiceEntry
 import pydantic
 import pytest
@@ -26,6 +27,7 @@ from urllib3.exceptions import (
 
 from pro_tes.config_models import ClientCredentials, CustomConfig, Tes
 from pro_tes.exceptions import (
+    BackendAddressNotAllowed,
     BackendAuthError,
     BackendNotConfigured,
     BackendOutcomeUnknown,
@@ -56,6 +58,7 @@ class FakeResponse:
         """Create a response."""
         self.body = body
         self.status_code = status_code
+        self.headers: dict[str, str] = {}
 
     def raise_for_status(self) -> None:
         """Raise an error for error status codes, as `requests` does.
@@ -632,25 +635,45 @@ NONE_URL = f"{BACKEND_URL}/none"
 TASK = tes.Task(executors=[tes.Executor(image="alpine", command=["true"])])
 
 
+def create_task(client: backends.TesClient, **outbound: Any) -> str:
+    """Create a task, as the default outbound request of `POST /tasks` does.
+
+    Args:
+        client: Client of the backend.
+        **outbound: Fields of the outbound request to change.
+
+    Returns:
+        Identifier of the task at the backend.
+    """
+    request = OutboundRequest(
+        backend=client.backend, method="POST", path="/ga4gh/tes/v1/tasks"
+    )
+    task_id, _ = client.forward(replace(request, **outbound), TASK)
+    return task_id
+
+
 class FakePost:
-    """Fake `requests.post`: records requests, and answers or fails.
+    """Fake `requests.request`: records requests, and answers or fails.
 
     Attributes:
         sent: URLs and keyword arguments of the requests.
+        methods: Methods of the requests.
         answer: Response to serve, or exception to raise.
     """
 
     def __init__(self, answer: FakeResponse | Exception) -> None:
         """Create the fake."""
         self.sent: list[tuple[str, dict[str, Any]]] = []
+        self.methods: list[str] = []
         self.answer = answer
 
-    def __call__(self, url: str, **kwargs: Any) -> FakeResponse:
+    def __call__(self, method: str, url: str, **kwargs: Any) -> FakeResponse:
         """Record the request, and serve the answer.
 
         Raises:
             Exception: The answer is an exception.
         """
+        self.methods.append(method)
         self.sent.append((url, kwargs))
         if isinstance(self.answer, Exception):
             raise self.answer
@@ -661,12 +684,12 @@ class FakePost:
 def post(
     configured: None, monkeypatch: pytest.MonkeyPatch
 ) -> Callable[[FakeResponse | Exception], FakePost]:
-    """Factory of fake `requests.post`s (installed when created)."""
+    """Factory of fake `requests.request`s (installed when created)."""
 
     def install(answer: FakeResponse | Exception) -> FakePost:
-        """Install a fake `requests.post` with an answer."""
+        """Install a fake `requests.request` with an answer."""
         fake = FakePost(answer)
-        monkeypatch.setattr(backends.requests, "post", fake)
+        monkeypatch.setattr(backends.requests, "request", fake)
         return fake
 
     return install
@@ -704,7 +727,7 @@ def test_create_task_once(post: Callable[..., FakePost]) -> None:
     """Tasks are created with a single request, to the API path."""
     fake = post(FakeResponse({"id": "remote-1"}))
     client = backends.create_client(host=f"{NONE_URL}/")
-    assert client.create_task(TASK) == "remote-1"
+    assert create_task(client) == "remote-1"
     ((url, kwargs),) = fake.sent
     assert url == f"{NONE_URL}/ga4gh/tes/v1/tasks"
     assert kwargs["data"] == TASK.as_json()
@@ -801,7 +824,7 @@ def test_post_redirect_not_followed(
         )
         client = backends.create_client(host=url)
         with pytest.raises(requests.HTTPError, match="status 302"):
-            client.create_task(TASK)
+            create_task(client)
         with pytest.raises(requests.HTTPError, match="status 302"):
             client.cancel_task("remote-1")
     finally:
@@ -833,7 +856,7 @@ def test_post_server_error(post: Callable[..., FakePost], status: int) -> None:
     fake = post(FakeResponse({"id": "remote-1"}, status_code=status))
     client = backends.create_client(host=NONE_URL)
     with pytest.raises(BackendOutcomeUnknown, match=f"status {status}"):
-        client.create_task(TASK)
+        create_task(client)
     with pytest.raises(BackendOutcomeUnknown):
         client.cancel_task("remote-1")
     assert len(fake.sent) == 2
@@ -841,7 +864,7 @@ def test_post_server_error(post: Callable[..., FakePost], status: int) -> None:
 
 def create(client: backends.TesClient) -> None:
     """Create a task."""
-    client.create_task(TASK)
+    create_task(client)
 
 
 def cancel(client: backends.TesClient) -> None:
@@ -869,7 +892,7 @@ def test_create_task_no_id(post: Callable[..., FakePost], body: Any) -> None:
     """Tasks accepted without an identifier have an unknown outcome."""
     post(FakeResponse(body))
     with pytest.raises(BackendOutcomeUnknown, match="without an identifier"):
-        backends.create_client(host=NONE_URL).create_task(TASK)
+        create_task(backends.create_client(host=NONE_URL))
 
 
 @pytest.mark.parametrize(
@@ -920,7 +943,7 @@ def test_post_maybe_received(post: Callable[..., FakePost], error: Exception) ->
     """Requests that may have been received have an unknown outcome."""
     fake = post(error)
     with pytest.raises(BackendOutcomeUnknown, match=type(error).__name__) as info:
-        backends.create_client(host=NONE_URL).create_task(TASK)
+        create_task(backends.create_client(host=NONE_URL))
     assert info.value.__cause__ is error
     assert len(fake.sent) == 1
 
@@ -929,7 +952,7 @@ def test_post_no_credentials(post: Callable[..., FakePost]) -> None:
     """Without credentials, nothing is sent."""
     fake = post(FakeResponse({"id": "remote-1"}))
     with pytest.raises(BackendAuthError):
-        backends.create_client(host=f"{BACKEND_URL}/basic").create_task(TASK)
+        create_task(backends.create_client(host=f"{BACKEND_URL}/basic"))
     assert not fake.sent
 
 
@@ -969,3 +992,105 @@ def test_not_sent_cyclic() -> None:
     first.__cause__ = second
     second.__context__ = first
     assert not backends.not_sent(first)
+
+
+def test_forward_outbound(
+    post: Callable[..., FakePost], idp: FakeIdp, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Tasks are relayed as the plugins prepared the request.
+
+    With its method, path, query and headers; credentials are added after
+    the plugins, and connecting times out within the time left.
+    """
+    fake = post(FakeResponse({"id": "remote-1"}))
+    fake.answer.headers = {"X-Remote": "yes"}  # type: ignore[union-attr]
+    client = backends.create_client(host=f"{BACKEND_URL}/token")
+    request = OutboundRequest(
+        backend=client.backend,
+        method="PUT",
+        path="/other/tasks",
+        query={"x": ["1"]},
+        headers=Headers({"X-Plugin": "a", "Authorization": "Bearer plugin"}),
+    )
+    task_id, response = client.forward(request, TASK, connect_timeout=2)
+    assert task_id == "remote-1"
+    assert response.status == 200
+    assert response.headers["x-remote"] == "yes"
+    assert response.payload == {"id": "remote-1"}
+    ((url, kwargs),) = fake.sent
+    assert fake.methods == ["PUT"]
+    assert url == f"{BACKEND_URL}/token/other/tasks"
+    assert kwargs["params"] == {"x": ["1"]}
+    assert kwargs["headers"]["X-Plugin"] == "a"
+    assert kwargs["headers"]["Authorization"] == "Bearer token-1"
+    assert kwargs["timeout"] == (2, 15)
+
+
+def test_forward_auth_chosen(post: Callable[..., FakePost]) -> None:
+    """Plugins choose configured credentials by name; without them, none is sent."""
+    fake = post(FakeResponse({"id": "remote-1"}))
+    client = backends.create_client(host=NONE_URL)
+    with pytest.raises(BackendAuthError, match="No Basic credentials"):
+        create_task(client, auth="basic")
+    with pytest.raises(BackendAuthError, match="Unknown credentials"):
+        create_task(client, auth="other")
+    assert not fake.sent
+    plugin_header = Headers({"Authorization": "Bearer plugin"})
+    assert create_task(client, headers=plugin_header) == "remote-1"
+    assert fake.sent[0][1]["headers"]["Authorization"] == "Bearer plugin"
+
+
+def test_client_for_unknown(configured: None) -> None:
+    """Backends without entry (e.g., after a config change) have no client."""
+    entry = ServiceEntry(type="ga4gh-tes", url="https://unknown.example.org")
+    with pytest.raises(BackendNotConfigured, match="unknown"):
+        backends.client_for(entry.backend())
+    known = backends.get_backends()[0]
+    assert backends.client_for(known).backend == known
+
+
+def _http_error(status: int | None) -> requests.HTTPError:
+    """Get an HTTP error, with a response of a status if given."""
+    if status is None:
+        return requests.HTTPError("rejected")
+    return requests.HTTPError(
+        "rejected",
+        response=FakeResponse({}, status_code=status),  # type: ignore[arg-type]
+    )
+
+
+@pytest.mark.parametrize(
+    "error, reason",
+    [
+        (BackendOutcomeUnknown("x", reason="read_timeout"), "read_timeout"),
+        (BackendOutcomeUnknown("x"), "outcome_unknown"),
+        (_http_error(403), "http_403"),
+        (_http_error(None), "rejected"),
+        (BackendAuthError("x"), "no_credentials"),
+        (BackendNotConfigured("x"), "unknown_backend"),
+        (ValueError("x"), "invalid_backend"),
+        (BackendAddressNotAllowed("x"), "address_not_allowed"),
+        (requests.ConnectTimeout("x"), "connect_timeout"),
+        (requests.ConnectionError("x"), "connect_error"),
+    ],
+)
+def test_forward_reason(error: Exception, reason: str) -> None:
+    """Failed attempts get reason codes for the plugin engine."""
+    assert backends.forward_reason(error) == reason
+
+
+@pytest.mark.parametrize(
+    "error, reason",
+    [
+        (requests.ReadTimeout("read timeout"), "read_timeout"),
+        (requests.exceptions.ChunkedEncodingError("incomplete"), "connection_lost"),
+    ],
+)
+def test_outcome_unknown_reason(
+    post: Callable[..., FakePost], error: Exception, reason: str
+) -> None:
+    """Unknown outcomes have the reason of the error."""
+    post(error)
+    with pytest.raises(BackendOutcomeUnknown) as info:
+        create_task(backends.create_client(host=NONE_URL))
+    assert info.value.reason == reason

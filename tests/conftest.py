@@ -4,10 +4,12 @@ The tests create the app from `pro_tes/config.yaml` and the test overlay
 (`tests/config_overlay.yaml`, with the settings each deployment must make),
 and have no network access, except to the test database: the identity
 provider is mocked, TES backends are replaced by fakes (e.g.,
-`tests/ga4gh/tes/test_server.py`), and the hosts of task inputs and TES
-backends are not resolved (distance-based task distribution, checks of
-discovered TES backends). The test client sends the access token of a user (`USER`)
-with each request.
+`tests/ga4gh/tes/test_server.py`), and the hosts of TES backends are not
+resolved (checks of discovered TES backends). The test client sends the
+access token of a user (`USER`) with each request. Plugins are faked with
+FOCA's fixture `fake_plugin_entry_points`, and each test starts without
+gateway settings (cf. :py:mod:`foca.plugins.runtime`), so that each app of a
+test runs the plugins of its own config.
 
 The tests use an in-memory database (mongomock), or, if the environment
 variable `MONGODB_TEST_URI` is set, the MongoDB at that URI (e.g.,
@@ -32,6 +34,7 @@ from connexion import FlaskApp
 from cryptography.hazmat.primitives.asymmetric import rsa
 from flask.testing import FlaskClient
 from foca.database import register_mongodb
+from foca.plugins import runtime
 from foca.plugins.backends import clear_caches
 from foca.security import auth
 import jwt
@@ -40,7 +43,6 @@ from pymongo import MongoClient, uri_parser
 import pytest
 
 from pro_tes.app import init_app
-from pro_tes.plugins.middlewares.task_distribution import distance
 
 # Database of the tasks (`db.dbs` of `config.yaml`)
 DB = "taskStore"
@@ -165,21 +167,6 @@ def _no_network_ex(sock: socket.socket, address: object) -> int:
     return errno.EACCES
 
 
-def _no_name_resolution(host: str) -> str:
-    """Replace `gethostbyname()` of the distance-based task distribution.
-
-    Name resolution doesn't go through `socket.socket.connect()`, so it is
-    blocked separately.
-
-    Args:
-        host: Host name.
-
-    Raises:
-        socket.gaierror: Always.
-    """
-    raise socket.gaierror(f"Name resolution blocked in tests: {host}")
-
-
 def _no_address_info(host: Any, *args: Any, **kwargs: Any) -> list[Any]:
     """Replace `socket.getaddrinfo()`, to block name resolution.
 
@@ -207,6 +194,27 @@ def _no_address_info(host: Any, *args: Any, **kwargs: Any) -> list[Any]:
     return _GETADDRINFO(host, *args, **kwargs)
 
 
+pytest_plugins = ["foca.plugins.pytest_plugin"]
+
+
+@pytest.fixture(autouse=True)
+def gateway_runtime() -> Iterator[None]:
+    """Forget the gateway settings and plugin host before and after each test.
+
+    A process serves one gateway app, bound by the first `Foca(gateway=...)`
+    (e.g., of the Celery worker module, when it is imported); each app of the
+    tests binds its own config instead (cf. :py:func:`reset_gateway`).
+    """
+    runtime.reset()
+    yield
+    runtime.reset()
+
+
+def reset_gateway() -> None:
+    """Forget the gateway settings, before another app is created in a test."""
+    runtime.reset()
+
+
 @pytest.fixture(autouse=True)
 def no_network(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """Block network access of all tests, except to the test database.
@@ -216,7 +224,6 @@ def no_network(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     monkeypatch.setattr(socket.socket, "connect", _no_network)
     monkeypatch.setattr(socket.socket, "connect_ex", _no_network_ex)
     monkeypatch.setattr(socket, "getaddrinfo", _no_address_info)
-    monkeypatch.setattr(distance, "gethostbyname", _no_name_resolution)
     clear_caches()
     yield
     clear_caches()

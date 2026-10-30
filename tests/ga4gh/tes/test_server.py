@@ -10,6 +10,7 @@ from unittest.mock import ANY
 from connexion import FlaskApp
 from flask.testing import FlaskClient
 from foca import get_custom_config
+from foca.plugins import Principal
 from foca.plugins.backends import BackendListConfig
 from pydantic import ValidationError
 from pymongo import MongoClient
@@ -18,13 +19,16 @@ import pytest
 import requests
 import tes
 
+from pro_tes import gateway
 from pro_tes.config_models import CustomConfig, ListTasks, PostTask
-from pro_tes.exceptions import BackendAuthError, BackendOutcomeUnknown, BadRequest
+from pro_tes.exceptions import (
+    BackendAuthError,
+    BackendNotConfigured,
+    BackendOutcomeUnknown,
+    BadRequest,
+)
 from pro_tes.ga4gh.tes import ownership, server, task_runs
 from pro_tes.ga4gh.tes.models import DbDocument, TesTask
-from pro_tes.plugins.middlewares.task_distribution.random import (
-    TaskDistributionRandom,
-)
 from pro_tes.tasks import track_task_progress
 from pro_tes.utils.db import DbDocumentConnector
 from tests.conftest import DB, OTHER_USER, USER
@@ -33,7 +37,11 @@ from tests.ga4gh.tes.conftest import (
     BASE_PATH,
     TASK,
     TASK_FILES,
+    AddContent,
+    AddCredentials,
     FakeBackend,
+    PluginClient,
+    make_inbound,
     relayed,
     set_state,
     stored,
@@ -89,7 +97,6 @@ def test_create_task_next_backend(
     client: FlaskClient,
     backend: type[FakeBackend],
     mongo_client: MongoClient[dict[str, Any]],
-    in_order: None,
     unusable: str,
 ) -> None:
     """Tasks go to the next backend if a backend is invalid or rejects them."""
@@ -109,14 +116,16 @@ def test_create_task_no_backend(
     tracked: list[dict[str, Any]],
     mongo_client: MongoClient[dict[str, Any]],
 ) -> None:
-    """Tasks that no backend accepts fail (`500`); they are not kept.
+    """Tasks that no backend accepts fail (`503`); they are not kept.
 
     Neither the task nor the owner's roles on it.
     """
     backend.failing.update(BACKENDS)
     response = client.post(f"{BASE_PATH}/tasks", json=TASK)
-    assert response.status_code == 500
-    assert response.get_json()["status"] == 500
+    assert response.status_code == 503
+    problem = response.get_json()
+    assert problem["status"] == 503
+    assert problem["problem_type"].endswith("#no-backend-available")
     assert not tracked
     assert mongo_client[DB]["tasks"].count_documents({}) == 0
     assert mongo_client[DB]["policy_rules"].count_documents({"ptype": "g2"}) == 0
@@ -130,7 +139,7 @@ def test_create_task_no_backend_selected(
     mongo_client: MongoClient[dict[str, Any]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Tasks without backends fail (`500`) as if none accepted them.
+    """Tasks without backends fail (`503`) as if none accepted them.
 
     They are rejected before they are stored, so no task, no owner's roles
     and no task in a state such as `SYSTEM_ERROR` are left.
@@ -144,8 +153,8 @@ def test_create_task_no_backend_selected(
     with app.app.app_context():
         get_custom_config(CustomConfig).tes.backends = BackendListConfig([])
     response = client.post(f"{BASE_PATH}/tasks", json=TASK)
-    assert response.status_code == 500
-    assert response.get_json()["detail"] == "No TES instance accepted the task."
+    assert response.status_code == 503
+    assert response.get_json()["detail"] == "No TES backend available"
     assert not stores
     assert not relayed(backend)
     assert not tracked
@@ -210,7 +219,7 @@ def test_create_task_files(client: FlaskClient, backend: type[FakeBackend]) -> N
 
 
 def test_create_task_backend_config(
-    client: FlaskClient, backend: type[FakeBackend], in_order: None
+    client: FlaskClient, backend: type[FakeBackend]
 ) -> None:
     """Clients get the configuration of their backend (for its credentials)."""
     assert client.post(f"{BASE_PATH}/tasks", json=TASK).status_code == 200
@@ -222,27 +231,27 @@ def test_create_task_unknown_backend(
     backend: type[FakeBackend],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Backends that are not configured (e.g., of middlewares) are skipped.
+    """Backends that are no longer configured are skipped.
 
-    proTES has no credentials for them.
+    E.g., if the backend list changed meanwhile: proTES has no credentials
+    for them.
     """
+    client_for = task_runs.client_for
 
-    def unknown_first(
-        self: TaskDistributionRandom, tes_urls: list[str], task: Any
-    ) -> None:
-        """Try an unknown backend first."""
-        self.tes_urls = ["https://unknown.example.org", *tes_urls]
+    def unknown_first(candidate: Any) -> Any:
+        """Fail for the first backend, as if it was not configured."""
+        if candidate.url == BACKENDS[0]:
+            raise BackendNotConfigured(candidate.url)
+        return client_for(candidate)
 
-    monkeypatch.setattr(TaskDistributionRandom, "_set_tes_urls", unknown_first)
+    monkeypatch.setattr(task_runs, "client_for", unknown_first)
     assert client.post(f"{BASE_PATH}/tasks", json=TASK).status_code == 200
-    assert "https://unknown.example.org" not in backend.tasks
-    assert len(relayed(backend)) == 1
+    assert [url for url, _ in relayed(backend)] == [BACKENDS[1]]
 
 
 def test_create_task_backend_auth_error(
     client: FlaskClient,
     backend: type[FakeBackend],
-    in_order: None,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Tasks go to the next backend if there are no credentials for a backend."""
@@ -264,7 +273,6 @@ def test_create_task_outcome_unknown(
     backend: type[FakeBackend],
     tracked: list[dict[str, Any]],
     mongo_client: MongoClient[dict[str, Any]],
-    in_order: None,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Tasks that a backend may have accepted are not sent elsewhere (`502`).
@@ -298,8 +306,8 @@ def test_task_original_unchanged(
 ) -> None:
     """The task as received is stored once, and never changed (#142).
 
-    Neither by the middlewares (which add the TES backends), nor by the
-    tracking of the task, nor by its cancellation.
+    Neither by the plugins, nor by the tracking of the task, nor by its
+    cancellation.
     """
     request = deepcopy(TASK_FILES)
     response = client.post(f"{BASE_PATH}/tasks", json=request)
@@ -309,7 +317,6 @@ def test_task_original_unchanged(
     expected = TesTask(**TASK_FILES).model_dump(mode="json", exclude_none=True)
     (document,) = mongo_client[DB]["tasks"].find()
     assert document["task_original"] == expected
-    assert "tes_urls" not in document["task"]
 
     # tracked until complete, then canceled (no-op)
     def complete(self: FakeBackend, task_id: str, **kwargs: Any) -> tes.Task:
@@ -724,25 +731,17 @@ def test_create_task_inline_content(
     assert mongo_client[DB]["tasks"].count_documents({}) == 0
 
 
-def test_create_task_inline_content_middleware(
-    app: FlaskApp,
-    client: FlaskClient,
+def test_create_task_inline_content_plugin(
+    with_plugins: PluginClient,
     backend: type[FakeBackend],
     mongo_client: MongoClient[dict[str, Any]],
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Inline contents that middlewares add count, too; the task isn't kept."""
-    apply = TaskDistributionRandom.apply_middleware
-
-    def add_content(self: TaskDistributionRandom, task: Any) -> Any:
-        """Add a large inline content."""
-        task = apply(self, task)
-        task["inputs"] = [{"content": "x" * 32, "path": "/added", "type": "FILE"}]
-        return task
-
-    monkeypatch.setattr(TaskDistributionRandom, "apply_middleware", add_content)
-    with app.app.app_context():
-        get_custom_config(CustomConfig).controllers.post_task.max_inline_content = 16
+    """Inline contents that plugins add count, too; the task isn't kept."""
+    client = with_plugins(
+        {"test.add-content": AddContent},
+        pipeline=[{"id": "content", "alternatives": [{"plugin": "test.add-content"}]}],
+    )
+    get_custom_config(CustomConfig).controllers.post_task.max_inline_content = 16
     response = client.post(f"{BASE_PATH}/tasks", json=TASK)
     assert response.status_code == 413
     assert not relayed(backend)
@@ -785,17 +784,6 @@ def test_views_logs(
         else:
             assert log["system_logs"] == ["started"]
             assert (executor_log["stdout"], executor_log["stderr"]) == ("out", "err")
-
-
-@pytest.fixture
-def in_order(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Tasks are relayed to the backends in the configured order."""
-
-    def ordered(self: TaskDistributionRandom, tes_urls: list[str], task: Any) -> None:
-        """Keep the order."""
-        self.tes_urls = list(tes_urls)
-
-    monkeypatch.setattr(TaskDistributionRandom, "_set_tes_urls", ordered)
 
 
 # Inputs with credentials in URLs
@@ -856,22 +844,18 @@ def test_create_task_url_credentials_stripped(
     assert "secret" not in str(document)
 
 
-def test_create_task_url_credentials_middleware(
-    client: FlaskClient,
+def test_create_task_url_credentials_plugin(
+    with_plugins: PluginClient,
     backend: type[FakeBackend],
     mongo_client: MongoClient[dict[str, Any]],
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Credentials that middlewares add to URLs are removed, too."""
-    apply = TaskDistributionRandom.apply_middleware
-
-    def add_credentials(self: TaskDistributionRandom, task: Any) -> Any:
-        """Add credentials to the URL of the input."""
-        task = apply(self, task)
-        task["inputs"][0]["url"] = "s3://key:secret@bucket/in"
-        return task
-
-    monkeypatch.setattr(TaskDistributionRandom, "apply_middleware", add_credentials)
+    """Credentials that plugins add to URLs are removed, too."""
+    client = with_plugins(
+        {"test.add-credentials": AddCredentials},
+        pipeline=[
+            {"id": "credentials", "alternatives": [{"plugin": "test.add-credentials"}]}
+        ],
+    )
     response = client.post(f"{BASE_PATH}/tasks", json=TASK_FILES)
     assert response.status_code == 200
     ((_, task),) = relayed(backend)
@@ -887,7 +871,7 @@ def test_handle_url_credentials_malformed(mode: Literal["reject", "strip"]) -> N
     """
     payload = {"inputs": [{"url": "https://[invalid/in", "path": "/in"}]}
     with pytest.raises(BadRequest, match="Malformed URL in `inputs`"):
-        task_runs.TaskRuns._handle_url_credentials(payload=payload, mode=mode)
+        gateway.handle_url_credentials(payload=payload, mode=mode)
 
 
 def test_handle_url_credentials_skipped() -> None:
@@ -900,14 +884,13 @@ def test_handle_url_credentials_skipped() -> None:
         "outputs": {"url": "https://user@example.org"},
     }
     expected = deepcopy(payload)
-    task_runs.TaskRuns._handle_url_credentials(payload=payload, mode="reject")
+    gateway.handle_url_credentials(payload=payload, mode="reject")
     assert payload == expected
 
 
 def test_create_task_payload_per_backend(
     client: FlaskClient,
     backend: type[FakeBackend],
-    in_order: None,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Each backend gets the task as validated, without changes for others.
@@ -1230,7 +1213,7 @@ def test_create_task_not_relayable(
         """Reject the task, as py-tes does with unknown fields."""
         raise TypeError("unexpected keyword argument")
 
-    monkeypatch.setattr(task_runs.tes, "Task", task)
+    monkeypatch.setattr(gateway.tes, "Task", task)
     response = client.post(f"{BASE_PATH}/tasks", json=TASK)
     assert response.status_code == 400
     assert not relayed(backend)
@@ -1271,8 +1254,8 @@ def test_create_task_not_discarded(
     monkeypatch.setattr(type(mongo_client[DB]["tasks"]), "delete_one", delete_one)
     backend.failing.update(BACKENDS)
     response = client.post(f"{BASE_PATH}/tasks", json=TASK)
-    assert response.status_code == 500
-    assert response.get_json()["detail"] == "No TES instance accepted the task."
+    assert response.status_code == 503
+    assert response.get_json()["detail"] == "No backend accepted the request"
     (document,) = mongo_client[DB]["tasks"].find()
     assert document["task"]["state"] == "SYSTEM_ERROR"
 
@@ -1312,7 +1295,12 @@ def test_create_task_no_body(app: FlaskApp, backend: type[FakeBackend]) -> None:
         app.app.test_request_context(),
         pytest.raises(BadRequest, match="body is missing"),
     ):
-        task_runs.TaskRuns().create_task(task=None, collection=f"{BASE_PATH}/tasks")
+        task_runs.TaskRuns().create_task(
+            task=None,
+            collection=f"{BASE_PATH}/tasks",
+            inbound=make_inbound(None),
+            principal=Principal(subject=USER),
+        )
 
 
 def test_controllers_pass_request_data(
@@ -1365,10 +1353,10 @@ def test_controllers_pass_request_path(
 
         def recorded(
             self: task_runs.TaskRuns, task: Any = None, *, collection: str, **_: Any
-        ) -> dict[str, Any]:
+        ) -> Any:
             """Record the call."""
             calls.append((method, task, collection))
-            return {}
+            return ({}, {}) if method == "create_task" else {}
 
         return recorded
 
@@ -1406,42 +1394,20 @@ def test_controller_no_body(
 def test_create_task_body_unchanged(
     app: FlaskApp, backend: type[FakeBackend], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The task of the request is not changed, e.g., by the middlewares."""
+    """The task of the request is not changed, e.g., by the sanitation."""
     monkeypatch.setattr(task_runs, "get_owner", lambda: USER)
     task = deepcopy(TASK_CREDENTIALS)
     with app.app.test_request_context():
         get_custom_config(CustomConfig).controllers.post_task.url_credentials = "strip"
-        task_runs.TaskRuns().create_task(task=task, collection=f"{BASE_PATH}/tasks")
+        inbound = make_inbound(task)
+        task_runs.TaskRuns().create_task(
+            task=task,
+            collection=f"{BASE_PATH}/tasks",
+            inbound=inbound,
+            principal=Principal(subject=USER),
+        )
     assert task == TASK_CREDENTIALS
-
-
-@pytest.mark.parametrize("tes_urls", [None, "https://tes.example.org", [1]])
-def test_create_task_no_tes_urls(
-    client: FlaskClient,
-    backend: type[FakeBackend],
-    mongo_client: MongoClient[dict[str, Any]],
-    monkeypatch: pytest.MonkeyPatch,
-    tes_urls: Any,
-) -> None:
-    """Middlewares that select no list of TES backends fail the request."""
-
-    def select(self: TaskDistributionRandom, task: Any) -> Any:
-        """Select `tes_urls`, or remove them if `None`."""
-        task.pop("tes_urls", None)
-        if tes_urls is not None:
-            task["tes_urls"] = tes_urls
-        return task
-
-    apply = TaskDistributionRandom.apply_middleware
-    monkeypatch.setattr(
-        TaskDistributionRandom,
-        "apply_middleware",
-        lambda self, task: select(self, apply(self, task)),
-    )
-    response = client.post(f"{BASE_PATH}/tasks", json=TASK)
-    assert response.status_code == 500
-    assert not relayed(backend)
-    assert mongo_client[DB]["tasks"].count_documents({}) == 0
+    assert inbound.payload == TASK_CREDENTIALS
 
 
 def test_invalid_view(app: FlaskApp) -> None:

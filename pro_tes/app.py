@@ -7,6 +7,7 @@ from connexion import FlaskApp
 from foca import Foca, get_collection
 from foca.security.auth import require_no_service_clients
 
+from pro_tes.gateway import GATEWAY
 from pro_tes.security import check_backends, check_task_ownership, check_user_groups
 from pro_tes.utils.db import (
     TASK_COLLECTION,
@@ -30,7 +31,8 @@ def init_app() -> FlaskApp:
     validates the config, e.g., that groups are only mapped with a group
     claim, refuses to start without admins
     (`security.access_control.require_admin`), and warns of placeholders in
-    the service info.
+    the service info. FOCA loads the plugins of the config (`plugins`) and
+    checks the backend list once, so that problems stop the app on startup.
 
     Returns:
         FOCA application.
@@ -46,11 +48,14 @@ def init_app() -> FlaskApp:
         ValueError: The config is invalid (raised by FOCA), e.g., groups are
             mapped without a group claim, or there are no admins (unless
             admins are optional, `security.access_control.require_admin`),
-            or a configured index conflicts with an existing index.
+            or a configured index conflicts with an existing index, or
+            plugins can't be loaded, or the config has keys of earlier
+            versions (e.g., `custom.middlewares`; with a hint).
     """
     foca = Foca(
         config_file=Path(__file__).resolve().parent / "config.yaml",
         custom_config_model="pro_tes.config_models.CustomConfig",
+        gateway=GATEWAY,
     )
     try:
         app = foca.create_app()

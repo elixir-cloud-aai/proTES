@@ -49,10 +49,11 @@ from typing import Any
 from urllib.parse import quote, quote_plus
 
 from foca import get_config, get_custom_config
-from foca.plugins import Backend
+from foca.plugins import Backend, BackendResponse, Headers, OutboundRequest
 from foca.plugins.backends import BackendList, RegistryEntry, ServiceEntry
 from foca.utils.http import HttpError, check_public_host
 import requests
+from requests.structures import CaseInsensitiveDict
 import tes
 from tes.utils import unmarshal
 from urllib3.exceptions import ConnectTimeoutError
@@ -516,14 +517,31 @@ class TesClient(tes.HTTPClient):
         self.backend = backend
         self.entry = entry
 
-    def create_task(self, task: tes.Task) -> str:
-        """Create a task (`POST /tasks`), with a single request.
+    def forward(
+        self,
+        outbound: OutboundRequest,
+        task: tes.Task,
+        connect_timeout: float | None = None,
+    ) -> tuple[str, BackendResponse]:
+        """Relay a task, with a single request, as the plugins prepared it.
+
+        The request has the method, path (below the URL of the backend),
+        query and headers of the outbound request (cf.
+        :py:meth:`foca.plugins.PipelineRun.attempts`; usually `POST
+        /ga4gh/tes/v1/tasks`), the task as body, and the credentials of the
+        backend (or those that the plugins chose by name, `outbound.auth`),
+        added after the plugins ran.
 
         Args:
-            task: The task.
+            outbound: Outbound request, after the `forward` phase.
+            task: Task to relay (cf. :py:func:`pro_tes.gateway.relayed_task`).
+            connect_timeout: Timeout of connecting, in seconds, if shorter
+                than `CONNECT_TIMEOUT` (e.g., the time left to forward the
+                task).
 
         Returns:
-            Identifier of the task at the backend.
+            Identifier of the task at the backend, and the response of the
+            backend.
 
         Raises:
             requests.RequestException: The backend did not accept the task:
@@ -535,7 +553,15 @@ class TesClient(tes.HTTPClient):
                 accepted the task, but did not confirm it with its
                 identifier.
         """
-        response = self._post(path="tasks", data=task.as_json())
+        response = self._send(
+            method=outbound.method,
+            url=f"{self.url}{outbound.path}",
+            data=task.as_json(),
+            params=outbound.query,
+            headers=dict(outbound.headers),
+            auth=outbound.auth,
+            connect_timeout=connect_timeout,
+        )
         try:
             body = response.json()
         except ValueError:
@@ -543,9 +569,14 @@ class TesClient(tes.HTTPClient):
         task_id = body.get("id") if isinstance(body, dict) else None
         if not isinstance(task_id, str) or not task_id:
             raise BackendOutcomeUnknown(
-                f"TES backend {self.url} accepted the task without an identifier"
+                f"TES backend {self.url} accepted the task without an identifier",
+                reason="no_task_id",
             )
-        return task_id
+        return task_id, BackendResponse(
+            status=response.status_code,
+            headers=Headers(dict(response.headers)),
+            payload=body,
+        )
 
     def get_task(self, task_id: str, view: str = "BASIC") -> tes.Task:
         """Get a task (`GET /tasks/{id}`), with a single request.
@@ -585,14 +616,35 @@ class TesClient(tes.HTTPClient):
             pro_tes.exceptions.BackendOutcomeUnknown: The backend may have
                 canceled the task, but did not confirm it.
         """
-        self._post(path=f"tasks/{quote_id(task_id)}:cancel")
+        self._send(
+            method="POST", url=f"{self.url}/{API_PATH}/tasks/{quote_id(task_id)}:cancel"
+        )
 
-    def _post(self, path: str, data: str | None = None) -> requests.Response:
-        """Send a `POST` request once, to the API path of the backend.
+    def _send(
+        self,
+        method: str,
+        url: str,
+        data: str | None = None,
+        params: dict[str, list[str]] | None = None,
+        headers: dict[str, str] | None = None,
+        auth: str | None = None,
+        connect_timeout: float | None = None,
+    ) -> requests.Response:
+        """Send a request once, e.g., a `POST` request to create a task.
+
+        Redirects are not followed.
 
         Args:
-            path: Path of the request, relative to the API path.
+            method: HTTP method.
+            url: URL of the request.
             data: JSON body of the request.
+            params: Query parameters of the request.
+            headers: Headers of the request; credentials and the media type
+                of the body are set after them.
+            auth: Name of the credentials to use; `None` for those of the
+                backend.
+            connect_timeout: Timeout of connecting, in seconds, if shorter
+                than `CONNECT_TIMEOUT`.
 
         Returns:
             The response, with a success status (2xx).
@@ -610,19 +662,29 @@ class TesClient(tes.HTTPClient):
                 server error (5xx).
         """
         # may raise before anything is sent, e.g., without credentials
-        kwargs = self._request_params(data=data)
-        timeout = kwargs.pop("timeout")
+        kwargs = self._request_params(data=data, params=params, auth=auth)
+        connect, read = kwargs.pop("timeout")
+        if connect_timeout is not None:
+            connect = min(connect, connect_timeout)
+        merged = CaseInsensitiveDict(headers or {})
+        merged.update(kwargs["headers"])
+        kwargs["headers"] = merged
         # e.g., redirects of authentication gateways would turn requests
         # into `GET` requests, whose answers could be taken for confirmations
         kwargs["allow_redirects"] = False
-        url = f"{self.url}/{API_PATH}/{path}"
         try:
-            response = requests.post(url, timeout=timeout, **kwargs)
+            response = requests.request(method, url, timeout=(connect, read), **kwargs)
         except requests.RequestException as exc:
             if not_sent(exc):
                 raise
+            reason = (
+                "read_timeout"
+                if isinstance(exc, requests.ReadTimeout)
+                else "connection_lost"
+            )
             raise BackendOutcomeUnknown(
-                f"Outcome of POST {url} unknown: {type(exc).__name__}"
+                f"Outcome of {method} {url} unknown: {type(exc).__name__}",
+                reason=reason,
             ) from exc
         if 200 <= response.status_code < 300:
             return response
@@ -630,20 +692,27 @@ class TesClient(tes.HTTPClient):
             # e.g., gateways answer 502, 503 or 504 also when the backend
             # behind them got the request
             raise BackendOutcomeUnknown(
-                f"Outcome of POST {url} unknown: status {response.status_code}"
+                f"Outcome of {method} {url} unknown: status {response.status_code}",
+                reason=f"http_{response.status_code}",
             )
         raise requests.HTTPError(
-            f"POST {url} failed: status {response.status_code}", response=response
+            f"{method} {url} failed: status {response.status_code}",
+            response=response,
         )
 
     def _request_params(
-        self, data: str | None = None, params: dict[str, Any] | None = None
+        self,
+        data: str | None = None,
+        params: dict[str, Any] | None = None,
+        auth: str | None = None,
     ) -> dict[str, Any]:
         """Compile the parameters of a request, with credentials.
 
         Args:
             data: JSON body of the request.
             params: Query parameters of the request.
+            auth: Name of the credentials to use (`client_credentials`,
+                `basic` or `none`); `None` for those of the backend.
 
         Returns:
             Keyword arguments of the request (`requests`), with the timeouts
@@ -667,7 +736,8 @@ class TesClient(tes.HTTPClient):
                     check_public_host(self.backend.url)
                 except HttpError as exc:
                     raise BackendAddressNotAllowed(str(exc)) from exc
-        auth = self.backend.auth
+        if auth is None:
+            auth = self.backend.auth
         if auth == "client_credentials":
             token = token_provider.get_token(config=config)
             kwargs["headers"]["Authorization"] = f"Bearer {token}"
@@ -702,3 +772,61 @@ def create_client(host: str, base_path: str = "") -> TesClient:
     backend, entry = get_backend(url=host)
     url = f"{host.rstrip('/')}/{base_path.strip('/')}"
     return TesClient(url=url, backend=backend, entry=entry)
+
+
+def client_for(backend: Backend) -> TesClient:
+    """Create a client of a candidate backend, e.g., of a pipeline run.
+
+    Args:
+        backend: Backend, as expanded from `custom.tes.backends` (cf.
+            :py:func:`get_backends`).
+
+    Returns:
+        Client of the backend, with the credentials of its entry.
+
+    Raises:
+        pro_tes.exceptions.BackendNotConfigured: No entry of
+            `custom.tes.backends` yields the backend (e.g., the list changed
+            meanwhile).
+    """
+    try:
+        entry = get_backend_list().entry_for(backend)
+    except KeyError as exc:
+        raise BackendNotConfigured(
+            f"TES backend not configured: {backend.url}"
+        ) from exc
+    return TesClient(url=backend.url, backend=backend, entry=entry)
+
+
+# Reason codes of errors of attempts to relay tasks, by error class; the
+# first match counts
+_REASONS: tuple[tuple[type[Exception], str], ...] = (
+    (BackendAuthError, "no_credentials"),
+    (BackendNotConfigured, "unknown_backend"),
+    (ValueError, "invalid_backend"),
+    (BackendAddressNotAllowed, "address_not_allowed"),
+    (requests.ConnectTimeout, "connect_timeout"),
+)
+
+
+def forward_reason(exc: Exception) -> str:
+    """Get the reason code of a failed attempt to relay a task.
+
+    Args:
+        exc: Error of the attempt (cf. :py:meth:`TesClient.forward`).
+
+    Returns:
+        Reason code (cf. :py:meth:`foca.plugins.Attempt.failed`), e.g.,
+        `no_credentials`, `address_not_allowed`, `connect_timeout`,
+        `connect_error`, `http_403`, or that of an unknown outcome (cf.
+        :py:class:`pro_tes.exceptions.BackendOutcomeUnknown`).
+    """
+    if isinstance(exc, BackendOutcomeUnknown):
+        return exc.reason
+    if isinstance(exc, requests.HTTPError):
+        response = exc.response
+        return "rejected" if response is None else f"http_{response.status_code}"
+    for cls, reason in _REASONS:
+        if isinstance(exc, cls):
+            return reason
+    return "connect_error"

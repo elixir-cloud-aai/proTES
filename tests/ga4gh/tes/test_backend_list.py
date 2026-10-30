@@ -360,7 +360,7 @@ def test_task_relayed_to_discovered_backend(
     fake_registry.add("i", "https://internal.example.org")
     fake_registry.hosts["internal.example.org"] = ["10.0.0.1"]
     response = client.post(f"{BASE_PATH}/tasks", json=TASK)
-    assert response.status_code == 500
+    assert response.status_code == 503
     fake_registry.add("a", "https://tes1.example.org/ga4gh/tes/v1")
     clock.now += 300
     response = client.post(f"{BASE_PATH}/tasks", json=TASK)

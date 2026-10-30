@@ -193,9 +193,6 @@ def test_smoke_test_config(
         smoke["services"]["protes-worker"]["environment"]
         == smoke["services"]["protes"]["environment"]
     )
-    assert custom.middlewares.root == [
-        ["pro_tes.plugins.middlewares.task_distribution.random.TaskDistributionRandom"]
-    ]
 
 
 def test_run_app(app: FlaskApp, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -9,7 +9,6 @@ from pydantic import (
     ConfigDict,
     Field,
     PositiveInt,
-    RootModel,
     model_validator,
 )
 
@@ -384,30 +383,6 @@ class StoreLogs(ConfigModel):
     execution_trace: bool = True
 
 
-class Middlewares(RootModel[list[list[str]]]):
-    """Middleware configuration.
-
-    Args:
-        root: A list of middleware class paths.
-
-    Attributes:
-        root: A list of middleware class paths.
-    """
-
-    root: list[list[str]] = [
-        [
-            (
-                "pro_tes.plugins.middlewares.task_distribution.distance."
-                "TaskDistributionDistance"
-            ),
-            (
-                "pro_tes.plugins.middlewares.task_distribution.random."
-                "TaskDistributionRandom"
-            ),
-        ]
-    ]
-
-
 class CustomConfig(ConfigModel):
     """Custom app configuration.
 
@@ -415,19 +390,16 @@ class CustomConfig(ConfigModel):
         controllers: All controller-related config.
         tes: TES backends and how proTES calls them.
         storeLogs: Logging preferences (camelCase, unlike other keys).
-        middlewares: Middleware class paths.
 
     Attributes:
         controllers: All controller-related config.
         tes: TES backends and how proTES calls them.
         storeLogs: Logging preferences (camelCase, unlike other keys).
-        middlewares: Middleware class paths.
     """
 
     controllers: Controllers = Controllers()
     tes: Tes = Tes()
     storeLogs: StoreLogs = StoreLogs()
-    middlewares: Middlewares = Middlewares()
 
     @model_validator(mode="before")
     @classmethod

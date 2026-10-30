@@ -6,6 +6,7 @@ from typing import Any
 from connexion import FlaskApp
 from cryptography.hazmat.primitives.asymmetric import rsa
 from flask.testing import FlaskClient
+from foca.plugins import Principal
 from pymongo import MongoClient
 import pytest
 import yaml
@@ -21,9 +22,17 @@ from tests.conftest import (
     OUTSIDER,
     USER,
     make_headers,
+    reset_gateway,
     set_overlays,
 )
-from tests.ga4gh.tes.conftest import BACKENDS, BASE_PATH, TASK, FakeBackend, stored
+from tests.ga4gh.tes.conftest import (
+    BACKENDS,
+    BASE_PATH,
+    TASK,
+    FakeBackend,
+    make_inbound,
+    stored,
+)
 
 
 def task_item_operations(task_id: str) -> list[tuple[str, str]]:
@@ -302,7 +311,7 @@ def test_owner_failed_task(client: FlaskClient, backend: type[FakeBackend]) -> N
     """Tasks that could not be forwarded are not kept, so users don't own them."""
     backend.failing.update(BACKENDS)
     response = client.post(f"{BASE_PATH}/tasks", json=TASK)
-    assert response.status_code == 500
+    assert response.status_code == 503
     assert list_ids(client, USER) == []
 
 
@@ -364,7 +373,12 @@ def test_owner_unidentified(app: FlaskApp, monkeypatch: pytest.MonkeyPatch) -> N
         app.app.test_request_context(),
         pytest.raises(Unauthorized, match="could not be identified"),
     ):
-        task_runs.TaskRuns().create_task(task=TASK, collection="/tasks")
+        task_runs.TaskRuns().create_task(
+            task=TASK,
+            collection="/tasks",
+            inbound=make_inbound(TASK),
+            principal=Principal(),
+        )
 
 
 @pytest.mark.parametrize(
@@ -435,6 +449,7 @@ def test_clients(
         encoding="utf-8",
     )
     set_overlays(monkeypatch, overlay)
+    reset_gateway()
     client = init_app().app.test_client()
     response = client.get(f"{BASE_PATH}/tasks", headers=make_headers(claims=claims))
     assert response.status_code == status
@@ -463,6 +478,7 @@ def test_named_policies(
         encoding="utf-8",
     )
     set_overlays(monkeypatch, overlay)
+    reset_gateway()
     client = init_app().app.test_client()
     client.environ_base["HTTP_AUTHORIZATION"] = make_headers()["Authorization"]
     response = client.post(f"{BASE_PATH}/tasks", json=TASK)
