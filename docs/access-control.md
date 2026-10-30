@@ -145,7 +145,8 @@ Which identity providers are trusted, for which audiences, and which groups
 have which role is deployment configuration: the base config has no
 defaults, and the app refuses to start without trusted issuers, without an
 audience (unless `security.auth.verify_audience` is false, which accepts
-tokens for any app) and without a group mapped to the role `admin` (unless
+tokens for any app, or each issuer has an audience of its own, see below)
+and without a group mapped to the role `admin` (unless
 `security.access_control.require_admin` is false). Set them in a [config
 overlay](configuration.md), e.g.:
 

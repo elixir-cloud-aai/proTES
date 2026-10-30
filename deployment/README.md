@@ -56,7 +56,9 @@ sets:
   issuer, which replaces it for the issuer's tokens), if groups are mapped.
 
 These booleans are checked as the app parses them (e.g., `"no"` is
-`false`); rendering fails on other values.
+`false`); rendering fails on other values. Rendering also fails on issuer
+maps with other keys, or with an `audience` or `claim_groups` that the app
+refuses; the app checks the other settings of issuers on startup.
 
 The TES instances that tasks are forwarded to are listed in `tes.backends`,
 in order, with the keys of the app's `custom.tes.backends` in camelCase

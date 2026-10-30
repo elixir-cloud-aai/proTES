@@ -770,7 +770,8 @@ def test_issuer_settings() -> None:
     E.g., to trust a second issuer, keeping the subjects of the first one
     bare (`namespace: ""`, see "Upgrading" in the docs); their audiences and
     group claims replace the global ones, which are then not required. The
-    app's config model accepts the rendered settings.
+    app's config model (FOCA's, the contract of the chart's checks) accepts
+    the rendered settings.
     """
     issuers = [
         {
@@ -814,22 +815,18 @@ def test_issuers_mixed() -> None:
     [
         [{"issuer": "https://x.org/", "audience": ["a"]}, "https://y.org/"],
         [{"issuer": "https://x.org/"}],
-        [{"issuer": "https://x.org/", "audience": []}],
-        [{"issuer": "https://x.org/", "audience": [" "]}],
         [{"issuer": "https://x.org/", "audience": None}],
-        [{"issuer": "https://x.org/", "audience": "a"}],
         [
             {"issuer": "https://x.org/", "audience": ["a"]},
             {"issuer": "https://y.org/"},
         ],
     ],
-    ids=["url", "unset", "empty", "blank", "null", "string", "last-unset"],
+    ids=["url", "unset", "null", "last-unset"],
 )
 def test_issuer_audience_required(issuers: list[Any]) -> None:
     """Without a global audience, each issuer needs an audience of its own.
 
-    A list of non-blank client IDs, which replaces the global audience for
-    the issuer's tokens, as in the app.
+    It replaces the global audience for the issuer's tokens, as in the app.
     """
     error = _render_error(
         "--set-json",
@@ -847,10 +844,8 @@ def test_issuer_audience_required(issuers: list[Any]) -> None:
         (["", None], True),
         ([None, None], True),
         (["", "null"], True),
-        (["", " groups"], False),
-        (["", 1], False),
     ],
-    ids=["all-replaced", "one-replaced", "global", "null", "padded", "number"],
+    ids=["all-replaced", "one-replaced", "global", "null"],
 )
 def test_issuer_group_claim_replaced(claims: list[Any], valid: bool) -> None:
     """Group claims of issuers replace the global one, as in the app.
@@ -872,6 +867,103 @@ def test_issuer_group_claim_replaced(claims: list[Any], valid: bool) -> None:
         return
     error = _render_error(*args, issuer=None)
     assert "config.security.access_control.claim_groups must name the claim" in error
+
+
+@pytest.mark.parametrize(
+    ("setting", "error"),
+    [
+        ({"audience": []}, "audience of issuer https://x.org/ must list"),
+        ({"audience": [" "]}, "audience of issuer https://x.org/ must list"),
+        ({"audience": ["a", 1]}, "audience of issuer https://x.org/ must list"),
+        ({"audience": "a"}, "audience of issuer https://x.org/ must list"),
+        ({"claim_groups": " g"}, "claim_groups of issuer https://x.org/ must be"),
+        ({"claim_groups": 1}, "claim_groups of issuer https://x.org/ must be"),
+        ({"claim_group": "g"}, "claim_group of issuer https://x.org/ is no setting"),
+    ],
+    ids=["empty", "blank", "number", "string", "padded", "claim-number", "typo"],
+)
+def test_issuer_settings_invalid(setting: dict[str, Any], error: str) -> None:
+    """Rendering fails on settings of issuers that the app refuses.
+
+    Also next to a valid global audience and group claim, which the
+    issuer's settings would replace.
+    """
+    issuers = [{"issuer": "https://x.org/", **setting}]
+    assert error in _render_error(
+        "--set-json", f"config.security.auth.issuers={json.dumps(issuers)}"
+    )
+
+
+def test_audience_invalid_with_issuer_audiences() -> None:
+    """Rendering fails on a global audience the app refuses, if not required.
+
+    The library checks it only if it is required (`requireAudience`).
+    """
+    issuers = [{"issuer": "https://x.org/", "audience": ["a"]}]
+    error = _render_error(
+        "--set-json",
+        f"config.security.auth.issuers={json.dumps(issuers)}",
+        "--set-json",
+        'config.security.auth.audience="a"',
+        audience=None,
+    )
+    assert "config.security.auth.audience must list" in error
+
+
+@pytest.mark.parametrize(
+    ("issuers", "required"),
+    [
+        (["https://x.org/"], "true"),
+        ([{"issuer": "https://x.org/"}], "true"),
+        ([{"issuer": "https://x.org/", "audience": None}], "true"),
+        (
+            [{"issuer": "https://x.org/", "audience": ["a"]}, "https://y.org/"],
+            "true",
+        ),
+        ([{"issuer": "https://x.org/", "audience": ["a"]}], "false"),
+        (
+            [
+                {"issuer": "https://x.org/", "audience": ["a"]},
+                {"issuer": "https://y.org/", "audience": ["b"]},
+            ],
+            "false",
+        ),
+    ],
+    ids=["url", "unset", "null", "one-url", "own", "all-own"],
+)
+def test_require_audience(issuers: list[Any], required: str) -> None:
+    """The library requires a global audience unless each issuer has one."""
+    template = 'required: {{ include "protes.requireAudience" . | quote }}'
+    docs = render_with(
+        {
+            "require-audience-test.yaml": (
+                "apiVersion: v1\nkind: ConfigMap\nmetadata:\n"
+                "  name: require-audience-test\ndata:\n  " + template + "\n"
+            )
+        },
+        "--set",
+        "hostName=tes.example.org",
+        "--set-json",
+        f"config.security.auth.issuers={json.dumps(issuers)}",
+    )
+    (configmap,) = [
+        doc for doc in docs if doc["metadata"]["name"] == "require-audience-test"
+    ]
+    assert configmap["data"]["required"] == required
+
+
+def test_issuer_audience_not_verified() -> None:
+    """Issuers need no audience if audiences are not verified."""
+    issuers = [{"issuer": "https://x.org/", "namespace": ""}]
+    docs = _render(
+        "--set-json",
+        f"config.security.auth.issuers={json.dumps(issuers)}",
+        "--set",
+        "config.security.auth.verify_audience=false",
+        issuer=None,
+        audience=None,
+    )
+    assert _overlay(docs)["security"]["auth"]["issuers"] == issuers
 
 
 def test_issuer_group_claim() -> None:
