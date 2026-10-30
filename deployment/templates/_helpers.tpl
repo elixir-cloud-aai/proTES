@@ -5,7 +5,8 @@ YAML; the templates are called with a dict of the root context (`root`) and
 these settings (`settings`). They follow the base config in the image
 (`pro_tes/config.yaml`): its size limit of request bodies
 (`server.max_content_length`), its token issuers (so an audience is
-required), its database (`db.dbs`) and that of access control
+required, unless each issuer has one, cf. `protes.requireAudience`), its
+database (`db.dbs`) and that of access control
 (`security.access_control.db_name`). The generated config sets the public
 URL of the app (`server.public_url`, cf. `protes.publicUrl`), if known,
 and the TES backends (`custom.tes.backends`) to those of `tes.backends`, if
@@ -17,7 +18,7 @@ template Helm renders first.
 {{- include "protes.validate" . -}}
 valuesKey: protes
 maxContentLength: 1048576
-requireAudience: true
+requireAudience: {{ include "protes.requireAudience" . }}
 mongodb:
   databases: [taskStore]
   accessControlDatabase: taskStore
@@ -178,10 +179,11 @@ or `hostName`; `config.server.public_url` takes precedence, also if
 As the app on startup, refuse to render unless access control is enabled
 and enforced (`security.access_control.enabled` and `enforce`, so that only
 the owners of tasks can access them), without trusted token issuers, with a
-group mapping but no group claim, or without a group mapped to the role
-`admin` (unless admins are explicitly not required,
-`security.access_control.require_admin`, FOCA's); renders nothing. The
-audience is checked by the library (`requireAudience`). Fails on
+group mapping but no group claim (global or of an issuer), or without a
+group mapped to the role `admin` (unless admins are explicitly not
+required, `security.access_control.require_admin`, FOCA's); renders
+nothing. The audience is checked by the library (`requireAudience`, cf.
+`protes.requireAudience`). Fails on
 `custom.access_control` (its `require_admin` moved to FOCA's setting).
 */}}
 {{- define "protes.checkSecurity" -}}
@@ -236,13 +238,29 @@ audience is checked by the library (`requireAudience`). Fails on
 {{- end -}}
 {{- /*
 Issuers are compared with the `iss` claim as written, so surrounding
-whitespace is refused, too
+whitespace is refused, too. Issuers are URLs, or maps with the URL
+(`issuer`) and settings of their own (FOCA's `IssuerConfig`, which the app
+validates), whose group claims (`claim_groups`) replace the global one for
+their tokens, unless unset or null: as in the app, group mappings need a
+group claim of at least one issuer
 */ -}}
-{{- $issuersError := "config.security.auth.issuers must list the trusted token issuers (the iss claim of their tokens, e.g., https://login.example.org/oidc/, without surrounding whitespace): the app trusts none by default" -}}
+{{- $issuersError := "config.security.auth.issuers must list the trusted token issuers (the iss claim of their tokens, e.g., https://login.example.org/oidc/, without surrounding whitespace; or maps of it, as issuer, and settings of the issuer): the app trusts none by default" -}}
 {{- if not (and (kindIs "slice" $issuers) $issuers) -}}
 {{- fail $issuersError -}}
 {{- end -}}
+{{- $anyClaim := false -}}
 {{- range $issuer := $issuers -}}
+{{- $claim := $claimGroups -}}
+{{- if kindIs "map" $issuer -}}
+{{- /* null, as unset, means the global claim (`get` returns "" for missing keys) */ -}}
+{{- if and (hasKey $issuer "claim_groups") (not (kindIs "invalid" (get $issuer "claim_groups"))) -}}
+{{- $claim = get $issuer "claim_groups" -}}
+{{- end -}}
+{{- $issuer = get $issuer "issuer" -}}
+{{- end -}}
+{{- if and (kindIs "string" $claim) $claim (eq $claim (trim $claim)) -}}
+{{- $anyClaim = true -}}
+{{- end -}}
 {{- if not (and (kindIs "string" $issuer) (trim $issuer) (eq $issuer (trim $issuer))) -}}
 {{- fail $issuersError -}}
 {{- end -}}
@@ -261,12 +279,37 @@ whitespace is refused, too
 {{- if not (and (eq $enabled "true") (eq $enforce "true")) -}}
 {{- fail "config.security.access_control.enabled and enforce must be true (as by default), so that only the owners of tasks can access them" -}}
 {{- end -}}
-{{- if and $mapping (not $claimGroups) -}}
+{{- if and $mapping (not $anyClaim) -}}
 {{- fail "config.security.access_control.claim_groups must name the claim with the groups of users (e.g., groups), as groups are mapped to roles (group_mapping); also add it to config.security.auth.userinfo_claims if the identity provider releases it via user info only" -}}
 {{- end -}}
 {{- if and (eq $requireAdmin "true") (not (has "admin" (values $mapping))) -}}
 {{- fail "config.security.access_control.group_mapping must map a group to the role admin (e.g., the admin group of the identity provider), or set config.security.access_control.require_admin to false" -}}
 {{- end -}}
+{{- end -}}
+
+{{/*
+Whether an audience is required (`requireAudience` of the settings, checked
+by the library; renders "true" or "false"): unless each trusted issuer has
+an audience of its own (a map with a list of non-blank `audience`s), which
+replaces the global one (`security.auth.audience`) for its tokens, as in
+FOCA's `IssuerConfig`.
+*/}}
+{{- define "protes.requireAudience" -}}
+{{- $issuers := dig "security" "auth" "issuers" list (.Values.config | default dict) -}}
+{{- $own := and (kindIs "slice" $issuers) (gt (len $issuers) 0) -}}
+{{- range $issuer := (ternary $issuers (list) $own) -}}
+{{- $audience := and (kindIs "map" $issuer) (get $issuer "audience") -}}
+{{- if not (and (kindIs "slice" $audience) (gt (len $audience) 0)) -}}
+{{- $own = false -}}
+{{- else -}}
+{{- range $client := $audience -}}
+{{- if not (and (kindIs "string" $client) (trim $client)) -}}
+{{- $own = false -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- not $own -}}
 {{- end -}}
 
 {{/*

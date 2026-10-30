@@ -37,10 +37,13 @@ sets:
 - access control, enabled and enforced (as by default:
   `config.security.access_control.enabled` and `enforce`), so that only the
   owners of tasks can access them;
-- the trusted token issuers (`config.security.auth.issuers`);
+- the trusted token issuers (`config.security.auth.issuers`): URLs, or
+  maps of the URL (`issuer`) and settings of the issuer (`namespace`,
+  `audience`, `claim_groups`, `userinfo_claims`, see [Deployment
+  settings](https://protes.readthedocs.io/en/latest/access-control/#deployment-settings));
 - the audience (`config.security.auth.audience`), unless
   `config.security.auth.verify_audience` is `false`, which accepts tokens for
-  any audience;
+  any audience, or each issuer is a map with an `audience` of its own;
 - an admin group mapped to the role `admin`
   (`config.security.access_control.group_mapping`), unless
   `config.security.access_control.require_admin` is `false` (rendering
@@ -49,7 +52,8 @@ sets:
   `false` if only rules of `config.security.access_control.policies` grant
   the role;
 - the claim with the groups of users
-  (`config.security.access_control.claim_groups`), if groups are mapped.
+  (`config.security.access_control.claim_groups`, or `claim_groups` of an
+  issuer, which replaces it for the issuer's tokens), if groups are mapped.
 
 These booleans are checked as the app parses them (e.g., `"no"` is
 `false`); rendering fails on other values.
@@ -88,7 +92,8 @@ broker:
 config:
   security:
     auth:
-      # Trusted token issuers (`iss` claim)
+      # Trusted token issuers (`iss` claim), or maps of the issuer
+      # (`issuer`) and settings of their own (see Configuration)
       issuers: ["https://login.example.org/oidc/"]
       # Client IDs of the apps calling proTES
       audience: ["my-portal-client-id"]
