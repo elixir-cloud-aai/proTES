@@ -30,9 +30,10 @@ updates:
       python-dependencies:
         patterns: ["*"]
         exclude-patterns: ["connexion", "foca"]
-  # Actions in the workflows and in the local composite action
+  # Actions in the workflows, including the pins of the shared actions of
+  # `elixir-cloud-aai/.github`
   - package-ecosystem: github-actions
-    directories: ["/", "/.github/actions/scan-image"]
+    directory: /
     schedule:
       interval: monthly
     target-branch: dev

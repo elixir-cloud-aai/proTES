@@ -124,7 +124,8 @@ def test_gate_uses_shared_action() -> None:
 def test_shared_actions_pinned() -> None:
     """The shared actions of `elixir-cloud-aai/.github` are pinned to a commit.
 
-    All pins name the same full commit SHA (bumped together). The YAML drops
+    All pins name the same full commit SHA (bumped together), and no
+    workflow uses a local copy of an action. The YAML drops
     comments, so the test below checks the release comments (`# vX.Y.Z`) in
     the files' text.
     """
@@ -134,8 +135,7 @@ def test_shared_actions_pinned() -> None:
         for job in _load(path)["jobs"].values():
             for step in job.get("steps", []):
                 uses = step.get("uses", "")
-                # TODO(#329): also refuse local actions (`./`) once the
-                # shared `scan-image` action replaces the local copy
+                assert not uses.startswith("./"), (path.name, uses)
                 if uses.startswith("elixir-cloud-aai/.github/"):
                     match = pinned.fullmatch(uses)
                     assert match, (path.name, uses)

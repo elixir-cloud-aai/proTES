@@ -91,7 +91,9 @@ suppress a false positive, add a comment with the reason to the line:
 
 The gate of the CI workflow (`passed`, "CI passed", the only required
 check) uses the shared `gate` action of
-[elixir-cloud-aai/.github](https://github.com/elixir-cloud-aai/.github).
+[elixir-cloud-aai/.github](https://github.com/elixir-cloud-aai/.github), and
+the image scans its `scan-image` action (see [Versioning and
+releases](#versioning-and-releases)); no workflow uses a local action.
 Shared actions are pinned to the full commit SHA of a release, with the
 release in a comment (`@<sha> # vX.Y.Z`); all pins name the same release, so
 bump them together (Dependabot does), as `tests/test_workflows.py` checks.
@@ -399,8 +401,9 @@ the versions of tags (`v*`), so that the docs linked from packaged charts
 exist.
 
 The CI workflow builds the image of every pull request and scans it with
-[Trivy](https://trivy.dev/) (`.github/actions/scan-image`), and a weekly
-workflow (`scan.yml`) scans `latest`. For pushes to `dev` (in forks only if
+[Trivy](https://trivy.dev/) (the shared action `scan-image` of
+elixir-cloud-aai/.github), and a weekly workflow (`scan.yml`) scans
+`latest`. For pushes to `dev` (in forks only if
 they set `DOCKERHUB_ORG`) and for releases, the workflows push the image by
 digest, untagged, scan exactly that digest in a job without credentials or
 signing identity, and only if the scan passes attest, sign and tag it, so
@@ -421,8 +424,11 @@ results. To accept a finding (e.g., if it doesn't affect the app), add it to
 (`statement`) and an expiry date (`expired_at`), after which the scans fail
 again. Trivy also scans for secrets (critical and high ones fail the scans
 too); accept those under `secrets:` in the same file. Dependabot updates the
-actions, but not the Trivy version (`version:` in
-`.github/actions/scan-image/action.yml`): bump it by hand. Images of commits
+actions, including the pins of the shared actions (`@<commit> # vX.Y.Z`), to
+new releases of `elixir-cloud-aai/.github`; the Trivy version is the
+default of the shared action's `trivy-version` input, which Dependabot
+doesn't bump here: change it in the shared action, whose release then
+reaches this repository as a Dependabot update of the pins. Images of commits
 on `dev` are signed and attested like release images, by the CI workflow.
 All of this needs no secrets beyond the Docker Hub ones: signing uses the
 workflows' OIDC tokens (permission `id-token: write`). Re-running all jobs
