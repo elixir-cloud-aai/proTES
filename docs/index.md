@@ -46,9 +46,10 @@ processing or validation, or the selection of suitable TES instances
 considering data use restrictions and client preferences. By default, tasks
 go to the TES instances in their configured order, to the next one if a TES
 instance doesn't accept the task; routing plugins of
-[foca-plugins](https://github.com/elixir-cloud-aai/foca-plugins) distribute
-tasks randomly, for load balancing, or to the TES instances closest to the
-task's input data, to bring compute to the data.
+[foca-plugins](https://github.com/elixir-cloud-aai/foca-plugins), once
+they are published, distribute tasks randomly, for load balancing, or to the
+TES instances closest to the task's input data, to bring compute to the
+data.
 
 proTES is a [Flask](https://flask.palletsprojects.com/) app built with
 [FOCA](https://github.com/elixir-cloud-aai/foca), configured declaratively in

@@ -4,14 +4,14 @@ from typing import Any
 
 from connexion import FlaskApp
 from foca import get_custom_config
-from foca.plugins import OutboundRequest
+from foca.plugins import GatewayError, OutboundRequest
 from foca.plugins.backends import ServiceEntry
 from pydantic import ValidationError
 import pytest
 
 from pro_tes import gateway
 from pro_tes.config_models import CustomConfig
-from pro_tes.exceptions import InlineContentTooLarge
+from pro_tes.exceptions import InlineContentTooLarge, exceptions
 
 TASK: dict[str, Any] = {
     "executors": [{"image": "alpine", "command": ["true"]}],
@@ -71,16 +71,35 @@ def test_relayed_task() -> None:
     assert gateway.relayed_task({"executors": []}, prefix="gateway.").tags is None
 
 
-def test_check_outbound() -> None:
-    """Outbound requests need tasks that can be relayed."""
+def test_relayed_task_credentials() -> None:
+    """Relayed tasks have no credentials in URLs; the payload is kept."""
+    payload: dict[str, Any] = {
+        "executors": [{"image": "alpine", "command": ["true"]}],
+        "inputs": [{"url": "s3://key:secret@bucket/in", "path": "/in"}],
+    }
+    task = gateway.relayed_task(payload, prefix="gateway.")
+    assert task.inputs[0].url == "s3://bucket/in"
+    assert payload["inputs"][0]["url"] == "s3://key:secret@bucket/in"
+
+
+def test_check_outbound(app: FlaskApp) -> None:
+    """Outbound requests need tasks that can be relayed, within the limits."""
     entry = ServiceEntry(type="ga4gh-tes", url="https://tes.example.org")
     outbound = OutboundRequest(
         backend=entry.backend(), method="POST", path="/tasks", payload=TASK
     )
-    gateway.check_outbound(outbound)
-    outbound.payload = {"executors": "none"}
-    with pytest.raises((TypeError, ValueError)):
+    with app.app.app_context():
         gateway.check_outbound(outbound)
+        outbound.payload = {"executors": "none"}
+        with pytest.raises((TypeError, ValueError)):
+            gateway.check_outbound(outbound)
+        outbound.payload = {
+            "executors": [{"image": "alpine", "command": ["true"]}],
+            "inputs": [{"content": "x" * 32, "path": "/content"}],
+        }
+        get_custom_config(CustomConfig).controllers.post_task.max_inline_content = 16
+        with pytest.raises(InlineContentTooLarge):
+            gateway.check_outbound(outbound)
 
 
 def test_sanitize_task(app: FlaskApp) -> None:
@@ -98,3 +117,10 @@ def test_sanitize_task(app: FlaskApp) -> None:
         with pytest.raises(InlineContentTooLarge):
             gateway.sanitize_task(task)
     assert gateway.sanitize_task(None) is None
+
+
+def test_error_mapping() -> None:
+    """Mapped errors of the plugin engine keep their status."""
+    for exc, entry in exceptions.items():
+        if issubclass(exc, GatewayError):
+            assert entry["status"] == exc.code, exc.__name__

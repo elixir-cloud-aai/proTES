@@ -86,8 +86,9 @@ def handle_url_credentials(
 def check_inline_content(payload: dict[str, Any], limit: int) -> None:
     """Check the size of the inline contents of the inputs of a task.
 
-    Each input's, as the TES specification recommends a minimum size per
-    field; all together are limited by the size of request bodies.
+    The limit applies to the content of each input separately (the TES
+    specification recommends a minimum size per field); all contents
+    together are limited by the size of request bodies.
 
     Args:
         payload: Task (JSON).
@@ -194,13 +195,19 @@ def validate_task(payload: Any) -> None:
 def check_outbound(outbound: OutboundRequest) -> None:
     """Check that the task of an outbound request can be relayed.
 
+    Requests that fail the check are not sent; the next backend is tried.
+
     Args:
         outbound: Outbound request, after the `forward` phase.
 
     Raises:
+        pro_tes.exceptions.BadRequest: A URL is malformed.
+        pro_tes.exceptions.InlineContentTooLarge: An inline content is
+            larger than `custom.controllers.post_task.max_inline_content`.
         TypeError: The task can't be relayed (cf. :py:func:`tes_task`).
         ValueError: The task can't be relayed.
     """
+    sanitize_task(deepcopy(outbound.payload))
     tes_task(outbound.payload)
 
 
@@ -213,13 +220,19 @@ def relayed_task(payload: Any, prefix: str) -> tes.Task:
             (`plugins.tags.prefix`).
 
     Returns:
-        The task, without the fields that TES servers set and without tags
-        under the prefix (cf. :py:func:`foca.plugins.tags.strip_for_forwarding`).
+        The task, without the fields that TES servers set, without tags
+        under the prefix (cf. :py:func:`foca.plugins.tags.strip_for_forwarding`)
+        and without credentials in the URLs of inputs and outputs (also
+        those that plugins of the `forward` phase added).
 
     Raises:
+        pro_tes.exceptions.BadRequest: A URL is malformed.
         TypeError: The task can't be relayed (cf. :py:func:`tes_task`).
         ValueError: The task can't be relayed.
     """
+    payload = deepcopy(payload)
+    if isinstance(payload, dict):
+        handle_url_credentials(payload=payload, mode="strip")
     task = tes_task(payload)
     if isinstance(task.tags, Mapping):
         task.tags = strip_for_forwarding(task.tags, prefix)

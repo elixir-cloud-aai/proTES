@@ -13,12 +13,14 @@ from celery import uuid
 from foca import get_collection, get_custom_config
 from foca.plugins import (
     Attempt,
+    Backend,
     BackendResponse,
     GatewayError,
     InboundRequest,
     NoBackendAvailable,
     Principal,
 )
+from foca.plugins.engine import PipelineRun
 from foca.plugins.runtime import get_host
 from foca.utils.misc import generate_id
 from pymongo.collection import Collection
@@ -246,56 +248,14 @@ class TaskRuns:
             db_document.task.id,
             [backend.id for backend in candidates],
         )
-        prefix = host.conf.tags.prefix
-        accepted: tuple[Attempt, TesClient, BackendResponse, str] | None = None
         try:
-            for attempt in run.attempts(candidates):
-                tes_url = attempt.backend.url
-                db_document.tes_endpoint = TesEndpoint(host=tes_url)
-                try:
-                    cli = client_for(attempt.backend)
-                    remote_task_id, response = cli.forward(
-                        attempt.outbound,
-                        task=relayed_task(attempt.outbound.payload, prefix=prefix),
-                        connect_timeout=attempt.remaining(),
-                    )
-                except BackendOutcomeUnknown as exc:
-                    # the backend may run the task, so it is not sent elsewhere
-                    attempt.unknown(exc.reason)
-                    logger.error(
-                        "Task '%s' may or may not have been accepted by TES"
-                        " endpoint hosted at: %s; not sent to other TES"
-                        " endpoints. Original error message: '%s: %s'",
-                        db_document.task.id,
-                        tes_url,
-                        type(exc).__name__,
-                        exc,
-                    )
-                    db_connector.upsert_fields_in_root_object(
-                        root="tes_endpoint", host=tes_url, base_path=""
-                    )
-                    db_connector.update_task_state(state=TesState.SYSTEM_ERROR.value)
-                    raise
-                except (
-                    requests.RequestException,
-                    BackendAuthError,
-                    ValueError,
-                ) as exc:
-                    # the backend did not accept the task (cf. `TesClient`),
-                    # or has no client (e.g., it is no longer configured,
-                    # `BackendNotConfigured`)
-                    attempt.failed(forward_reason(exc))
-                    logger.warning(
-                        "Task '%s' could not be sent to TES endpoint hosted at:"
-                        " %s. Original error message: '%s: %s'",
-                        db_document.task.id,
-                        tes_url,
-                        type(exc).__name__,
-                        exc,
-                    )
-                    continue
-                accepted = (attempt, cli, response, remote_task_id)
-                break
+            return self._forward(
+                run=run,
+                candidates=candidates,
+                prefix=host.conf.tags.prefix,
+                db_document=db_document,
+                db_connector=db_connector,
+            )
         except GatewayError:
             # no backend accepted the task (in time), or a plugin of the
             # `forward` phase rejected it
@@ -303,18 +263,88 @@ class TaskRuns:
                 db_document=db_document, owner=owner, collection=collection
             )
             raise
-        if accepted is None:
-            # the attempts end with a success, or raise
-            raise RuntimeError("Forwarding ended without outcome")
-        attempt, cli, response, remote_task_id = accepted
-        return self._forwarded(
-            attempt=attempt,
-            cli=cli,
-            response=response,
-            db_document=db_document,
-            db_connector=db_connector,
-            remote_task_id=remote_task_id,
-        )
+
+    def _forward(
+        self,
+        run: PipelineRun,
+        candidates: list[Backend],
+        prefix: str,
+        db_document: DbDocument,
+        db_connector: DbDocumentConnector,
+    ) -> tuple[Any, dict[str, str]]:
+        """Relay a stored task to the backends in turn, until one accepts it.
+
+        Args:
+            run: Pipeline run of the request.
+            candidates: Backends to try, in order (from the `route` phase).
+            prefix: Prefix of the tags reserved for the gateway.
+            db_document: Database document of the task.
+            db_connector: Connector to the database document.
+
+        Returns:
+            Response to the client (cf. :py:meth:`_forwarded`).
+
+        Raises:
+            foca.plugins.GatewayError: No backend accepted the task (in
+                time), or a plugin of the `forward` phase rejected it.
+            pro_tes.exceptions.BackendOutcomeUnknown: A backend may have
+                accepted the task; it is stored as `SYSTEM_ERROR`.
+            RuntimeError: The attempts ended without outcome (a bug of the
+                plugin engine).
+        """
+        for attempt in run.attempts(candidates):
+            tes_url = attempt.backend.url
+            db_document.tes_endpoint = TesEndpoint(host=tes_url)
+            # checked by `check_outbound` before the attempt
+            task = relayed_task(attempt.outbound.payload, prefix=prefix)
+            try:
+                cli = client_for(attempt.backend)
+                remote_task_id, response = cli.forward(
+                    attempt.outbound,
+                    task=task,
+                    connect_timeout=attempt.remaining(),
+                )
+            except BackendOutcomeUnknown as exc:
+                # the backend may run the task, so it is not sent elsewhere
+                attempt.unknown(exc.reason)
+                logger.error(
+                    "Task '%s' may or may not have been accepted by TES"
+                    " endpoint hosted at: %s; not sent to other TES"
+                    " endpoints. Original error message: '%s: %s'",
+                    db_document.task.id,
+                    tes_url,
+                    type(exc).__name__,
+                    exc,
+                )
+                db_connector.upsert_fields_in_root_object(
+                    root="tes_endpoint", host=tes_url, base_path=""
+                )
+                db_connector.update_task_state(state=TesState.SYSTEM_ERROR.value)
+                raise
+            except (requests.RequestException, BackendAuthError, ValueError) as exc:
+                # the backend did not accept the task (cf. `TesClient`), has
+                # no client (e.g., it is no longer configured,
+                # `BackendNotConfigured`), or its entry is invalid
+                attempt.failed(forward_reason(exc))
+                logger.warning(
+                    "Task '%s' could not be sent to TES endpoint hosted at:"
+                    " %s. Original error message: '%s: %s'",
+                    db_document.task.id,
+                    tes_url,
+                    type(exc).__name__,
+                    exc,
+                )
+                continue
+            return self._forwarded(
+                attempt=attempt,
+                cli=cli,
+                response=response,
+                db_document=db_document,
+                db_connector=db_connector,
+                remote_task_id=remote_task_id,
+            )
+        # the attempts end with a success, or raise
+        raise RuntimeError("Forwarding ended without outcome")
 
     def _forwarded(
         self,

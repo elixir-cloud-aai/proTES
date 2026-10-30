@@ -12,6 +12,7 @@ from pathlib import Path
 import time
 from typing import Any
 
+from foca import get_custom_config
 from foca.plugins import (
     Backend,
     BackendResponse,
@@ -27,11 +28,13 @@ import pytest
 import yaml
 
 from pro_tes.app import init_app
+from pro_tes.config_models import CustomConfig
 from tests.conftest import DB, USER, set_overlays
 from tests.ga4gh.tes.conftest import (
     BACKENDS,
     BASE_PATH,
     TASK,
+    TASK_FILES,
     FakeBackend,
     PluginClient,
     relayed,
@@ -131,6 +134,25 @@ class BreakFirst(Plugin[Any, Any]):
         """Break the task for the first backend."""
         if outbound.backend.url == BACKENDS[0]:
             outbound.payload["executors"] = "invalid"
+
+
+class CredentialsForward(Plugin[Any, Any]):
+    """Adds credentials to the URL of the first input while forwarding."""
+
+    def on_forward(self, outbound: OutboundRequest, ctx: Context) -> None:
+        """Add the credentials."""
+        outbound.payload["inputs"][0]["url"] = "s3://key:secret@bucket/in"
+
+
+class ContentFirst(Plugin[Any, Any]):
+    """Adds a large inline content for the first backend."""
+
+    def on_forward(self, outbound: OutboundRequest, ctx: Context) -> None:
+        """Add the content for the first backend."""
+        if outbound.backend.url == BACKENDS[0]:
+            outbound.payload["inputs"] = [
+                {"content": "x" * 32, "path": "/added", "type": "FILE"}
+            ]
 
 
 class RejectForward(Plugin[Any, Any]):
@@ -274,6 +296,35 @@ def test_forward_invalid(
 ) -> None:
     """Tasks that a `forward` plugin made invalid go to the next backend."""
     client = with_plugins({"test.break": BreakFirst}, pipeline=[step("test.break")])
+    assert client.post(f"{BASE_PATH}/tasks", json=TASK).status_code == 200
+    assert [url for url, _ in relayed(backend)] == [BACKENDS[1]]
+
+
+def test_forward_credentials(
+    with_plugins: PluginClient,
+    backend: type[FakeBackend],
+    mongo_client: MongoClient[dict[str, Any]],
+) -> None:
+    """Credentials that `forward` plugins add to URLs are removed, too."""
+    client = with_plugins(
+        {"test.credentials": CredentialsForward}, pipeline=[step("test.credentials")]
+    )
+    response = client.post(f"{BASE_PATH}/tasks", json=TASK_FILES)
+    assert response.status_code == 200
+    ((_, task),) = relayed(backend)
+    assert task.inputs[0].url == "s3://bucket/in"
+    assert "secret" not in str(stored(mongo_client, response.get_json()["id"]))
+
+
+def test_forward_inline_content(
+    with_plugins: PluginClient,
+    backend: type[FakeBackend],
+) -> None:
+    """Too large inline contents that `forward` plugins add aren't sent."""
+    client = with_plugins(
+        {"test.content": ContentFirst}, pipeline=[step("test.content")]
+    )
+    get_custom_config(CustomConfig).controllers.post_task.max_inline_content = 16
     assert client.post(f"{BASE_PATH}/tasks", json=TASK).status_code == 200
     assert [url for url, _ in relayed(backend)] == [BACKENDS[1]]
 
