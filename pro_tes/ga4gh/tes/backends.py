@@ -529,8 +529,8 @@ class TesClient(tes.HTTPClient):
         query and headers of the outbound request (cf.
         :py:meth:`foca.plugins.PipelineRun.attempts`; usually `POST
         /ga4gh/tes/v1/tasks`), the task as body, and the credentials of the
-        backend (or those that the plugins chose by name, `outbound.auth`),
-        added after the plugins ran.
+        backend (none if the plugins set `outbound.auth` to `none`; plugins
+        can't choose other credentials), added after the plugins ran.
 
         Args:
             outbound: Outbound request, after the `forward` phase.
@@ -559,7 +559,10 @@ class TesClient(tes.HTTPClient):
             data=task.as_json(),
             params=outbound.query,
             headers=dict(outbound.headers),
-            auth=outbound.auth,
+            # plugins may drop the credentials of the backend, but not
+            # choose others (e.g., send proTES's token to a backend that
+            # gets none)
+            auth="none" if outbound.auth == "none" else None,
             connect_timeout=connect_timeout,
         )
         try:
@@ -574,7 +577,7 @@ class TesClient(tes.HTTPClient):
             )
         return task_id, BackendResponse(
             status=response.status_code,
-            headers=Headers(dict(response.headers)),
+            headers=response_headers(response),
             payload=body,
         )
 
@@ -665,6 +668,8 @@ class TesClient(tes.HTTPClient):
         kwargs = self._request_params(data=data, params=params, auth=auth)
         connect, read = kwargs.pop("timeout")
         if connect_timeout is not None:
+            if connect_timeout <= 0:
+                raise requests.ConnectTimeout(f"No time left to connect to {url}")
             connect = min(connect, connect_timeout)
         merged = CaseInsensitiveDict(headers or {})
         merged.update(kwargs["headers"])
@@ -752,6 +757,27 @@ class TesClient(tes.HTTPClient):
                 f"Unknown credentials {auth!r} of {self.backend.url}"
             )
         return kwargs
+
+
+def response_headers(response: requests.Response) -> Headers:
+    """Get the headers of a response, for the plugins of the `response` phase.
+
+    Headers that FOCA doesn't accept (e.g., with NUL characters) are left
+    out: the backend accepted the task, so they must not fail the attempt.
+
+    Args:
+        response: Response of a backend.
+
+    Returns:
+        The headers of the response.
+    """
+    headers = Headers()
+    for name, value in response.headers.items():
+        try:
+            headers[name] = value
+        except (TypeError, ValueError):
+            logger.warning("Header %r of the response of a backend left out", name)
+    return headers
 
 
 def create_client(host: str, base_path: str = "") -> TesClient:

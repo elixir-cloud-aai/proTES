@@ -273,9 +273,9 @@ service registries of `custom.tes.backends` (only verified ones, see
 [Discovery in a service
 registry](configuration.md#discovery-in-a-service-registry)); plugins
 can only choose among them (see [Plugins](plugins.md)). Plugins never see
-the credentials of TES instances; in the `forward` phase, they may choose
-other configured credentials by name (`client_credentials`, `basic` or
-`none`), which proTES then adds. Keep TES instances in the list until their tasks have finished:
+the credentials of TES instances, and can't choose other credentials for
+a TES instance than its own; in the `forward` phase, they may only drop
+them (`none`), e.g., to send credentials of their own. Keep TES instances in the list until their tasks have finished:
 tasks of TES instances that are no longer configured can't be tracked or
 canceled (their state becomes `UNKNOWN`, and is tracked again once the TES
 instance is configured again).

@@ -1,5 +1,6 @@
 """Tests of the callbacks of proTES for FOCA's plugin engine."""
 
+from dataclasses import replace
 from typing import Any
 
 from connexion import FlaskApp
@@ -86,10 +87,16 @@ def test_check_outbound(app: FlaskApp) -> None:
     """Outbound requests need tasks that can be relayed, within the limits."""
     entry = ServiceEntry(type="ga4gh-tes", url="https://tes.example.org")
     outbound = OutboundRequest(
-        backend=entry.backend(), method="POST", path="/tasks", payload=TASK
+        backend=entry.backend(), method="POST", path=gateway.TASKS_PATH, payload=TASK
     )
     with app.app.app_context():
         gateway.check_outbound(outbound)
+        for changed in (
+            replace(outbound, method="GET"),
+            replace(outbound, path=f"{gateway.TASKS_PATH}/other"),
+        ):
+            with pytest.raises(ValueError, match="Tasks are created with POST"):
+                gateway.check_outbound(changed)
         outbound.payload = {"executors": "none"}
         with pytest.raises((TypeError, ValueError)):
             gateway.check_outbound(outbound)

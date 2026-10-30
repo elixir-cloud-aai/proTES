@@ -29,13 +29,16 @@ phases:
    instances: proTES has credentials for configured and discovered ones
    only. The task is then stored.
 3. `forward`, for each TES instance in turn: plugins may change the request
-   to that TES instance (its headers, the task, or the name of the
-   credentials to use: `client_credentials`, `basic` or `none`); each TES
-   instance gets its own copy. proTES then adds the credentials of the TES
-   instance (plugins never see them), removes credentials from the URLs of
-   inputs and outputs, and sends the task. Requests whose task a plugin made
-   invalid, or whose inline contents it made too large, are not sent, and
-   the next TES instance is tried.
+   to that TES instance (its query, its headers and the task), and drop the
+   credentials of the TES instance (`auth: none`); each TES instance gets
+   its own copy. proTES then adds the credentials of the TES instance
+   (plugins never see them, and can't choose others), removes credentials
+   from the URLs of inputs and outputs, and sends the task. Requests whose
+   method or path a plugin changed (tasks are created with
+   `POST /ga4gh/tes/v1/tasks`), whose task a plugin made invalid, or whose
+   inline contents it made too large, are not sent, and the next TES
+   instance is tried. Headers of the response that FOCA doesn't accept
+   (e.g., with NUL characters) are left out.
    The next TES instance is also tried if a TES instance certainly did not
    accept the task, but never if it may have (see [Tasks](api.md#tasks)).
 4. `response`: once a TES instance accepted the task, plugins may change the

@@ -37,6 +37,9 @@ from pro_tes.exceptions import BadRequest, InlineContentTooLarge
 from pro_tes.ga4gh.tes.models import TesTask
 from pro_tes.utils.misc import has_credentials, strip_auth
 
+TASKS_PATH = "/ga4gh/tes/v1/tasks"
+"""Path of the requests to create tasks, below the URL of a backend."""
+
 # Fields of tasks that TES servers set (TES servers may reject tasks that set
 # them, as proTES does); never relayed
 SERVER_FIELDS = ("creation_time", "logs")
@@ -196,6 +199,10 @@ def check_outbound(outbound: OutboundRequest) -> None:
     """Check that the task of an outbound request can be relayed.
 
     Requests that fail the check are not sent; the next backend is tried.
+    Plugins can't change the method and path of the request: tasks are
+    created with `POST /ga4gh/tes/v1/tasks` (`TASKS_PATH`), so that other
+    requests (e.g., for tasks of other users) can't be sent with proTES's
+    credentials.
 
     Args:
         outbound: Outbound request, after the `forward` phase.
@@ -205,8 +212,15 @@ def check_outbound(outbound: OutboundRequest) -> None:
         pro_tes.exceptions.InlineContentTooLarge: An inline content is
             larger than `custom.controllers.post_task.max_inline_content`.
         TypeError: The task can't be relayed (cf. :py:func:`tes_task`).
-        ValueError: The task can't be relayed.
+        ValueError: The task can't be relayed, or the method or path of
+            the request was changed.
     """
+    if outbound.method != "POST" or outbound.path != TASKS_PATH:
+        raise ValueError(
+            f"Tasks are created with POST {TASKS_PATH}, not"
+            f" {outbound.method} {outbound.path}"
+        )
+    # dry run on a copy: `relayed_task` strips the credentials of the sent task
     sanitize_task(deepcopy(outbound.payload))
     tes_task(outbound.payload)
 

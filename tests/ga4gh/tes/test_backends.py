@@ -1026,18 +1026,58 @@ def test_forward_outbound(
     assert kwargs["timeout"] == (2, 15)
 
 
-def test_forward_auth_chosen(post: Callable[..., FakePost]) -> None:
-    """Plugins choose configured credentials by name; without them, none is sent."""
+def test_forward_auth_chosen(post: Callable[..., FakePost], idp: FakeIdp) -> None:
+    """Plugins may drop the credentials of a backend, but not choose others.
+
+    Without credentials of proTES, the plugin's `Authorization` is sent.
+    """
     fake = post(FakeResponse({"id": "remote-1"}))
+    plugin_header = Headers({"Authorization": "Bearer plugin"})
+    client = backends.create_client(host=f"{BACKEND_URL}/token")
+    assert create_task(client, auth="none", headers=plugin_header) == "remote-1"
+    none = backends.create_client(host=NONE_URL)
+    for auth in ("client_credentials", "basic", "other"):
+        assert create_task(none, auth=auth, headers=plugin_header) == "remote-1"
+    assert [kwargs["headers"]["Authorization"] for _, kwargs in fake.sent] == [
+        "Bearer plugin"
+    ] * 4
+    assert not any(kwargs.get("auth") for _, kwargs in fake.sent)
+
+
+def test_request_params_unknown_auth() -> None:
+    """Credentials that aren't configured are refused before anything is sent."""
     client = backends.create_client(host=NONE_URL)
     with pytest.raises(BackendAuthError, match="No Basic credentials"):
-        create_task(client, auth="basic")
+        client._request_params(auth="basic")
     with pytest.raises(BackendAuthError, match="Unknown credentials"):
-        create_task(client, auth="other")
+        client._request_params(auth="other")
+
+
+def test_forward_no_time_left(post: Callable[..., FakePost]) -> None:
+    """Without time left to connect, nothing is sent (not accepted)."""
+    fake = post(FakeResponse({"id": "remote-1"}))
+    client = backends.create_client(host=NONE_URL)
+    request = OutboundRequest(
+        backend=client.backend, method="POST", path="/ga4gh/tes/v1/tasks"
+    )
+    with pytest.raises(requests.ConnectTimeout, match="No time left"):
+        client.forward(request, TASK, connect_timeout=0)
     assert not fake.sent
-    plugin_header = Headers({"Authorization": "Bearer plugin"})
-    assert create_task(client, headers=plugin_header) == "remote-1"
-    assert fake.sent[0][1]["headers"]["Authorization"] == "Bearer plugin"
+    assert backends.forward_reason(requests.ConnectTimeout()) == "connect_timeout"
+
+
+def test_forward_bad_response_header(post: Callable[..., FakePost]) -> None:
+    """Headers of an accepted task that FOCA refuses are left out, not fatal."""
+    fake = post(FakeResponse({"id": "remote-1"}))
+    fake.answer.headers = {"X-Bad": "a\x00b", "X-Good": "yes"}  # type: ignore[union-attr]
+    client = backends.create_client(host=NONE_URL)
+    request = OutboundRequest(
+        backend=client.backend, method="POST", path="/ga4gh/tes/v1/tasks"
+    )
+    task_id, response = client.forward(request, TASK)
+    assert task_id == "remote-1"
+    assert response.headers["x-good"] == "yes"
+    assert "x-bad" not in response.headers
 
 
 def test_client_for_unknown(configured: None) -> None:
