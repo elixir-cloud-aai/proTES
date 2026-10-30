@@ -546,28 +546,21 @@ jobs:
   # The only required check: passes if every other job passed, or was skipped
   # where that is intended: `push` and `publish` where `PUBLISH` is "false"
   # (pull requests, and forks without `DOCKERHUB_ORG`). Any other result
-  # (failure, cancelled, or an unintended skip) fails it. Add every new job
-  # to `needs`
+  # (failure, cancelled, or an unintended skip) fails it. The check is the
+  # shared `gate` action of `elixir-cloud-aai/.github`. Add every new job to
+  # `needs`
   passed:
     name: CI passed
     runs-on: ubuntu-latest
     timeout-minutes: 5
     if: always()
     needs: [lint, test, chart, docs, readiness, smoke, push, scan, publish]
+    permissions: {}
     steps:
       - name: Check results of all jobs
-        env:
-          NEEDS: ${{ toJSON(needs) }}
-        run: |
-          failed="$(jq -r --arg publish "${PUBLISH}" '
-            to_entries[]
-            | select(
-                .value.result == "success"
-                or (.value.result == "skipped" and $publish == "false"
-                    and (.key == "push" or .key == "publish"))
-                | not)
-            | "\(.key): \(.value.result)"' <<< "${NEEDS}")"
-          if [[ -n "${failed}" ]]; then
-            echo "::error::Jobs did not pass: ${failed//$'\n'/, }"
-            exit 1
-          fi
+        uses: elixir-cloud-aai/.github/actions/gate@743e82d290a53768454999e413756a924e383259 # v1.0.0
+        with:
+          needs: ${{ toJSON(needs) }}
+          # `push` and `publish` are skipped on purpose where `PUBLISH` is
+          # "false" only
+          allow-skipped: ${{ env.PUBLISH == 'false' && 'push publish' || '' }}

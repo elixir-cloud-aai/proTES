@@ -89,6 +89,13 @@ suppress a false positive, add a comment with the reason to the line:
 `# nosemgrep: <rule-id>`, `# ast-grep-ignore: <rule-id>` or
 `# gitleaks:allow`.
 
+The gate of the CI workflow (`passed`, "CI passed", the only required
+check) uses the shared `gate` action of
+[elixir-cloud-aai/.github](https://github.com/elixir-cloud-aai/.github).
+Shared actions are pinned to the full commit SHA of a release, with the
+release in a comment (`@<sha> # vX.Y.Z`); all pins name the same release, so
+bump them together (Dependabot does), as `tests/test_workflows.py` checks.
+
 ## Helm chart
 
 The [Helm chart](deployment.md) in `deployment/` is a thin chart over FOCA's
