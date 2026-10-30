@@ -298,8 +298,8 @@ their own. URLs of TES instances must use `https`, unless the entry's
 `url_schemes` allows `http`, and must not have credentials; duplicate
 entries (with the same identifier, by default the normalized URL) are
 rejected. Tasks are only forwarded to configured and discovered TES
-instances, also if middlewares add others (`tes_urls`). Custom middlewares
-that read the TES instances get them from
+instances; plugins can only choose among them. Code that reads the TES
+instances gets them from
 `pro_tes.ga4gh.tes.backends.get_backends()` (FOCA's `Backend`s, in order),
 instead of `custom.tes.service_list`; `get_backend(url)` returns the
 backend together with its entry of `custom.tes.backends` (`(backend,
@@ -341,8 +341,8 @@ already, but their final logs are not. The upgrade ends this polling, as
 it ends all tracking by the old Celery worker; the logs of these tasks
 aren't fetched again.
 
-Tasks that no TES instance accepts (`500`), and tasks that fail validation
-after the middlewares (`400`), are no longer kept: they are deleted, with
+Tasks that no TES instance accepts (`503`), and tasks that plugins make
+invalid or reject, are no longer kept: they are deleted, with
 their owner's roles on them, instead of being stored as `SYSTEM_ERROR`, so
 that failed requests don't fill the database. Tasks that a TES instance may
 have accepted (`502`) are still stored as `SYSTEM_ERROR`. Tasks stored as
@@ -417,45 +417,56 @@ Tasks with an inline content of an input (`inputs[].content`) of more than
 with `413 Content Too Large`; raise the limit (and
 `server.max_content_length`) if needed, or use inputs with URLs.
 
-## Distance-based task distribution
+## Plugins
 
-The distance-based middleware still looks up the places of IP addresses with
-DB-IP's API, now over HTTPS (was HTTP), and geocodes the place names with
-Nominatim (see [Built-in middlewares](middlewares.md#built-in-middlewares)),
-but no longer with the unmaintained package `ip2geotools`, which doesn't
-install on Python 3.13. Requests time out after 10 seconds (was 62). It no
-longer locates addresses that are not global (e.g., private ones), which
-aren't sent to the services anymore, nor places without city or country:
-it falls back to the next middleware for them, instead of distributing
-tasks by an arbitrary location.
+FOCA's plugin engine replaces the middlewares of proTES (see
+[Plugins](plugins.md)). The packages `pro_tes.middleware` and
+`pro_tes.plugins` are removed, and with them the distance-based and random
+task distribution and the dependency `geopy`.
 
-## Custom middlewares
+- `custom.middlewares` is refused: the app stops with a hint to the
+  top-level section `plugins`. Remove it from custom configs; set
+  `plugins.pipeline` instead (see [Plugins](plugins.md)).
+- Tasks go to the TES instances in the order of `custom.tes.backends`
+  (those of each registry shuffled), to the next one if a TES instance
+  doesn't accept the task (FOCA's `foca.routing.ordered`). There is no
+  distance-based or random distribution in proTES anymore, and proTES no
+  longer calls third-party services (DB-IP, Nominatim) to locate TES
+  instances and inputs. The routing plugins `tes.routing.distance` and
+  `generic.routing.random` of
+  [foca-plugins](https://github.com/elixir-cloud-aai/foca-plugins) take
+  their place once they are published; install them and list them in
+  `plugins.available` and `plugins.pipeline`.
+- Tasks that no TES instance accepts fail with `503 Service Unavailable`
+  (was `500 Internal Server Error`), also if no TES instance is configured;
+  errors of the plugin engine have a `problem_type`. Tasks with tags under
+  `gateway.` other than `gateway.backends` (and `gateway.pipeline`, if
+  enabled) are rejected with `400 Bad Request`; TES instances get the tasks
+  without these tags. Requests to TES instances carry a `Via` header, and
+  requests that already passed proTES are refused with `508 Loop Detected`.
+- Custom middlewares must be ported to FOCA plugins (see FOCA's
+  documentation): installed packages with entry points of the group
+  `foca.plugins`.
+- Code that calls `TaskRuns.create_task()` directly (e.g., custom
+  controllers) passes the inbound request and the caller
+  (`inbound=foca.plugins.adapter.inbound_from_request(task)`,
+  `principal=foca.plugins.adapter.current_principal()`), and gets the
+  response body and headers (`(body, headers)`) instead of the body.
+  `TesClient.create_task()` is replaced by `TesClient.forward()`, and the
+  exceptions `NoTesInstancesAvailable`, `MiddlewareException`,
+  `InvalidMiddleware`, `InputUriError`, `IPDistanceCalculationError` and
+  `TesUriError` are removed (FOCA's `NoBackendAvailable` and other
+  `GatewayError`s take their place).
 
-Middlewares get the task instead of the request: `apply_middleware()`
-receives the JSON body of `POST /tasks` as a `dict` and returns it (it was
-given and returned a `flask.Request`, and changed `request.json`). Each
-alternative of a step gets its own copy of the task, which is kept only if
-it succeeds; returning something other than a `dict` fails the middleware,
-like raising an exception. Subclasses of `TaskDistributionBaseClass` that
-override `_set_tes_urls()` get the task as `task=` instead of `request=`.
-Port custom middlewares before upgrading: old-style ones still load, but
-usually fail on every task (those that use `request.json` or other
-attributes of the request they are given), with a warning in the log for
-each; changes they make through the global `flask.request` are ignored
-silently. With no other alternative, task creation then fails with `500`
-and the detail "Middleware could not be applied."; the log says why ("No
-middleware could be applied", or "Middlewares selected no TES backends").
-
-Code that calls `TaskRuns` directly (e.g., custom controllers) passes the
-task and the request path of the tasks: `create_task(task=…,
-collection=…)` and `list_tasks(collection=…, …)`; `TaskRuns` no longer
-reads them from the request.
+Code that calls `TaskRuns` directly passes the request path of the tasks:
+`create_task(task=…, collection=…, …)` and `list_tasks(collection=…, …)`;
+`TaskRuns` no longer reads them from the request.
 
 ## Middleware management API
 
 The middleware management API is no longer registered, and its
-specification is removed: the stack of middlewares is configured only (see
-[Middlewares](middlewares.md)). Its collection (`middlewares`) is no longer
+specification is removed: plugins are configured only (see
+[Plugins](plugins.md)). Its collection (`middlewares`) is no longer
 created, so it can be dropped.
 
 ## Image

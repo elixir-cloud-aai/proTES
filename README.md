@@ -15,17 +15,18 @@ A gateway for the [GA4GH Task Execution Service (TES)
 API](https://github.com/ga4gh/task-execution-schemas) that federates your TES
 instances, brought to you by [ELIXIR On-Cloud](https://elixir-on.cloud/).
 Clients send their tasks to proTES as to any TES instance; proTES passes each
-task through a configurable stack of middlewares, which pick the TES instance
-to run it on (or change the request), forwards it there and tracks its state.
-Built-in middlewares distribute tasks randomly, for load balancing, or to the
-TES instance closest to the task's input data, to bring compute to the data;
-write your own for access control, request processing or validation, or the
-selection of instances by data use restrictions and client preferences. Run it
-with Docker Compose or deploy it to Kubernetes with its Helm chart.
+task through a configurable pipeline of plugins (FOCA's gateway plugins),
+which pick the TES instance to run it on (or change the request), forwards it
+there and tracks its state. By default, tasks go to the TES instances in
+their configured order, failing over to the next; plugins distribute tasks
+randomly, for load balancing, or to the TES instance closest to the task's
+input data, or serve access control, request processing or validation, or
+the selection of instances by data use restrictions and client preferences.
+Run it with Docker Compose or deploy it to Kubernetes with its Helm chart.
 <!-- --8<-- [end:synopsis] -->
 
 **Read the [documentation][docs]** for the architecture, the configuration,
-the API, the middlewares, the deployment with the Helm chart in
+the API, the plugins, the deployment with the Helm chart in
 [`deployment/`][deployment], operations, upgrades and development.
 
 ## Known deployments

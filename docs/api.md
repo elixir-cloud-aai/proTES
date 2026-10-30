@@ -41,16 +41,21 @@ For `POST /tasks`, proTES:
    proTES is configured to remove them, and tasks with inline contents of
    inputs over `max_inline_content`, with `413 Content Too Large`: see
    [Tasks](configuration.md#tasks));
-2. applies the [middlewares](middlewares.md), which select the TES instances
-   to try and their order (and may change the task; tasks that they make
-   invalid are rejected with `400 Bad Request`, and tasks whose inline
-   contents they make too large with `413 Content Too Large`, and neither is
-   kept);
+2. runs the pipeline of [plugins](plugins.md), which may change the task
+   and select the TES instances to try and their order (by default, those
+   of `custom.tes.backends`, in order); a plugin may reject the task (with
+   its status, e.g., `403 Forbidden`), a step whose plugins all fail fails
+   the request (`500 Internal Server Error`), tasks without TES instances
+   fail with `503 Service Unavailable`, and tasks whose inline contents
+   plugins make too large with `413 Content Too Large`; none of these is
+   kept;
 3. forwards the task to the first of these TES instances that accepts it,
-   and returns its own identifier of the task; if no TES instance accepts
-   it, the request fails with `500 Internal Server Error`, and the task is
-   not kept (it is deleted, with its owner's roles on it). Each TES
-   instance gets its own copy of the validated task, with the credentials
+   after the plugins of the `forward` phase, and returns its own identifier
+   of the task (plugins may change the response); if no TES instance
+   accepts it (within `plugins.defaults.forward_timeout`), the request fails
+   with `503 Service Unavailable`, and the task is not kept (it is deleted,
+   with its owner's roles on it). Each TES instance gets its own copy of
+   the task, without tags under `gateway.`, with the credentials
    of proTES for it (see [Credentials of TES
    instances](access-control.md#credentials-of-tes-instances)), in a single
    request; the next TES instance is tried only if a TES instance
@@ -76,9 +81,12 @@ instance and the remote identifier of the task in its logs
 ## Errors
 
 Errors are [problem details](https://www.rfc-editor.org/rfc/rfc9457) (with
-`title`, `status` and `detail`), sent as `application/json`, as the GA4GH
+`title`, `status` and `detail`; errors of the plugin engine also with
+`problem_type`, a URI in FOCA's documentation), sent as `application/json`,
+as the GA4GH
 specification declares: `400 Bad Request` for invalid requests (e.g.,
-invalid tasks or query parameters), `401 Unauthorized` for requests
+invalid tasks or query parameters, or invalid or reserved tags under
+`gateway.`), `401 Unauthorized` for requests
 without a valid access token (with a Bearer challenge), `403 Forbidden` for
 users without the required role and for tasks of others or unknown tasks
 (see [Access control](access-control.md)), `404 Not Found` for tasks of the
@@ -87,11 +95,13 @@ whose identifier at their TES instance is unknown, which can't be canceled,
 `413 Content Too Large` for request bodies over the [size
 limit](configuration.md#request-size-limit) and tasks with inline contents
 of inputs over `max_inline_content` (see
-[Tasks](configuration.md#tasks)), `500 Internal Server Error` if a task
-could not be forwarded (it is not kept) or no middleware could be applied,
-and
+[Tasks](configuration.md#tasks)), the status of a plugin that rejected a
+task, `500 Internal Server Error` if all plugins of a step failed,
 `502 Bad Gateway` if a TES instance did not confirm a request to create or
-cancel a task, which it may have processed (see [Tasks](#tasks)). The
+cancel a task, which it may have processed (see [Tasks](#tasks)),
+`503 Service Unavailable` if no TES instance accepted a task (in time; it
+is not kept), and `508 Loop Detected` for tasks that passed proTES before
+(see [Plugins](plugins.md)). The
 mapping of exceptions to problem details is
 `exceptions` in
 [`pro_tes.exceptions`](reference.md#pro_tes.exceptions).

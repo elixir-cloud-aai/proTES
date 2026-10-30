@@ -80,7 +80,7 @@ sent unencrypted), without user info. Each entry has an identifier (`id`, by
 default its normalized URL); entries with the same identifier are rejected,
 and a URL listed twice is used once, at its first place.
 `custom.tes.url_schemes` applies to the identity provider of
-`custom.tes.client_credentials` only. The [middlewares](middlewares.md)
+`custom.tes.client_credentials` only. The [plugins](plugins.md)
 decide which of the TES instances are tried, and in which order (see
 [Tasks](api.md#tasks)). The service info, which anyone can read, lists the
 TES instances (`backends`: identifier, URL, source, group and labels of
@@ -223,21 +223,13 @@ addresses change between the check and the request); restrict the egress
 of proTES to the networks of the TES instances (e.g., with a Kubernetes
 NetworkPolicy) where internal services must not be reachable.
 
-## Middlewares
+## Plugins
 
-`custom.middlewares` is the stack of middlewares that are applied to each new
-task, in order: a list of lists of the import paths of middleware classes.
-Of each inner list, the first class that can be applied successfully is used,
-and the others are skipped; the inner list is a chain of fallbacks. If no
-class of an inner list can be applied, the task is rejected. See
-[Middlewares](middlewares.md) for the built-in ones and how to write your own.
-
-```yaml
-custom:
-  middlewares:
-    - - "pro_tes.plugins.middlewares.task_distribution.distance.TaskDistributionDistance"
-      - "pro_tes.plugins.middlewares.task_distribution.random.TaskDistributionRandom"
-```
+The top-level section `plugins` sets which installed plugins are available
+(`available`) and the pipeline of steps that process each new task
+(`pipeline`), FOCA's ordered failover by default; see [Plugins](plugins.md).
+The former `custom.middlewares` is refused: the app stops with a hint to
+`plugins` (see [Upgrading](upgrading.md#plugins)).
 
 ## Tasks
 
@@ -261,20 +253,20 @@ custom:
   URLs of their inputs or outputs (`https://user:password@host/...`): they
   are rejected with `400 Bad Request` (`reject`, the default), or the
   credentials are removed (`strip`); credentials are never stored or
-  forwarded, and those that middlewares add are always removed;
+  forwarded, and those that plugins add are always removed;
 - `post_task.max_inline_content`: the maximum size of the inline content
   of each input of a task (`inputs[].content`), in bytes of UTF-8 (default
   131072, i.e., 128 KiB, the minimum that the TES specification recommends
   per input; all contents together are limited by the [request size
   limit](#request-size-limit)); tasks with larger contents are rejected
-  with `413 Content Too Large`, also if middlewares added the contents;
+  with `413 Content Too Large`, also if plugins added the contents;
 - `post_task.max_create_time`: the number of seconds (default 3600, at
   most 31536000, i.e., a year) after which tasks that are still being
   created, i.e., in state `UNKNOWN` without identifier at a TES instance
   (e.g., because proTES stopped while forwarding them, as in a rolling
   upgrade), are set to `SYSTEM_ERROR` by the Celery workers (see [Task
   tracking](operations.md#task-tracking)).
-  It must be longer than creating a task may take: the middlewares, the
+  It must be longer than creating a task may take: the plugins, the
   requests to MongoDB, the connect timeout (currently 5 seconds) of each TES
   instance that is tried, the token requests
   (`client_credentials.timeout`), and `tes.timeout`, for the TES instance

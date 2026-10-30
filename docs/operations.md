@@ -17,8 +17,8 @@ The Docker Compose setup and the [Helm chart](deployment.md) run all of them.
 ## Logs
 
 The app and the workers log to standard error (section `log` of the
-config): each request to the API, the middlewares applied, the TES instances
-that a task is forwarded to, and errors of the TES instances. Read them with
+config): each request to the API, the plugins loaded and failed, the TES
+instances that a task is forwarded to, and errors of the TES instances. Read them with
 `docker compose logs` or `kubectl logs`.
 
 ## Task tracking

@@ -13,11 +13,11 @@
 - [Getting started](getting-started.md): run proTES with Docker Compose and
   send the first requests.
 - [Configuration](configuration.md): the base config, overlays, the TES
-  instances, the middlewares, the task settings, the request size limit, the
+  instances, the plugins, the task settings, the request size limit, the
   server and the service info.
 - [API](api.md): the endpoints, how tasks are forwarded, and errors.
-- [Middlewares](middlewares.md): the built-in middlewares and how to write
-  your own.
+- [Plugins](plugins.md): the plugin pipelines that process new tasks, and
+  how to install and enable plugins.
 - [Access control](access-control.md): authentication, roles, task
   ownership, the permissions API and credentials of TES instances.
 - [Deployment](deployment.md): the Helm chart for Kubernetes.
@@ -38,16 +38,17 @@ operated TES instances: it can serve, for example, as a compatibility layer,
 a load balancer, a public entry point to an enclave of independent compute
 nodes, or a means of collecting telemetry.
 
-When proTES receives a task, it applies the configured
-[middlewares](middlewares.md) before forwarding the task to a TES instance of
-the network. A plugin system makes it easy to write middlewares for specific
-requirements, such as access control, request or response processing or
-validation, or the selection of suitable TES instances considering data use
-restrictions and client preferences. Two middlewares are shipped with proTES,
-as proofs of concept for different ways of distributing tasks (see
-[Built-in middlewares](middlewares.md#built-in-middlewares)): randomly, for
-load balancing, and to the TES instances closest to the task's input data, to
-bring compute to the data.
+When proTES receives a task, it runs the configured pipeline of
+[plugins](plugins.md) before forwarding the task to a TES instance of the
+network. Plugins (FOCA's gateway plugins, shared with other gateways) serve
+specific requirements, such as access control, request or response
+processing or validation, or the selection of suitable TES instances
+considering data use restrictions and client preferences. By default, tasks
+go to the TES instances in their configured order, to the next one if a TES
+instance doesn't accept the task; routing plugins of
+[foca-plugins](https://github.com/elixir-cloud-aai/foca-plugins) distribute
+tasks randomly, for load balancing, or to the TES instances closest to the
+task's input data, to bring compute to the data.
 
 proTES is a [Flask](https://flask.palletsprojects.com/) app built with
 [FOCA](https://github.com/elixir-cloud-aai/foca), configured declaratively in
