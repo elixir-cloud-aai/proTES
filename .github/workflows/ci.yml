@@ -546,8 +546,9 @@ jobs:
   # The only required check: passes if every other job passed, or was skipped
   # where that is intended: `push` and `publish` where `PUBLISH` is "false"
   # (pull requests, and forks without `DOCKERHUB_ORG`). Any other result
-  # (failure, cancelled, or an unintended skip) fails it (the shared `gate`
-  # action of `elixir-cloud-aai/.github`). Add every new job to `needs`
+  # (failure, cancelled, or an unintended skip) fails it. The check is the
+  # shared `gate` action of `elixir-cloud-aai/.github`. Add every new job to
+  # `needs`
   passed:
     name: CI passed
     runs-on: ubuntu-latest

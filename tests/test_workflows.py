@@ -134,6 +134,8 @@ def test_shared_actions_pinned() -> None:
         for job in _load(path)["jobs"].values():
             for step in job.get("steps", []):
                 uses = step.get("uses", "")
+                # TODO(#329): also refuse local actions (`./`) once the
+                # shared `scan-image` action replaces the local copy
                 if uses.startswith("elixir-cloud-aai/.github/"):
                     match = pinned.fullmatch(uses)
                     assert match, (path.name, uses)
