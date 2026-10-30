@@ -265,8 +265,8 @@ jobs:
 
   # Scans exactly the pushed digest (`<image>@<digest>`; public, so pulling
   # it needs no login) with Trivy (the shared action
-  # `elixir-cloud-aai/.github/actions/scan-image`; fails on
-  # fixable critical and high vulnerabilities), so that vulnerabilities
+  # `elixir-cloud-aai/.github/actions/scan-image`; fails on fixable critical
+  # and high vulnerabilities), so that vulnerabilities
   # published since CI scanned the commit block the release. Kept apart from
   # `push` and `publish`, so that Trivy (whose binary is resolved from its
   # release tag at run time) never runs next to the Docker Hub credentials,

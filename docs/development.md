@@ -92,7 +92,7 @@ suppress a false positive, add a comment with the reason to the line:
 The gate of the CI workflow (`passed`, "CI passed", the only required
 check) uses the shared `gate` action of
 [elixir-cloud-aai/.github](https://github.com/elixir-cloud-aai/.github), and
-the image scans its `scan-image` action (see [Versioning and
+the image scans use its `scan-image` action (see [Versioning and
 releases](#versioning-and-releases)); no workflow uses a local action.
 Shared actions are pinned to the full commit SHA of a release, with the
 release in a comment (`@<sha> # vX.Y.Z`); all pins name the same release, so
@@ -401,9 +401,10 @@ the versions of tags (`v*`), so that the docs linked from packaged charts
 exist.
 
 The CI workflow builds the image of every pull request and scans it with
-[Trivy](https://trivy.dev/) (the shared action `scan-image` of
-elixir-cloud-aai/.github), and a weekly workflow (`scan.yml`) scans
-`latest`. For pushes to `dev` (in forks only if
+[Trivy](https://trivy.dev/) (the shared action
+[`scan-image`](https://github.com/elixir-cloud-aai/.github/tree/main/actions/scan-image),
+pinned to the commit of a release), and a weekly workflow (`scan.yml`)
+scans `latest`. For pushes to `dev` (in forks only if
 they set `DOCKERHUB_ORG`) and for releases, the workflows push the image by
 digest, untagged, scan exactly that digest in a job without credentials or
 signing identity, and only if the scan passes attest, sign and tag it, so

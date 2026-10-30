@@ -31,7 +31,8 @@ updates:
         patterns: ["*"]
         exclude-patterns: ["connexion", "foca"]
   # Actions in the workflows, including the pins of the shared actions of
-  # `elixir-cloud-aai/.github`
+  # `elixir-cloud-aai/.github` (to the commits of its releases,
+  # `@<commit> # vX.Y.Z`)
   - package-ecosystem: github-actions
     directory: /
     schedule:
