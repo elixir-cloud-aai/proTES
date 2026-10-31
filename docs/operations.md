@@ -9,7 +9,7 @@ A deployment of proTES consists of:
   instances (see [Task tracking](#task-tracking));
 - RabbitMQ, the broker between the app and the workers;
 - MongoDB, which stores the tasks (database `taskStore`, collection
-  `tasks`);
+  `tasks`) and their provenance (see [Task provenance](#task-provenance));
 - optionally Flower, a web UI to monitor the Celery workers.
 
 The Docker Compose setup and the [Helm chart](deployment.md) run all of them.
@@ -139,6 +139,71 @@ in a service registry, have a registry admin remove its verification (it is
 no longer used once the registry has been read again, see `refresh_interval`
 in [Discovery in a service
 registry](configuration.md#discovery-in-a-service-registry)).
+
+## Task provenance
+
+Each new task has the provenance of its [plugin pipeline](plugins.md) in
+`provenance` of its document (FOCA's `foca.plugins.ProvenanceStore`; the
+fields are described in [FOCA's
+documentation](https://foca.readthedocs.io/en/latest/plugins/)): the
+versions of FOCA and proTES, the request identifier, the pipeline (its
+source, e.g., `default`, and the hash of the resolved pipeline), the
+plugins that ran (by build hash), the hook calls with their outcomes and
+the paths they changed, the TES instances before and after routing, the
+client's choice of TES instances, the forwarding attempts (TES instance,
+outcome, reason, remote identifier, times) and the final reason, if no TES
+instance accepted the task. The record is stored with the task (after
+routing), and replaced, with the attempts, once a TES instance accepted the
+task (or may have, `SYSTEM_ERROR`). Records hold no IP addresses, tokens,
+header values or claims, and take at most 1 MiB. The API doesn't serve
+them yet, and tasks created by earlier versions have none.
+
+Shared parts are stored once, by hash (`_id`), in two more collections of
+the database of the tasks, and the records refer to them:
+
+- `plugin_builds`: the builds of the plugins that ran (plugin, package,
+  version, entry point, digest of the installed files, and the image
+  digest, if `FOCA_IMAGE_DIGEST` is set);
+- `pipelines`: the default and preset pipelines (`resolved`); pipelines
+  chosen by clients stay in the records.
+
+If they can't be written, the records keep them (`builds`, `resolved`) and
+have `stored: false`; creating the task doesn't fail. Neither collection
+is cleaned up: they get a document per plugin build (new ones with each
+image, if the image digest is set) and per pipeline only, and documents
+are small.
+
+Requests whose pipeline run failed (e.g., tasks rejected by a plugin, or
+accepted by no TES instance) leave no task. With
+`plugins.provenance.record_failed: true` (off by default, so that no record
+of rejected input is kept; see [Plugins](configuration.md#plugins)), their
+records go to the collection `failed_runs`, with the time (`failed_at`) and
+the error (`type`, `status`, `slug`), keyed by request identifier (the
+client's `X-Request-ID`, if valid; a request with the same identifier
+replaces the record). Requests refused before the pipeline started (e.g.,
+invalid tasks, loops, or invalid tags under `gateway.`) have no record. A TTL index deletes records 30 days after they failed (FOCA's
+default; `db` section of `config.yaml`). To keep them for another time,
+change the index in place, and set its `expireAfterSeconds` in the config
+to the same value (else proTES refuses to start, as the configured index
+conflicts with the existing one), e.g., for 7 days:
+
+```js
+db.runCommand({
+  collMod: "failed_runs",
+  index: { keyPattern: { failed_at: 1 }, expireAfterSeconds: 604800 },
+})
+```
+
+To look up the provenance of a task, or recent failed runs:
+
+```js
+// provenance of a task, with its pipeline and plugin builds
+const record = db.tasks.findOne({ "task.id": "<id>" }).provenance
+db.pipelines.findOne({ _id: record.pipeline.resolved_hash })
+db.plugin_builds.find({ _id: { $in: Object.keys(record.plugins) } })
+// failed runs of the last day
+db.failed_runs.find({ failed_at: { $gt: new Date(Date.now() - 864e5) } })
+```
 
 ## Verifying images and charts
 
