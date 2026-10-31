@@ -109,6 +109,9 @@ def test_spec_extensions(client: FlaskClient) -> None:
     assert cancel["operationId"] == "CancelTask"
     assert cancel["parameters"][0]["name"] == "id"
     assert spec["paths"]["/tasks"]["get"]["operationId"] == "ListTasks"
+    # FOCA's plugin listing is merged first, so the TES spec's fields win
+    assert spec["info"]["title"] == "Task Execution Service"
+    assert "/plugins" in spec["paths"]
     problem = {"$ref": "#/components/schemas/ProblemDetails"}
     for operation, status in ((create, "413"), (cancel, "409")):
         content = operation["responses"][status]["content"]

@@ -16,6 +16,8 @@ control](access-control.md)).
 | `GET /tasks` | List the caller's tasks, newest first, one page at a time (`page_size`, at most `max_page_size` of the [config](configuration.md#tasks), and `max_page_size_full` for the view `FULL`; `page_token` from `next_page_token` of the previous page, which is empty on the last page), optionally only those whose name starts with `name_prefix` (taken literally). |
 | `GET /tasks/{id}` | Get a task of the caller, with its state as last tracked from the TES instance. |
 | `GET /tasks/{id}/provenance` | proTES extension: get the provenance of a task, for its owner and for admins (see [Provenance](#provenance)). |
+| `GET /plugins` | proTES extension (FOCA's plugin listing): list the plugins and presets that the caller may choose for its tasks, the default pipeline and the limits, for users (see [Choices of clients](plugins.md#choices-of-clients)). |
+| `GET /plugins/{plugin_id}` | proTES extension: describe a plugin that the caller may choose (`404 Not Found` otherwise). |
 | `POST /tasks/{id}:cancel` | Cancel a task of the caller that has not finished yet (also in state `UNKNOWN`, e.g., not tracked yet), at the TES instance that runs it; finished tasks are left as they are, also tasks that finish while they are canceled (their final state is kept). Unfinished tasks whose identifier at their TES instance is unknown (e.g., while they are being forwarded, or if forwarding failed unexpectedly) can't be canceled (`409 Conflict`). |
 
 Only the owner of a task, the user who created it, can read and cancel it

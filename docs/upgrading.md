@@ -77,8 +77,8 @@ API specifications (`api.specs`) and access control rules
 (`security.access_control.policies`) of the base config are named entries
 (the spec `tes`; rules `users-create-list-tasks`,
 `owners-get-cancel-tasks`, `owners-get-provenance`, `admins-get-provenance`,
-`admins-list-add-permissions` and `admins-manage-permissions`), which
-overlays change by name (see
+`users-list-plugins`, `users-get-plugins`, `admins-list-add-permissions`
+and `admins-manage-permissions`), which overlays change by name (see
 [Roles](access-control.md#roles)); overlays that give lists still replace
 them. The configured rules replace the stored ones atomically on startup,
 and stored configured rules are removed if an overlay sets no rules. During
@@ -489,6 +489,20 @@ with the task: clients that submit a fetched task again must drop the tags
 under `gateway.` other than `gateway.backends` and `gateway.pipeline`, or
 it is rejected (`400`). `logs[].metadata.forwarded_to` is deprecated in
 favour of these tags, and will be removed in a later release.
+
+Users list what they may choose per task with `GET /plugins`, and the
+service info has a field `gateway` (see [Choices of
+clients](plugins.md#choices-of-clients)). Custom lists of
+`security.access_control.policies` must add the rules of the base config,
+or users get `403`:
+
+```yaml
+security:
+  access_control:
+    policies:
+      users-list-plugins: [p, user, /ga4gh/tes/v1/plugins, (GET)|(HEAD)]
+      users-get-plugins: [p, user, "/ga4gh/tes/v1/plugins/:id", (GET)|(HEAD)]
+```
 
 ## Middleware management API
 

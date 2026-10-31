@@ -57,6 +57,7 @@ from urllib.parse import quote, quote_plus
 
 from foca import get_config, get_custom_config
 from foca.plugins import Backend, BackendResponse, Headers, OutboundRequest
+from foca.plugins import api as plugins_api
 from foca.plugins.backends import BackendList, RegistryEntry, ServiceEntry
 from foca.utils.http import (
     AddressNotAllowed,
@@ -87,6 +88,7 @@ from pro_tes.exceptions import (
     BackendOutcomeUnknown,
     BackendRequestNotSent,
 )
+from pro_tes.gateway import PLUGINS_PATH
 
 logger = logging.getLogger(__name__)
 
@@ -428,9 +430,20 @@ def service_info_fields() -> dict[str, Any]:
     Returns:
         The TES backends (`backends`): identifier, URL, source, group and
         labels of each, without credentials (cf.
-        :py:meth:`foca.plugins.backends.BackendList.describe`).
+        :py:meth:`foca.plugins.backends.BackendList.describe`); and what
+        clients may choose per task (`gateway`: the path of the plugin
+        listing, whether clients may choose pipelines and backends, and
+        the capabilities of the plugins, without plugin identifiers; cf.
+        :py:func:`foca.plugins.api.service_info_fields`), unless the
+        plugins can't be loaded (then the app doesn't start, with the
+        error of the plugins).
     """
-    return {"backends": get_backend_list().describe()}
+    fields: dict[str, Any] = {"backends": get_backend_list().describe()}
+    try:
+        fields.update(plugins_api.service_info_fields(plugins_url=PLUGINS_PATH))
+    except ValueError:
+        logger.warning("Plugins not loaded; no gateway fields in the service info")
+    return fields
 
 
 def _causes(exc: BaseException) -> Iterator[BaseException]:

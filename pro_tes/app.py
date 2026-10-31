@@ -7,7 +7,7 @@ from connexion import FlaskApp
 from foca import Foca, get_collection
 from foca.security.auth import require_no_service_clients
 
-from pro_tes.gateway import GATEWAY
+from pro_tes.gateway import GATEWAY, add_plugin_listing
 from pro_tes.security import check_backends, check_task_ownership, check_user_groups
 from pro_tes.utils.db import (
     TASK_COLLECTION,
@@ -33,6 +33,8 @@ def init_app() -> FlaskApp:
     (`security.access_control.require_admin`), and warns of placeholders in
     the service info. FOCA loads the plugins of the config (`plugins`) and
     checks the backend list once, so that problems stop the app on startup.
+    FOCA's plugin listing is served with the TES API (cf.
+    :py:func:`pro_tes.gateway.add_plugin_listing`).
 
     Returns:
         FOCA application.
@@ -57,6 +59,7 @@ def init_app() -> FlaskApp:
         custom_config_model="pro_tes.config_models.CustomConfig",
         gateway=GATEWAY,
     )
+    add_plugin_listing(foca.conf)
     try:
         app = foca.create_app()
     except ValueError as exc:
