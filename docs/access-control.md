@@ -96,8 +96,8 @@ claim set in `security.access_control.claim_identity`) becomes its owner:
 - `GET /plugins` and `GET /plugins/{plugin_id}` (what users may choose per
   task, see [Choices of clients](plugins.md#choices-of-clients)) are allowed
   for the role `user` (rules `users-list-plugins` and `users-get-plugins`);
-  everyone else gets `403 Forbidden`, and requests without an access token
-  `401 Unauthorized`.
+  everyone else gets `403 Forbidden`, also admins without the role `user`,
+  and requests without an access token `401 Unauthorized`.
 
 Tasks are not shared with other users, and admins can't read or cancel the
 tasks of others through the API: tasks and their logs may hold sensitive

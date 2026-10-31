@@ -160,7 +160,8 @@ Users (role `user`) list what they may choose with `GET /ga4gh/tes/v1/plugins`
 prefix), and get a plugin with `GET /ga4gh/tes/v1/plugins/{plugin_id}`;
 the public service info tells whether clients may choose, in its field
 `gateway`, without naming plugins. For example, with `curl` and an access
-token in `TOKEN` (in Bash):
+token in `TOKEN` (in Bash), for a preset `fast` of the admin and a TES
+instance of the deployment:
 
 ```bash
 curl -H "Authorization: Bearer $TOKEN" https://protes.example.org/ga4gh/tes/v1/plugins

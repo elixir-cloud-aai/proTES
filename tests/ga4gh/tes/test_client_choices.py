@@ -112,6 +112,28 @@ def test_invalid_pipeline(
     assert mongo_client["taskStore"]["tasks"].count_documents({}) == 0
 
 
+def test_plugin_not_for_role(
+    with_plugins: PluginClient, backend: type[FakeBackend]
+) -> None:
+    """Plugins only for other roles are not available to the caller (`400`)."""
+    client = with_plugins(
+        PLUGINS,
+        available={"test.rename": {"roles": ["admin"]}},
+        client_pipelines={"enabled": True},
+    )
+    response = submit(client, gateway__pipeline=json.dumps([step("test.rename")]))
+    assert response.status_code == 400
+    assert "not available" in response.get_json()["detail"]
+    assert not relayed(backend)
+
+
+def test_reserved_tag(with_plugins: PluginClient, backend: type[FakeBackend]) -> None:
+    """Other tags under `gateway.` are rejected (`400`)."""
+    client = with_plugins(PLUGINS, **CHOICES)
+    assert submit(client, gateway__other="x").status_code == 400
+    assert not relayed(backend)
+
+
 def test_pipelines_disabled(
     with_plugins: PluginClient, backend: type[FakeBackend]
 ) -> None:
@@ -157,7 +179,8 @@ def test_backends_unknown(
     ((url, _),) = relayed(backend)
     assert url == BACKENDS[0]
     document = stored(mongo_client, response.get_json()["id"])
-    assert unknown.rstrip("/") in json.dumps(document["provenance"])
+    selection = document["provenance"]["selection"]
+    assert [url.rstrip("/") for url in selection["discarded"]] == [unknown.rstrip("/")]
 
 
 @pytest.mark.parametrize(
@@ -211,7 +234,10 @@ def test_list_plugins_disabled(with_plugins: PluginClient) -> None:
 
 @pytest.mark.parametrize("path", ["plugins", "plugins/test.rename"])
 def test_list_plugins_access(with_plugins: PluginClient, path: str) -> None:
-    """Callers need an access token, and the role `user` (also admins)."""
+    """Callers need an access token and the role `user`.
+
+    Admins without the role `user` get `403`, too.
+    """
     client = with_plugins(PLUGINS, **CHOICES)
     url = f"{BASE_PATH}/{path}"
     assert client.get(url, headers={"Authorization": ""}).status_code == 401

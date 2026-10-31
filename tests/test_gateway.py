@@ -146,14 +146,15 @@ def test_error_mapping() -> None:
             assert entry["status"] == exc.code, exc.__name__
 
 
-def test_add_plugin_listing() -> None:
+@pytest.mark.parametrize("path", ["tes.yaml", ["tes.yaml"]])
+def test_add_plugin_listing(path: str | list[str]) -> None:
     """FOCA's plugin listing is added to the TES API once, not to other APIs."""
     config = Config.model_validate(
         {
             "api": {
                 "specs": {
                     "other": {"path": "other.yaml"},
-                    "tes": {"path": "tes.yaml"},
+                    "tes": {"path": path},
                 }
             }
         }
@@ -162,4 +163,12 @@ def test_add_plugin_listing() -> None:
     gateway.add_plugin_listing(config)
     other, tes_spec = config.api.specs
     assert other.path == [Path("other.yaml").resolve()]
-    assert tes_spec.path == [Path("tes.yaml").resolve(), Path(SPEC_PATH)]
+    assert tes_spec.path == [Path(SPEC_PATH), Path("tes.yaml").resolve()]
+
+
+def test_add_plugin_listing_no_tes() -> None:
+    """Without the TES API, the listing is not served."""
+    config = Config.model_validate({"api": {"specs": {"other": {"path": "o.yaml"}}}})
+    gateway.add_plugin_listing(config)
+    (other,) = config.api.specs
+    assert other.path == [Path("o.yaml").resolve()]

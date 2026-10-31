@@ -317,9 +317,10 @@ def add_plugin_listing(config: Config) -> None:
 
     Adds the paths of FOCA's specification of the listing (`GET /plugins`
     and `GET /plugins/{plugin_id}`, :py:data:`foca.plugins.api.SPEC_PATH`)
-    to the TES API (spec `tes` of `api.specs`), so that they are served
-    below its base path (:py:data:`PLUGINS_PATH`). The access control rules
-    `users-list-plugins` and `users-get-plugins` allow them.
+    before the files of the TES API (spec `tes` of `api.specs`; first, so
+    that the fields of the TES API, e.g., `info`, win), so that they are
+    served below its base path (:py:data:`PLUGINS_PATH`). The access
+    control rules `users-list-plugins` and `users-get-plugins` allow them.
 
     Args:
         config: FOCA configuration of proTES, before the app is created;
@@ -331,8 +332,9 @@ def add_plugin_listing(config: Config) -> None:
         if spec.name != TES_SPEC:
             continue
         paths = spec.path if isinstance(spec.path, list) else [spec.path]
+        # first, so that the TES spec's fields (e.g., `info`) win
         if listing not in paths:
-            spec.path = [*paths, listing]
+            spec.path = [listing, *paths]
 
 
 GATEWAY = GatewayApp(

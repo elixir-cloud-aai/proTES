@@ -490,11 +490,19 @@ under `gateway.` other than `gateway.backends` and `gateway.pipeline`, or
 it is rejected (`400`). `logs[].metadata.forwarded_to` is deprecated in
 favour of these tags, and will be removed in a later release.
 
-Users list what they may choose per task with `GET /plugins` (rules
-`users-list-plugins` and `users-get-plugins`; custom lists of
-`security.access_control.policies` must add them), and the service info
-has a field `gateway` (see [Choices of
-clients](plugins.md#choices-of-clients)).
+Users list what they may choose per task with `GET /plugins`, and the
+service info has a field `gateway` (see [Choices of
+clients](plugins.md#choices-of-clients)). Custom lists of
+`security.access_control.policies` must add the rules of the base config,
+or users get `403`:
+
+```yaml
+security:
+  access_control:
+    policies:
+      users-list-plugins: [p, user, /ga4gh/tes/v1/plugins, (GET)|(HEAD)]
+      users-get-plugins: [p, user, "/ga4gh/tes/v1/plugins/:id", (GET)|(HEAD)]
+```
 
 ## Middleware management API
 
