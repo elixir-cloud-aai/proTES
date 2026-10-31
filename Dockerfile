@@ -2,7 +2,7 @@
 ## Pinned by digest, so that rebuilds (e.g., of a release) use the same base
 ## image; Dependabot updates the tag and digest together
 ## (`.github/dependabot.yml`)
-FROM elixircloud/foca:0.18.0-py3.13@sha256:dd8dd927d8d5e7ccb616d441c8db7a5e2c0b24c52a3329f484f6edac082b7a26
+FROM elixircloud/foca:0.19.0-py3.13@sha256:82446bddb6aeb67f4371620bdf4229675c88cb8748c04050afd05c78e23cccfa
 
 ##### METADATA #####
 ## OCI annotations; images built from the FOCA image inherit its own, so all

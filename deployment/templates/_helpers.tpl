@@ -87,6 +87,8 @@ config (snake_case), as a JSON object.
   "maxRouteEntries" "max_route_entries"
   "recordFailed" "record_failed"
   "secretHeaders" "secret_headers"
+  "maxEntrySize" "max_entry_size"
+  "maxTtl" "max_ttl"
 ) -}}
 {{- end -}}
 

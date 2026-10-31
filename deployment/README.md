@@ -88,15 +88,18 @@ of the config:
 - `available`, `pipeline`, `presets`, `clientPipelines`, `clientBackends`,
   `tags` and `provenance` take the settings of the same names in the app's
   `plugins`, with their keys in camelCase (e.g., `onFailure` for
-  `on_failure`, `maxItems` for `max_items`; see `values.schema.json`).
+  `on_failure`, `maxItems` for `max_items`, `maxTtl` for `max_ttl` in
+  the store settings of a plugin, `available.<id>.store`; see
+  `values.schema.json`).
   The `config` of plugins, the `params` of pipeline steps, the identifiers
   of plugins and the names of presets are kept as they are. Steps of
   pipelines take the long form (`alternatives`), not FOCA's short forms (a
   plugin's identifier, or `plugin` and `params`).
 - Empty values are left out, so that the app's defaults apply (FOCA's
   ordered failover as the pipeline).
-- Other settings of the app's `plugins` (e.g., `defaults`, `gateway_id`)
-  are set in `config.plugins`.
+- Other settings of the app's `plugins` (e.g., `defaults`, with the
+  defaults of the plugin store, `defaults.store`, and `gateway_id`) are
+  set in `config.plugins`.
 - Rendering fails if a setting is set both in `plugins` and in
   `config.plugins`, and on `config.custom.middlewares`, which the plugins
   replaced.
@@ -208,7 +211,10 @@ Flower are pinned to patch versions and pulled only if missing.
 The chart needs images built with FOCA 0.18 or later (installed as a
 package, with the worker entry point `pro_tes.celery_worker`, and with
 `security.access_control.require_admin`, which older images refuse; see
-[Image](https://protes.readthedocs.io/en/latest/upgrading/#image)).
+[Image](https://protes.readthedocs.io/en/latest/upgrading/#image)); the
+store settings of plugins (`plugins.available.<id>.store`,
+`config.plugins.defaults.store`) need images built with FOCA 0.19 or later,
+which refuse them otherwise.
 
 ## Installation
 
@@ -675,8 +681,11 @@ config:
 ```
 
 The app authenticates as the app user against its database (`taskStore`),
-so create that user there, with the `readWrite` role on `taskStore`; allow
-the app's and the worker's pods to connect to the database.
+so create that user there, with the `readWrite` role on `taskStore`, which
+includes the right to create the indexes that the app creates on startup
+(also those of the [plugin
+store](https://protes.readthedocs.io/en/latest/operations/#plugin-store));
+allow the app's and the worker's pods to connect to the database.
 
 ## Upgrades
 

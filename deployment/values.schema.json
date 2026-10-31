@@ -718,6 +718,28 @@
               "enabled": {
                 "type": "boolean",
                 "description": "Whether the plugin is enabled"
+              },
+              "store": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "enabled": {
+                    "type": "boolean",
+                    "description": "Whether the plugin keeps its entries in the database (shared by all replicas); if false, each process keeps them in memory"
+                  },
+                  "maxEntrySize": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Maximum size of values, in bytes of compact JSON (max_entry_size)"
+                  },
+                  "maxTtl": {
+                    "type": "number",
+                    "minimum": 0.001,
+                    "maximum": 315360000,
+                    "description": "Maximum time to live of entries, in seconds, at most 10 years (max_ttl)"
+                  }
+                },
+                "description": "Settings of the plugin's key-value store (ctx.store), replacing those of config.plugins.defaults.store"
               }
             }
           },

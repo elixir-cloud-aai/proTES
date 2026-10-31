@@ -198,7 +198,7 @@ following hold:
   the check (DNS rebinding) can't lead requests, and proTES's credentials,
   to such addresses. Requests to discovered TES instances don't follow
   redirects, and their responses are limited to 64 MiB (except the bodies
-  of redirects, which FOCA 0.18 reads whole).
+  of redirects, which FOCA 0.19 reads whole).
 
 The registry is read without access token (its reads are public), over a
 URL with a scheme of the entry's `url_schemes`, at public addresses (unless
@@ -246,6 +246,29 @@ plugins:
   provenance:
     record_failed: true
     secret_headers: [X-Api-Key]
+```
+
+Plugins keep their data in FOCA's key-value store (see [Plugin
+store](operations.md#plugin-store)), in the database of the tasks. Its
+settings apply to all plugins (`plugins.defaults.store`), or to one plugin
+(`plugins.available.<id>.store`, replacing the defaults key by key):
+whether the plugin keeps its entries in the database (`enabled`, by
+default `true`; with `false`, each process keeps them in memory, so
+counters and caches hold per process only), the maximum size of values
+(`max_entry_size`, bytes of compact JSON, by default 4096) and the maximum
+time to live of entries (`max_ttl`, in seconds, by default 30 days, at
+most 10 years); set the same `enabled` for all plugins of a distribution,
+which share their entries. For example:
+
+```yaml
+plugins:
+  defaults:
+    store:
+      max_ttl: 86400
+  available:
+    tes.routing.distance:
+      store:
+        enabled: false
 ```
 
 ## Tasks

@@ -1214,6 +1214,7 @@ CHART_PLUGINS: dict[str, Any] = {
             "version": ">=1.0",
             "clientSelectable": False,
             "config": {"maxDistance": 100, "nested": {"onFailure": "x"}},
+            "store": {"enabled": True, "maxEntrySize": 1024, "maxTtl": 3600},
         }
     },
     "pipeline": [
@@ -1248,6 +1249,7 @@ CONFIG_PLUGINS: dict[str, Any] = {
             "version": ">=1.0",
             "client_selectable": False,
             "config": {"maxDistance": 100, "nested": {"onFailure": "x"}},
+            "store": {"enabled": True, "max_entry_size": 1024, "max_ttl": 3600},
         }
     },
     "pipeline": [
@@ -1345,6 +1347,26 @@ def test_plugins_long_identifier() -> None:
     PluginsConfig.model_validate(plugins)
 
 
+@pytest.mark.parametrize(
+    "store",
+    [
+        {"maxTtl": 0.001, "maxEntrySize": 1},
+        {"maxTtl": 10 * 365 * 86400, "enabled": False},
+    ],
+)
+def test_plugins_store_bounds(store: dict[str, Any]) -> None:
+    """The store settings of plugins take FOCA's bounds, also at the limits."""
+    plugins = {"available": {"x": {"store": store}}}
+    docs = _render("--set-json", f"plugins={json.dumps(plugins)}")
+    rendered = _overlay(docs)["plugins"]
+    PluginsConfig.model_validate(rendered)
+    assert set(rendered["available"]["x"]["store"]) <= {
+        "enabled",
+        "max_entry_size",
+        "max_ttl",
+    }
+
+
 def test_plugins_twice() -> None:
     """Rendering fails with a plugin setting in `plugins` and in `config`."""
     error = _render_error(
@@ -1382,6 +1404,22 @@ def test_plugins_middlewares(args: tuple[str, str]) -> None:
             "at '/plugins/available/x'",
         ),
         ({"gatewayId": "x"}, "at '/plugins'"),
+        (
+            {"available": {"x": {"store": {"max_ttl": 60}}}},
+            "at '/plugins/available/x/store'",
+        ),
+        (
+            {"available": {"x": {"store": {"maxTtl": 0}}}},
+            "at '/plugins/available/x/store/maxTtl'",
+        ),
+        (
+            {"available": {"x": {"store": {"maxTtl": 10 * 365 * 86400 + 1}}}},
+            "at '/plugins/available/x/store/maxTtl'",
+        ),
+        (
+            {"available": {"x": {"store": {"maxEntrySize": 0}}}},
+            "at '/plugins/available/x/store/maxEntrySize'",
+        ),
         ({"available": {"Tes.X": {}}}, "invalid propertyName 'Tes.X'"),
         ({"available": {"x" * 129: {}}}, "invalid propertyName 'xxx"),
         (

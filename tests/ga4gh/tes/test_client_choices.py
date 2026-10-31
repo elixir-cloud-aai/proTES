@@ -223,6 +223,33 @@ def test_list_plugins(with_plugins: PluginClient) -> None:
     assert client.get(f"{BASE_PATH}/plugins/test.unknown").status_code == 404
 
 
+class StoringRename(Rename):
+    """`Rename` that declares stored data (`data_stored`, FOCA 0.19)."""
+
+    data_stored = ("names of renamed tasks",)
+
+
+def test_list_plugins_storage(with_plugins: PluginClient) -> None:
+    """Plugins are listed with their stored data and the mode of their store.
+
+    With the app's database, plugins share their store (`shared`), unless
+    their store is turned off (`off`, `plugins.available.<id>.store`).
+    """
+    client = with_plugins(
+        {"test.rename": Rename, "test.storing": StoringRename},
+        **CHOICES,
+        available={"test.rename": {"store": {"enabled": False}}, "test.storing": {}},
+    )
+    listing = client.get(f"{BASE_PATH}/plugins").get_json()
+    plugins = {plugin["id"]: plugin for plugin in listing["plugins"]}
+    assert plugins["test.rename"]["data_stored"] == []
+    assert plugins["test.rename"]["storage"] == "off"
+    assert plugins["test.storing"]["data_stored"] == ["names of renamed tasks"]
+    assert plugins["test.storing"]["storage"] == "shared"
+    plugin = client.get(f"{BASE_PATH}/plugins/test.storing").get_json()
+    assert plugin["storage"] == "shared"
+
+
 def test_list_plugins_disabled(with_plugins: PluginClient) -> None:
     """Without client pipelines, users may choose no plugins."""
     client = with_plugins(PLUGINS)

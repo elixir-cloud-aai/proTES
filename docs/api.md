@@ -124,7 +124,7 @@ resolved pipeline (`pipeline.resolved`), e.g., shortened:
 
 ```json
 {
-  "engine": {"foca": "0.18.0", "plugin_api": 1,
+  "engine": {"foca": "0.19.0", "plugin_api": 1,
              "app": {"name": "proTES", "version": "0.4.0"}},
   "request_id": "4f3c...",
   "pipeline": {"source": "default", "preset": null, "requested": null,
@@ -132,7 +132,7 @@ resolved pipeline (`pipeline.resolved`), e.g., shortened:
                "resolved_hash": "sha256:9a1e..."},
   "plugins": {"sha256:77b0...": "foca.routing.ordered"},
   "builds": {"sha256:77b0...": {"id": "foca.routing.ordered",
-                                "distribution": "foca", "version": "0.18.0"}},
+                                "distribution": "foca", "version": "0.19.0"}},
   "executions": [{"step": "route", "phase": "route", "outcome": "ok"}],
   "route": {"candidates_in": ["https://tes.example.org"],
             "candidates_out": ["https://tes.example.org"]},
