@@ -46,22 +46,27 @@ or a release train, e.g.:
 foca-plugin-tes-routing-distance==<version>
 ```
 
-Resolve them against the image: pip lists the distributions that the image
-lacks (the plugins and their dependencies), with their exact versions and
-the hashes of their wheels, in `plugins.txt`:
+Resolve them against the image, with its installed packages as
+constraints: pip lists the distributions that the image lacks (the plugins
+and their dependencies), with their exact versions and the hashes of their
+wheels, in `plugins.txt` (pip's report replaces tools such as `pip-compile`,
+as it resolves inside the image):
 
 ```bash
-docker run --rm --volume "$PWD/plugins.in:/tmp/plugins.in:ro" "$PROTES_IMAGE" \
-  pip install --dry-run --quiet --no-cache-dir --only-binary :all: \
-    --report - --requirement /tmp/plugins.in \
+docker run --rm --volume "$PWD/plugins.in:/tmp/plugins.in:ro" "$PROTES_IMAGE" sh -c \
+  'pip list --format freeze > /tmp/image.txt \
+    && pip install --dry-run --quiet --no-cache-dir --only-binary :all: \
+      --constraint /tmp/image.txt --report - --requirement /tmp/plugins.in' \
   | jq -r '.install[] | "\(.metadata.name)==\(.metadata.version) --hash=sha256:\(.download_info.archive_info.hashes.sha256)"' \
   > plugins.txt
 ```
 
-Review `plugins.txt` and keep it, e.g., in the repository of your
-deployment: it is the complete list of what the image adds. Packages of the
-image that it lists would be upgraded or downgraded; prefer plugin versions
-that work with those of the image.
+The constraints keep the packages of the image as they are: resolving
+fails if a plugin needs other versions of them (e.g., another FOCA version);
+choose plugin versions that work with those of the image. Review
+`plugins.txt` and keep it, e.g., in the repository of your deployment: it is
+the complete list of what the image adds. If it is empty, the image has all
+the plugins already, and there is nothing to build.
 
 ## Downloading and verifying
 
@@ -77,9 +82,9 @@ pip checks the hashes of `plugins.txt`. Before the build, also check where
 the wheels come from: the plugins of foca-plugins are published with [PEP
 740](https://peps.python.org/pep-0740/) attestations and GitHub artifact
 attestations of their build provenance (see [Verifying
-distributions](https://foca-plugins.readthedocs.io/en/latest/installing/#verifying-distributions)),
-e.g., for each of their wheels, with the repository that publishes the
-plugin:
+distributions](https://foca-plugins.readthedocs.io/en/latest/installing/#verifying-distributions)).
+For example, check the GitHub artifact attestation of each of their wheels,
+with the repository that publishes the plugin:
 
 ```bash
 gh attestation verify wheels/<wheel> --repo <owner>/<repository>
@@ -121,7 +126,8 @@ images.
 ## Deploying
 
 Deploy the image and enable the plugins, e.g., in the values file of the
-Helm chart (see the chart's README, [Configuration](deployment.md)):
+Helm chart (see [Configuration](deployment.md#configuration) of the
+chart's README):
 
 ```yaml
 protes:
@@ -148,7 +154,8 @@ Rebuild the image for every release of proTES that you deploy, and resolve
 `plugins.in` against the new image again (see [Pinning
 plugins](#pinning-plugins)), as its packages change. Plugins declare the
 FOCA versions that they support (e.g., `foca>=0.18.0,<0.19`), so resolving
-them against an image with another FOCA version fails.
+them against an image with another FOCA version fails (see [Pinning
+plugins](#pinning-plugins)).
 
 ## Local builds
 
@@ -163,7 +170,10 @@ PLUGINS="foca-plugin-tes-routing-distance==<version>" docker compose up --build 
 
 Enable them in the config overlay (e.g., `config.dev.yaml`). These builds
 are **not** pinned by hash nor reviewed: use the recipe above for images
-that you deploy.
+that you deploy. `PLUGINS` is split at spaces (write specifiers without
+spaces, e.g., `name>=1.0`) and recorded in the image's history: pass
+requirement specifiers only, never credentials (e.g., of a private package
+index).
 
 ## Testing the recipe
 

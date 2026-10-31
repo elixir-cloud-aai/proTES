@@ -141,7 +141,9 @@ The Helm chart sets the plugins with the values `plugins.available`,
 `plugins.pipeline`, `plugins.presets`, `plugins.clientPipelines`,
 `plugins.clientBackends`, `plugins.tags` and `plugins.provenance`, with the
 keys of the config in camelCase (e.g., `onFailure` for `on_failure`), and
-other settings in `config.plugins` (see the chart's README, Configuration).
+other settings in `config.plugins` (see the chart's README, Configuration),
+and the image with the plugins in `protes.image` (see [Plugin
+images](plugin-images.md#deploying)).
 The config overlays of Docker Compose (`config.dev.yaml`) and of its smoke
 test (`tests/smoke/config.yaml`) set the pipeline explicitly, to FOCA's
 ordered failover.

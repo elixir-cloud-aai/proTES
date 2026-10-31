@@ -108,8 +108,8 @@ tes:
 # plugins and the names of presets are kept as they are). Empty values are
 # left out, so the app's defaults apply: FOCA's ordered failover
 # (`foca.routing.ordered`) as the pipeline. Plugins other than FOCA's built-in
-# ones must be installed in the image (e.g., a custom image based on that of
-# proTES).
+# ones must be installed in the image (`protes.image`), derived from that of
+# proTES (see https://protes.readthedocs.io/en/latest/plugin-images/).
 plugins:
   # Installed plugins that may be used, by identifier (FOCA's built-in
   # plugins, `foca.*`, always are), with their admin settings

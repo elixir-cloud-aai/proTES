@@ -43,7 +43,8 @@ RUN pip install --no-cache-dir --no-deps /tmp/src \
   && rm -rf /tmp/src
 
 ## Plugins for local builds (e.g., `--build-arg PLUGINS="<distribution>==<version>"`,
-## pip requirement specifiers separated by spaces), installed with their
+## pip requirement specifiers without spaces, separated by spaces; recorded
+## in the image's history, so never credentials), installed with their
 ## dependencies from the package index, NOT pinned by hash; then pip checks
 ## that all dependencies are met. Empty by default, as for the published
 ## images; images for deployments derive from a release image instead (see

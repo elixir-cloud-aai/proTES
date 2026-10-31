@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # Smoke test of the derived-image recipe for plugins (`docs/plugin-images.md`,
 # `examples/plugin-image/Dockerfile`), after `check.sh`: builds the wheel of
-# the test plugin (`plugin/`), pins it with its hash in `plugins.txt`, builds
-# the image derived from the app's image with the recipe, restarts proTES and
-# the Celery worker with it and the plugin enabled (`plugins.yaml`), and
-# checks that a new task gets the plugin's tag. Run it from the repository
+# the test plugin (`plugin/`), pins it with its hash in `plugins.txt` (and
+# checks that a wrong hash fails the build), builds the image derived from
+# the app's image with the recipe, restarts proTES and the Celery worker with
+# it and the plugin enabled (`plugins.yaml`), and checks that a new task gets
+# the plugin's tag. Run it from the repository
 # root, with `COMPOSE_FILE` set as for `check.sh` and the base URL of the TES
 # API as argument (default `http://localhost:8080/ga4gh/tes/v1`); the base
 # image is `PROTES_IMAGE` (default `protes:local`, built by Compose), the
@@ -24,10 +25,21 @@ trap 'rm -rf "${context}"' EXIT
   --wheel-dir "${context}/wheels" tests/smoke/plugin
 wheels=("${context}"/wheels/*.whl)
 hash="$(sha256sum "${wheels[0]}" | cut -d ' ' -f 1)"
-echo "protes-smoke-plugin==0.1.0 --hash=sha256:${hash}" > "${context}/plugins.txt"
-docker build --file examples/plugin-image/Dockerfile \
-  --build-arg PROTES_IMAGE="${PROTES_IMAGE:-protes:local}" \
-  --tag "${PLUGIN_IMAGE}" "${context}"
+pin() {
+  echo "protes-smoke-plugin==0.1.0 --hash=sha256:$1" > "${context}/plugins.txt"
+}
+build() {
+  docker build --file examples/plugin-image/Dockerfile \
+    --build-arg PROTES_IMAGE="${PROTES_IMAGE:-protes:local}" "$@" "${context}"
+}
+# The build fails if a hash differs
+pin "$(printf '0%.0s' {1..64})"
+if build --quiet > /dev/null 2>&1; then
+  echo "::error::Image built despite a wrong hash in plugins.txt"
+  exit 1
+fi
+pin "${hash}"
+build --tag "${PLUGIN_IMAGE}"
 
 # The app refuses to start if it can't load an enabled plugin
 COMPOSE_FILE="${COMPOSE_FILE}:tests/smoke/plugins.yaml" \
