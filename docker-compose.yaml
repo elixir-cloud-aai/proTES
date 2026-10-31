@@ -13,9 +13,12 @@ x-protes: &protes
     build:
         context: .
         dockerfile: Dockerfile
-        # App version (the build gets no Git metadata); `0.0.0.dev0` if unset
+        # App version (the build gets no Git metadata); `0.0.0.dev0` if unset.
+        # Plugins from the host's `PLUGINS` (not pinned by hash; see
+        # `docs/plugin-images.md`); none if unset
         args:
             SETUPTOOLS_SCM_PRETEND_VERSION: ${SETUPTOOLS_SCM_PRETEND_VERSION:-}
+            PLUGINS: ${PLUGINS:-}
     restart: unless-stopped
     # Development settings (`config.dev.yaml`, see `FOCA_CONFIG_OVERLAY`)
     volumes:
