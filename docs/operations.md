@@ -256,7 +256,8 @@ The repository's name changes from `proTES` to `protes` (GitHub ignores the
 case in URLs, so links of both forms work): releases up to 0.3.0 are signed
 as `elixir-cloud-aai/proTES`, releases after the rename as
 `elixir-cloud-aai/protes` (in `--repo`, `--signer-workflow` and
-`--certificate-identity`). The commands above use the form of release
+`--certificate-identity`), for images and charts alike. The commands for
+images above and for charts below use the form of release
 `{{ version }}`.
 
 Images of commits on `dev` (`dev`, `sha-<commit>`) are signed and attested
