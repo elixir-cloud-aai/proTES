@@ -302,3 +302,46 @@ def test_provenance_not_stored(
     assert provenance["stored"] is False
     assert set(provenance["builds"]) == set(provenance["plugins"])
     assert mongo_client[DB][PLUGIN_BUILDS_COLLECTION].count_documents({}) == 0
+
+
+def test_provenance_collections_lazy(
+    client: FlaskClient, task_id: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Only `POST /tasks` uses the collections of the provenance."""
+    get_collection = task_runs_module.get_collection
+
+    def tasks_only(db: str, collection: str) -> Any:
+        """Get the collection of the tasks only."""
+        if collection != "tasks":
+            raise KeyError(collection)
+        return get_collection(db, collection)
+
+    monkeypatch.setattr(task_runs_module, "get_collection", tasks_only)
+    assert client.get(f"{BASE_PATH}/tasks").status_code == 200
+    assert client.get(f"{BASE_PATH}/tasks/{task_id}").status_code == 200
+
+
+def test_provenance_outcome_unknown_not_stored(
+    client: FlaskClient,
+    backend: type[FakeBackend],
+    mongo_client: MongoClient[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The attempts are stored also if storing the outcome failed."""
+
+    def create_task(self: FakeBackend, task: tes.Task) -> str:
+        """Fail as if the response timed out."""
+        raise BackendOutcomeUnknown("timed out")
+
+    def update_task_state(self: DbDocumentConnector, **kwargs: Any) -> bool:
+        """Fail to store the state."""
+        raise RuntimeError("database down")
+
+    monkeypatch.setattr(backend, "create_task", create_task)
+    monkeypatch.setattr(DbDocumentConnector, "update_task_state", update_task_state)
+    client.application.config["PROPAGATE_EXCEPTIONS"] = False
+    assert client.post(f"{BASE_PATH}/tasks", json=TASK).status_code == 500
+    (document,) = mongo_client[DB]["tasks"].find()
+    assert document["provenance"]["final_reason"] == "outcome_unknown"
+    (attempt,) = document["provenance"]["attempts"]
+    assert attempt["outcome"] == "unknown"

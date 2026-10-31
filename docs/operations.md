@@ -180,7 +180,11 @@ of rejected input is kept; see [Plugins](configuration.md#plugins)), their
 records go to the collection `failed_runs`, with the time (`failed_at`) and
 the error (`type`, `status`, `slug`), keyed by request identifier (the
 client's `X-Request-ID`, if valid; a request with the same identifier
-replaces the record). Requests refused before the pipeline started (e.g.,
+replaces the record). As clients choose these identifiers, any user can
+replace the record of a request whose identifier they know, and add a
+record with each rejected request; with `record_failed`, have the reverse
+proxy in front of proTES set `X-Request-ID` itself, replacing that of the
+client. Requests refused before the pipeline started (e.g.,
 invalid tasks, loops, or invalid tags under `gateway.`) have no record, nor
 have tasks whose response a plugin failed: they are kept, and run at their
 TES instance.

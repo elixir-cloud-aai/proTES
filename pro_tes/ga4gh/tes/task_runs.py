@@ -3,6 +3,7 @@
 from contextlib import suppress
 from copy import deepcopy
 from dataclasses import replace
+from functools import cached_property
 import logging
 import re
 from typing import Any, NamedTuple
@@ -127,9 +128,6 @@ class TaskRuns:
     Attributes:
         custom_config: Custom configuration of the app.
         db_client: Database collection storing task objects.
-        provenance: Store of the provenance of pipeline runs (cf.
-            :py:class:`foca.plugins.ProvenanceStore`), in the database of
-            the tasks.
         store_logs: Whether forwards are recorded in the logs of tasks.
     """
 
@@ -140,7 +138,18 @@ class TaskRuns:
             TASK_DB, TASK_COLLECTION
         )
         self.store_logs = self.custom_config.storeLogs.execution_trace
-        self.provenance = ProvenanceStore(
+
+    @cached_property
+    def provenance(self) -> ProvenanceStore:
+        """Store of the provenance of pipeline runs, in the database of the tasks.
+
+        Created on first use (by `POST /tasks` only), so that the other
+        endpoints don't depend on its collections.
+
+        Returns:
+            The store (cf. :py:class:`foca.plugins.ProvenanceStore`).
+        """
+        return ProvenanceStore(
             plugin_builds=get_collection(TASK_DB, PLUGIN_BUILDS_COLLECTION),
             pipelines=get_collection(TASK_DB, PIPELINES_COLLECTION),
             failures=get_collection(TASK_DB, FAILED_RUNS_COLLECTION),
@@ -413,13 +422,15 @@ class TaskRuns:
                     type(exc).__name__,
                     exc,
                 )
-                db_connector.upsert_fields_in_root_object(
-                    root="tes_endpoint", host=tes_url, base_path=""
-                )
-                db_connector.update_task_state(state=TesState.SYSTEM_ERROR.value)
                 # the loop is left before the engine sets it
                 run.final_reason = "outcome_unknown"
-                self._update_provenance(run=run, worker_id=db_document.worker_id)
+                try:
+                    db_connector.upsert_fields_in_root_object(
+                        root="tes_endpoint", host=tes_url, base_path=""
+                    )
+                    db_connector.update_task_state(state=TesState.SYSTEM_ERROR.value)
+                finally:
+                    self._update_provenance(run=run, worker_id=db_document.worker_id)
                 raise
             except (requests.RequestException, BackendAuthError, ValueError) as exc:
                 # the backend did not accept the task (cf. `TesClient`), has
