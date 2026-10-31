@@ -243,7 +243,12 @@ proTES starts anyway and logs a warning (an error, with the cause, for
 conflicting indexes, failed authentication or missing rights), and writes
 of plugins to the store fail until the indexes exist. On each start, proTES
 also cuts the expiry of stored entries to the current `max_ttl`; if that
-fails (logged), they keep their expiry until a later start succeeds.
+fails (logged), they keep their expiry until a later start succeeds. During
+a rolling update that lowers `max_ttl`, instances with the old setting
+still write entries with the old `max_ttl`: once all instances have the new
+setting, restart them once more (e.g., `kubectl rollout restart
+deployment/<app>` with the Helm chart), so that all entries expire within
+the new `max_ttl`.
 
 What each plugin keeps there is listed in the plugin listing (`data_stored`,
 with the mode of its store, `storage`: `shared` in the database, `local` in

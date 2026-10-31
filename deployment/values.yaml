@@ -115,7 +115,9 @@ plugins:
   # plugins, `foca.*`, always are), with their admin settings
   # (`config`), the roles that may choose them (`roles`), the settings of
   # their key-value store (`store`: `enabled`, `maxEntrySize`, `maxTtl`;
-  # defaults in `config.plugins.defaults.store`) and more
+  # defaults in `config.plugins.defaults.store`; plugins of one
+  # distribution share their entries, so give them the same `enabled`, else
+  # the app warns at startup) and more
   available: {}
   #   tes.routing.distance:
   #     version: ">=1.0,<2"
