@@ -101,6 +101,10 @@ the views `BASIC` and `FULL`, besides the client's own tags:
 | `gateway.route` | the last attempts as compact JSON (`url`, `outcome`, `reason`) | after forwarding |
 | `gateway.route_truncated` | `true` if `gateway.route` leaves out attempts | after forwarding |
 
+Tracking a task doesn't change its tags. If the tags of the stored task
+can't be built (an internal error, which is logged), the task is created
+without the tags added when it is stored.
+
 Clients can't set these tags (`400 Bad Request`; only `gateway.backends`,
 and `gateway.pipeline` if enabled, are theirs, see
 [Plugins](plugins.md#choices-of-clients)), and plugins can't change them.

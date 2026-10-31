@@ -210,9 +210,11 @@ def _store_final(db_client: DbDocumentConnector, worker_id: str, response: Any) 
         document.task.logs[index].outputs = logs.outputs
     # only the fields tracked, so that fields written meanwhile (e.g., the
     # gateway tags of a task still being created) are kept
-    task = document.task.model_dump(mode="json", exclude_none=True)
     db_client.upsert_fields_in_root_object(
-        root="task", state=task["state"], logs=task["logs"]
+        root="task",
+        **document.task.model_dump(
+            mode="json", exclude_none=True, include={"state", "logs"}
+        ),
     )
 
 
