@@ -1,0 +1,214 @@
+"""Tests of serving the provenance of tasks (#322).
+
+`GET /tasks/{id}/provenance` serves the provenance stored with a task, with
+the plugin builds and pipelines that it refers to expanded, to the task's
+owner and to admins; tasks have the gateway tags of FOCA (`gateway.*`) that
+summarize it, and `forwarded_to` is deprecated.
+"""
+
+import json
+from pathlib import Path
+from typing import Any
+
+from flask.testing import FlaskClient
+from pymongo import MongoClient
+import pytest
+import tes
+import yaml
+
+import pro_tes
+from pro_tes.exceptions import BackendOutcomeUnknown
+from tests.conftest import ADMIN, ADMIN_USER, DB, OTHER_USER, OUTSIDER, make_headers
+from tests.ga4gh.tes.conftest import (
+    BACKENDS,
+    BASE_PATH,
+    TASK,
+    FakeBackend,
+    relayed,
+    stored,
+)
+
+# Specification of the extensions of the TES API by proTES
+ADDITIONS = Path(pro_tes.__file__).parent / "api" / "additions.openapi.yaml"
+
+
+def provenance_path(task_id: str) -> str:
+    """Get the path of the provenance of a task.
+
+    Args:
+        task_id: Identifier of the task.
+
+    Returns:
+        The path.
+    """
+    return f"{BASE_PATH}/tasks/{task_id}/provenance"
+
+
+@pytest.mark.parametrize("user", [None, ADMIN, ADMIN_USER])
+def test_get_provenance(
+    client: FlaskClient,
+    task_id: str,
+    mongo_client: MongoClient[dict[str, Any]],
+    user: str | None,
+) -> None:
+    """Owners and admins get the provenance, with its references expanded."""
+    headers = make_headers(user) if user else None
+    response = client.get(provenance_path(task_id), headers=headers)
+    assert response.status_code == 200
+    provenance = response.get_json()
+    record = stored(mongo_client, task_id)["provenance"]
+    assert provenance["request_id"] == record["request_id"]
+    assert provenance["attempts"] == record["attempts"]
+    assert (
+        provenance["pipeline"]["resolved_hash"] == (record["pipeline"]["resolved_hash"])
+    )
+    assert provenance["pipeline"]["resolved"][0]["id"] == "route"
+    assert set(provenance["builds"]) == set(provenance["plugins"])
+    for key, build in provenance["builds"].items():
+        assert "_id" not in build
+        assert build["id"] == provenance["plugins"][key]
+
+
+def test_head_provenance(client: FlaskClient, task_id: str) -> None:
+    """Owners may send `HEAD` requests for the provenance."""
+    assert client.head(provenance_path(task_id)).status_code == 200
+
+
+@pytest.mark.parametrize("user", [OTHER_USER, OUTSIDER])
+def test_get_provenance_forbidden(client: FlaskClient, task_id: str, user: str) -> None:
+    """Other users than owners and admins get `403`."""
+    response = client.get(provenance_path(task_id), headers=make_headers(user))
+    assert response.status_code == 403
+
+
+def test_get_provenance_not_found(client: FlaskClient) -> None:
+    """Admins get `404` for unknown tasks, users `403`."""
+    path = provenance_path("NOTASK")
+    assert client.get(path, headers=make_headers(ADMIN)).status_code == 404
+    assert client.get(path).status_code == 403
+
+
+def test_get_provenance_none(
+    client: FlaskClient, task_id: str, mongo_client: MongoClient[dict[str, Any]]
+) -> None:
+    """Tasks without provenance (created by earlier versions) give `404`."""
+    mongo_client[DB]["tasks"].update_one(
+        {"task.id": task_id}, {"$unset": {"provenance": ""}}
+    )
+    response = client.get(provenance_path(task_id))
+    assert response.status_code == 404
+    assert response.get_json()["detail"] == "No provenance was recorded for the task."
+
+
+def test_get_provenance_inline(
+    client: FlaskClient, task_id: str, mongo_client: MongoClient[dict[str, Any]]
+) -> None:
+    """Records that kept their builds and pipeline are served as they are.
+
+    References that can't be resolved are left out.
+    """
+    tasks = mongo_client[DB]["tasks"]
+    record = stored(mongo_client, task_id)["provenance"]
+    record["pipeline"]["resolved"] = [{"id": "inline"}]
+    record["builds"] = {"sha256:kept": {"id": "kept"}}
+    record["plugins"]["sha256:missing"] = "missing"
+    tasks.update_one({"task.id": task_id}, {"$set": {"provenance": record}})
+    provenance = client.get(provenance_path(task_id)).get_json()
+    assert provenance["pipeline"]["resolved"] == [{"id": "inline"}]
+    assert provenance["builds"]["sha256:kept"] == {"id": "kept"}
+    assert "sha256:missing" not in provenance["builds"]
+    assert set(provenance["builds"]) == (
+        set(record["plugins"]) - {"sha256:missing"}
+    ) | {"sha256:kept"}
+
+
+def test_get_provenance_no_pipeline(
+    client: FlaskClient, task_id: str, mongo_client: MongoClient[dict[str, Any]]
+) -> None:
+    """Records whose pipeline isn't stored (or has no hash) are served as is."""
+    mongo_client[DB]["pipelines"].delete_many({})
+    provenance = client.get(provenance_path(task_id)).get_json()
+    assert "resolved" not in provenance["pipeline"]
+
+
+def test_gateway_tags(
+    client: FlaskClient,
+    backend: type[FakeBackend],
+    mongo_client: MongoClient[dict[str, Any]],
+) -> None:
+    """Tasks have FOCA's gateway tags; the relayed task has none.
+
+    The client's tags are kept.
+    """
+    task = {**TASK, "tags": {"project": "x"}}
+    response = client.post(f"{BASE_PATH}/tasks", json=task)
+    assert response.status_code == 200
+    task_id = response.get_json()["id"]
+    tags = stored(mongo_client, task_id)["task"]["tags"]
+    record = stored(mongo_client, task_id)["provenance"]
+    assert tags["project"] == "x"
+    assert tags["gateway.pipeline_source"] == "default"
+    assert tags["gateway.pipeline_hash"] == record["pipeline"]["resolved_hash"]
+    assert tags["gateway.plugins"].startswith("foca.routing.ordered@")
+    assert tags["gateway.provenance"] == provenance_path(task_id)
+    assert tags["gateway.backend"] == BACKENDS[0]
+    assert tags["gateway.backend_task_id"] == "remote-1"
+    assert tags["gateway.forwarded_at"] == record["attempts"][0]["started_at"]
+    assert tags["gateway.attempts"] == "1"
+    assert json.loads(tags["gateway.route"]) == [
+        {"url": BACKENDS[0], "outcome": "accepted"}
+    ]
+    ((_, relayed_task),) = relayed(backend)
+    assert relayed_task.tags == {"project": "x"}
+    for view in ("BASIC", "FULL"):
+        served = client.get(f"{BASE_PATH}/tasks/{task_id}?view={view}").get_json()
+        assert served["tags"] == tags
+
+
+def test_gateway_tags_failover(
+    client: FlaskClient,
+    backend: type[FakeBackend],
+    mongo_client: MongoClient[dict[str, Any]],
+) -> None:
+    """The route lists the attempts, also of backends that didn't accept."""
+    backend.failing.add(BACKENDS[0])
+    task_id = client.post(f"{BASE_PATH}/tasks", json=TASK).get_json()["id"]
+    tags = stored(mongo_client, task_id)["task"]["tags"]
+    assert tags["gateway.attempts"] == "2"
+    assert tags["gateway.backend"] == BACKENDS[1]
+    route = json.loads(tags["gateway.route"])
+    assert [entry["outcome"] for entry in route] == ["not_accepted", "accepted"]
+
+
+def test_gateway_tags_outcome_unknown(
+    client: FlaskClient,
+    backend: type[FakeBackend],
+    mongo_client: MongoClient[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Tasks that a backend may have accepted have its URL, no remote ID."""
+
+    def create_task(self: FakeBackend, task: tes.Task) -> str:
+        """Fail as if the response timed out."""
+        raise BackendOutcomeUnknown("timed out")
+
+    monkeypatch.setattr(backend, "create_task", create_task)
+    assert client.post(f"{BASE_PATH}/tasks", json=TASK).status_code == 502
+    (document,) = mongo_client[DB]["tasks"].find()
+    tags = document["task"]["tags"]
+    assert tags["gateway.backend"] == BACKENDS[0]
+    assert "gateway.backend_task_id" not in tags
+    assert json.loads(tags["gateway.route"])[0]["outcome"] == "unknown"
+
+
+def test_forwarded_to_deprecated() -> None:
+    """`forwarded_to` of the task logs is deprecated, in favour of the tags."""
+    spec = yaml.safe_load(ADDITIONS.read_text(encoding="utf-8"))
+    schemas = spec["components"]["schemas"]
+    assert schemas["tesForward"]["deprecated"] is True
+    forwarded_to = schemas["tesTaskLog"]["properties"]["metadata"]["properties"][
+        "forwarded_to"
+    ]
+    assert forwarded_to["deprecated"] is True
+    operation = spec["paths"]["/tasks/{id}/provenance"]["get"]
+    assert operation["operationId"] == "GetTaskProvenance"

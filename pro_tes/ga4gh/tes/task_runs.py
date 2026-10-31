@@ -24,6 +24,7 @@ from foca.plugins import (
 )
 from foca.plugins.engine import PipelineRun
 from foca.plugins.runtime import get_host
+from foca.plugins.tags import creation_tags, routing_tags, without_server_tags
 from foca.utils.misc import generate_id
 from pymongo.collection import Collection
 from pymongo.errors import DuplicateKeyError
@@ -35,6 +36,7 @@ from pro_tes.exceptions import (
     BackendAuthError,
     BackendOutcomeUnknown,
     BadRequest,
+    ProvenanceNotFound,
     TaskNotCancelable,
     TaskNotFound,
 )
@@ -320,10 +322,17 @@ class TaskRuns:
         # update task document; set by the server (TES), not by clients
         payload = deepcopy(payload)
         payload["creation_time"] = start_time
+        # the gateway's tags (FOCA's), besides the client's; tags under the
+        # prefix other than the client's choices are dropped
+        prefix = run.host.conf.tags.prefix
+        payload["tags"] = {
+            **without_server_tags(payload.get("tags"), prefix),
+            **creation_tags(run),
+        }
         db_document.task = TesTask(**payload)
         # the prospective part of the provenance (pipeline, plugins, route),
         # stored with the task; the attempts are added once a backend
-        # accepted the task, or may have (cf. `_update_provenance`)
+        # accepted the task, or may have (cf. `_update_records`)
         db_document.provenance = self.provenance.save(run)
 
         # create database document
@@ -332,6 +341,7 @@ class TaskRuns:
             start_time=start_time,
             owner=owner,
             collection=collection,
+            provenance_tag=f"{prefix}provenance",
         )
         run.task_id = db_document.task.id
         db_connector = DbDocumentConnector(
@@ -430,7 +440,7 @@ class TaskRuns:
                     )
                     db_connector.update_task_state(state=TesState.SYSTEM_ERROR.value)
                 finally:
-                    self._update_provenance(run=run, worker_id=db_document.worker_id)
+                    self._update_records(run=run, db_document=db_document)
                 raise
             except (requests.RequestException, BackendAuthError, ValueError) as exc:
                 # the backend did not accept the task (cf. `TesClient`), has
@@ -505,66 +515,116 @@ class TaskRuns:
         except Exception as exc:
             # raised once the task is tracked
             failed = exc
+        # before the tracking starts, which writes the task back
+        self._update_records(run=run, db_document=db_document)
         try:
-            try:
-                remote_task: Task = cli.get_task(remote_task_id)
-                task_model_converter = TaskModelConverter(task=remote_task)
-                task_converted: TesTask = task_model_converter.convert_task()
-                state = TesState(task_converted.state)
-                # unless a request to cancel the task changed it meanwhile
-                if db_connector.update_task_state(
-                    state=state.value, if_state=TesState.UNKNOWN.value
-                ):
-                    db_document.task.state = state
-            except Exception as exc:
-                # the task is tracked anyway, also if its backend serves it
-                # invalid (e.g., with an unknown state)
-                logger.error(
-                    "Task '%s' info could not be retrieved from TES endpoint"
-                    " hosted at: %s. Original error message: '%s: %s'",
-                    db_document.task.id,
-                    tes_url,
-                    type(exc).__name__,
-                    exc,
-                )
-            task__track_task_progress.apply_async(
-                None,
-                {
-                    "worker_id": db_document.worker_id,
-                    "remote_host": db_document.tes_endpoint.host,
-                    "remote_base_path": db_document.tes_endpoint.base_path,
-                    "remote_task_id": remote_task_id,
-                },
+            remote_task: Task = cli.get_task(remote_task_id)
+            task_model_converter = TaskModelConverter(task=remote_task)
+            task_converted: TesTask = task_model_converter.convert_task()
+            state = TesState(task_converted.state)
+            # unless a request to cancel the task changed it meanwhile
+            if db_connector.update_task_state(
+                state=state.value, if_state=TesState.UNKNOWN.value
+            ):
+                db_document.task.state = state
+        except Exception as exc:
+            # the task is tracked anyway, also if its backend serves it
+            # invalid (e.g., with an unknown state)
+            logger.error(
+                "Task '%s' info could not be retrieved from TES endpoint"
+                " hosted at: %s. Original error message: '%s: %s'",
+                db_document.task.id,
+                tes_url,
+                type(exc).__name__,
+                exc,
             )
-        finally:
-            # with the attempts and the `response` phase
-            self._update_provenance(run=run, worker_id=db_document.worker_id)
+        task__track_task_progress.apply_async(
+            None,
+            {
+                "worker_id": db_document.worker_id,
+                "remote_host": db_document.tes_endpoint.host,
+                "remote_base_path": db_document.tes_endpoint.base_path,
+                "remote_task_id": remote_task_id,
+            },
+        )
         if failed is not None:
             raise failed
         return response.client_payload, dict(response.client_headers)
 
-    def _update_provenance(self, run: PipelineRun, worker_id: str) -> None:
-        """Store the provenance of a stored task's run, with its attempts.
+    def _update_records(self, run: PipelineRun, db_document: DbDocument) -> None:
+        """Store the provenance and the routing tags of a stored task's run.
 
         Replaces the provenance stored when the task was created (cf.
-        :py:meth:`foca.plugins.ProvenanceStore.save`). Errors are logged,
-        not raised: a backend has (or may have) the task already.
+        :py:meth:`foca.plugins.ProvenanceStore.save`), now with the
+        attempts, and adds FOCA's routing tags (e.g., `gateway.backend`, cf.
+        :py:func:`foca.plugins.tags.routing_tags`) to the task's tags.
+        Errors are logged, not raised: a backend has (or may have) the task
+        already.
 
         Args:
             run: Pipeline run of the request that created the task.
-            worker_id: Worker identifier of the task.
+            db_document: The stored task, with its tags.
         """
         try:
+            tags = {**(db_document.task.tags or {}), **routing_tags(run)}
             self.db_client.update_one(
-                {"worker_id": worker_id},
-                {"$set": {"provenance": self.provenance.save(run)}},
+                {"worker_id": db_document.worker_id},
+                {"$set": {"provenance": self.provenance.save(run), "task.tags": tags}},
             )
         except Exception as exc:
             logger.error(
                 "Provenance of task with worker ID '%s' not updated: %s",
-                worker_id,
+                db_document.worker_id,
                 type(exc).__name__,
             )
+
+    def get_task_provenance(self, id: str) -> dict[str, Any]:
+        """Get the provenance of a task, with its references expanded.
+
+        Only owners of the task and admins may get it (enforced by the
+        policies). The builds of the plugins that ran and default and
+        preset pipelines are stored once, by hash (cf.
+        :py:class:`foca.plugins.ProvenanceStore`); they are added to the
+        record (`builds`, `pipeline.resolved`), unless it has them
+        already (e.g., if they could not be stored). References that can't
+        be resolved are left out.
+
+        Args:
+            id: Task identifier.
+
+        Returns:
+            The provenance of the task.
+
+        Raises:
+            pro_tes.exceptions.ProvenanceNotFound: The task has no
+                provenance (e.g., it was created by an earlier version).
+            pro_tes.exceptions.TaskNotFound: The task is not available.
+        """
+        document = self.db_client.find_one(
+            filter={"task.id": id}, projection={"_id": False, "provenance": True}
+        )
+        if document is None:
+            logger.error("Task '%s' not found.", id)
+            raise TaskNotFound
+        record: dict[str, Any] | None = document.get("provenance")
+        if not isinstance(record, dict):
+            raise ProvenanceNotFound(f"No provenance recorded for task '{id}'")
+        pipeline = record.get("pipeline")
+        if isinstance(pipeline, dict) and "resolved" not in pipeline:
+            stored = get_collection(TASK_DB, PIPELINES_COLLECTION).find_one(
+                {"_id": pipeline.get("resolved_hash")}
+            )
+            if stored is not None:
+                pipeline["resolved"] = stored["resolved"]
+        builds: dict[str, Any] = dict(record.get("builds") or {})
+        missing = [key for key in record.get("plugins") or {} if key not in builds]
+        if missing:
+            for build in get_collection(TASK_DB, PLUGIN_BUILDS_COLLECTION).find(
+                {"_id": {"$in": missing}}
+            ):
+                builds[build.pop("_id")] = build
+        record["builds"] = builds
+        return record
 
     def list_tasks(self, collection: str, **kwargs: Any) -> dict[str, Any]:
         """Return list of the tasks of the user of the request.
@@ -776,6 +836,7 @@ class TaskRuns:
         document: DbDocument,
         owner: str,
         collection: str,
+        provenance_tag: str | None = None,
     ) -> tuple[str, str]:
         """Create database entry for task, and make the owner its owner.
 
@@ -796,6 +857,8 @@ class TaskRuns:
                 :py:func:`pro_tes.ga4gh.tes.ownership.get_owner`).
             collection: Request path of the tasks (e.g.,
                 `/ga4gh/tes/v1/tasks`).
+            provenance_tag: Key of the task's tag with the path of its
+                provenance (`GET /tasks/{id}/provenance`), if any.
 
         Returns:
             Tuple of task id and worker id.
@@ -820,6 +883,11 @@ class TaskRuns:
                 continue
             document.task.id = task_id
             document.worker_id = uuid()
+            if provenance_tag is not None:
+                document.task.tags = {
+                    **(document.task.tags or {}),
+                    provenance_tag: f"{collection.rstrip('/')}/{task_id}/provenance",
+                }
             try:
                 self.db_client.insert_one(
                     document.model_dump(mode="json", exclude_none=True)
@@ -912,6 +980,7 @@ class TaskRuns:
         start_time: str,
         owner: str,
         collection: str,
+        provenance_tag: str | None = None,
     ) -> DbDocument:
         """Update the task object, store it, and make the owner its owner.
 
@@ -922,6 +991,8 @@ class TaskRuns:
                 :py:func:`pro_tes.ga4gh.tes.ownership.get_owner`).
             collection: Request path of the tasks (e.g.,
                 `/ga4gh/tes/v1/tasks`).
+            provenance_tag: Key of the task's tag with the path of its
+                provenance, if any (cf. :py:meth:`_write_doc_to_db`).
 
         Returns:
             DbDocument: The updated database document.
@@ -932,7 +1003,10 @@ class TaskRuns:
         db_document.user_id = owner
 
         (task_id, worker_id) = self._write_doc_to_db(
-            document=db_document, owner=owner, collection=collection
+            document=db_document,
+            owner=owner,
+            collection=collection,
+            provenance_tag=provenance_tag,
         )
         db_document.task.id = task_id
         db_document.worker_id = worker_id

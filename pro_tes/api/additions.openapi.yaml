@@ -34,8 +34,110 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
+  # proTES extension: the provenance of a task (see docs/api.md)
+  /tasks/{id}/provenance:
+    get:
+      tags:
+      - TaskService
+      summary: GetTaskProvenance
+      description: |-
+        proTES extension: get the provenance of a task, as recorded by the
+        plugin engine of FOCA when the task was created and forwarded, with
+        the plugin builds and the pipeline that it refers to. For the owner
+        of the task and for admins.
+      operationId: GetTaskProvenance
+      parameters:
+      - name: id
+        in: path
+        required: true
+        description: ID of the task.
+        schema:
+          type: string
+      responses:
+        200:
+          description: The provenance of the task.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskProvenance'
+        403:
+          description: >-
+            The caller is neither the owner of the task nor an admin (also
+            for unknown tasks).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        404:
+          description: >-
+            The task wasn't found, or has no provenance (e.g., created by an
+            earlier version of proTES).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
 components:
   schemas:
+    TaskProvenance:
+      description: >-
+        Provenance of a task: the record of FOCA's plugin engine (see the
+        FOCA documentation, Plugins), with the plugin builds (`builds`) and
+        the resolved pipeline (`pipeline.resolved`) that it refers to. Holds
+        no IP addresses, tokens, header values or claims.
+      type: object
+      additionalProperties: true
+      properties:
+        engine:
+          type: object
+          description: Versions of FOCA, of its plugin API and of proTES.
+        request_id:
+          type: string
+          nullable: true
+          description: Identifier of the request that created the task.
+        pipeline:
+          type: object
+          description: >-
+            The pipeline: its `source` (`default`, `preset` or `client`),
+            `preset`, `resolved` steps and their hash (`resolved_hash`).
+        plugins:
+          type: object
+          additionalProperties:
+            type: string
+          description: Identifiers of the plugins that ran, by build hash.
+        builds:
+          type: object
+          additionalProperties:
+            type: object
+          description: >-
+            Builds of the plugins that ran (distribution, version, entry
+            point, digests), by build hash.
+        executions:
+          type: array
+          items:
+            type: object
+          description: >-
+            Calls of plugin hooks, in order: step, phase, plugin, outcome,
+            times, annotations and changed paths (without values).
+        route:
+          type: object
+          description: TES instances before and after the `route` phase.
+        selection:
+          type: object
+          nullable: true
+          description: The client's choice of TES instances (`gateway.backends`).
+        attempts:
+          type: array
+          items:
+            type: object
+          description: >-
+            Forwarding attempts, in order: TES instance, outcome, reason,
+            remote identifier and times.
+        final_reason:
+          type: string
+          nullable: true
+          description: >-
+            Why no TES instance accepted the task, if none did
+            (`outcome_unknown` if one may have).
     # Errors (RFC 9457), as proTES sends them
     ProblemDetails:
       description: 'Problem details of an error (RFC 9457).'
@@ -145,13 +247,18 @@ components:
         metadata:
           properties:
             forwarded_to:
+              deprecated: true
               type: array
               items:
                 $ref: '#/components/schemas/tesForward'
               description: |-
-                TES servers to which the task was forwarded, in the order of
-                forwarding.
+                Deprecated: use the tags `gateway.backend`,
+                `gateway.backend_task_id` and `gateway.route` of the task
+                (`GET /tasks/{id}`, views `BASIC` and `FULL`); to be removed
+                in a later release. TES servers to which the task was
+                forwarded, in the order of forwarding.
     tesForward:
+      deprecated: true
       required:
         - id
         - url
