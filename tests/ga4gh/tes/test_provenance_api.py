@@ -308,3 +308,25 @@ def test_gateway_tags_not_built(
     tags = stored(mongo_client, response.get_json()["id"])["task"]["tags"]
     assert "gateway.pipeline_source" not in tags
     assert tags["gateway.backend"] == BACKENDS[0]
+
+
+def test_routing_tags_not_built(
+    client: FlaskClient,
+    backend: type[FakeBackend],
+    mongo_client: MongoClient[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The attempts are stored if the routing tags can't be built."""
+
+    def routing_tags(*args: Any, **kwargs: Any) -> dict[str, str]:
+        """Fail to build the tags."""
+        raise RuntimeError("not built")
+
+    monkeypatch.setattr(task_runs, "routing_tags", routing_tags)
+    response = client.post(f"{BASE_PATH}/tasks", json=TASK)
+    assert response.status_code == 200
+    document = stored(mongo_client, response.get_json()["id"])
+    assert "gateway.backend" not in document["task"]["tags"]
+    assert "gateway.pipeline_source" in document["task"]["tags"]
+    (attempt,) = document["provenance"]["attempts"]
+    assert attempt["backend"] == BACKENDS[0]

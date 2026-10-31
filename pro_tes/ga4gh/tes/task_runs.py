@@ -586,11 +586,19 @@ class TaskRuns:
             run: Pipeline run of the request that created the task.
             db_document: The stored task, with its tags.
         """
+        fields: dict[str, Any] = {}
         try:
-            tags = {**(db_document.task.tags or {}), **routing_tags(run)}
+            fields["task.tags"] = {
+                **(db_document.task.tags or {}),
+                **routing_tags(run),
+            }
+        except Exception:
+            # the attempts are stored nevertheless
+            logger.exception("Routing tags of the task not built")
+        try:
+            fields["provenance"] = self.provenance.save(run)
             self.db_client.update_one(
-                {"worker_id": db_document.worker_id},
-                {"$set": {"provenance": self.provenance.save(run), "task.tags": tags}},
+                {"worker_id": db_document.worker_id}, {"$set": fields}
             )
         except Exception as exc:
             logger.error(
