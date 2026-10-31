@@ -90,7 +90,9 @@ of the config:
   `plugins`, with their keys in camelCase (e.g., `onFailure` for
   `on_failure`, `maxItems` for `max_items`; see `values.schema.json`).
   The `config` of plugins, the `params` of pipeline steps, the identifiers
-  of plugins and the names of presets are kept as they are.
+  of plugins and the names of presets are kept as they are. Steps of
+  pipelines take the long form (`alternatives`), not FOCA's short forms (a
+  plugin's identifier, or `plugin` and `params`).
 - Empty values are left out, so that the app's defaults apply (FOCA's
   ordered failover as the pipeline).
 - Other settings of the app's `plugins` (e.g., `defaults`, `gateway_id`)

@@ -128,8 +128,14 @@ which the app refuses; renders nothing.
 {{- define "protes.checkPlugins" -}}
 {{- $config := .Values.config | default dict -}}
 {{- $custom := get $config "custom" -}}
-{{- if or (hasKey $config "middlewares") (and (kindIs "map" $custom) (hasKey $custom "middlewares")) -}}
-{{- fail "middlewares were replaced by FOCA plugins: remove config.custom.middlewares and set the pipeline in plugins.pipeline instead (see the Plugins section of Upgrading in the docs)" -}}
+{{- $middlewares := "" -}}
+{{- if hasKey $config "middlewares" -}}
+{{- $middlewares = "config.middlewares" -}}
+{{- else if and (kindIs "map" $custom) (hasKey $custom "middlewares") -}}
+{{- $middlewares = "config.custom.middlewares" -}}
+{{- end -}}
+{{- if $middlewares -}}
+{{- fail (printf "middlewares were replaced by FOCA plugins: remove %s and set the pipeline in plugins.pipeline instead (see the Plugins section of Upgrading in the docs)" $middlewares) -}}
 {{- end -}}
 {{- $configPlugins := get $config "plugins" -}}
 {{- if kindIs "map" $configPlugins -}}

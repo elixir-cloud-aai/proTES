@@ -1327,13 +1327,13 @@ def test_plugins_partial() -> None:
 def test_plugins_names_kept() -> None:
     """The names of presets and the identifiers of plugins are kept as they are."""
     plugins = {
-        "available": {"maxSize": {"clientSelectable": True}},
-        "presets": {"onFailure": [{"alternatives": [{"plugin": "maxSize"}]}]},
+        "available": {"tes.max_size": {"clientSelectable": True}},
+        "presets": {"on-failure": [{"alternatives": [{"plugin": "tes.max_size"}]}]},
     }
     docs = _render("--set-json", f"plugins={json.dumps(plugins)}")
     assert _overlay(docs)["plugins"] == {
-        "available": {"maxSize": {"client_selectable": True}},
-        "presets": {"onFailure": [{"alternatives": [{"plugin": "maxSize"}]}]},
+        "available": {"tes.max_size": {"client_selectable": True}},
+        "presets": {"on-failure": [{"alternatives": [{"plugin": "tes.max_size"}]}]},
     }
 
 
@@ -1354,29 +1354,48 @@ def test_plugins_twice() -> None:
 )
 def test_plugins_middlewares(args: tuple[str, str]) -> None:
     """Rendering fails with the middlewares that the plugins replaced."""
-    assert "replaced by FOCA plugins" in _render_error(*args)
+    error = _render_error(*args)
+    assert "replaced by FOCA plugins" in error
+    key = args[1].split("=", 1)[0]
+    assert f"remove {key} " in error
 
 
 @pytest.mark.parametrize(
-    ("plugins", "path"),
+    ("plugins", "expected"),
     [
         (
             {"pipeline": [{"alternatives": [{"plugin": "x"}], "on_failure": "skip"}]},
-            "/plugins/pipeline/0",
+            "at '/plugins/pipeline/0'",
         ),
-        ({"pipeline": [{"alternatives": []}]}, "/plugins/pipeline/0/alternatives"),
-        ({"clientBackends": {"max_items": 5}}, "/plugins/clientBackends"),
+        ({"pipeline": [{"alternatives": []}]}, "at '/plugins/pipeline/0/alternatives'"),
+        ({"clientBackends": {"max_items": 5}}, "at '/plugins/clientBackends'"),
         (
             {"available": {"x": {"client_selectable": True}}},
-            "/plugins/available/x",
+            "at '/plugins/available/x'",
         ),
-        ({"gatewayId": "x"}, "/plugins"),
+        ({"gatewayId": "x"}, "at '/plugins'"),
+        ({"available": {"Tes.X": {}}}, "invalid propertyName 'Tes.X'"),
+        ({"available": {"x" * 129: {}}}, "invalid propertyName 'xxx"),
+        (
+            {"presets": {"Fast": [{"alternatives": [{"plugin": "x"}]}]}},
+            "invalid propertyName 'Fast'",
+        ),
+        (
+            {"pipeline": [{"id": "Route", "alternatives": [{"plugin": "x"}]}]},
+            "at '/plugins/pipeline/0/id'",
+        ),
+        (
+            {"pipeline": [{"alternatives": [{"plugin": "X"}]}]},
+            "at '/plugins/pipeline/0/alternatives/0/plugin'",
+        ),
+        ({"pipeline": ["foca.routing.ordered"]}, "at '/plugins/pipeline/0'"),
+        ({"clientPipelines": {"allowed": []}}, "at '/plugins/clientPipelines/allowed'"),
     ],
 )
-def test_plugins_invalid(plugins: dict[str, Any], path: str) -> None:
-    """Plugin values must have the chart's keys and values."""
+def test_plugins_invalid(plugins: dict[str, Any], expected: str) -> None:
+    """Plugin values must have the chart's keys and values (as FOCA's)."""
     error = _render_error("--set-json", f"plugins={json.dumps(plugins)}")
-    assert f"at '{path}'" in error
+    assert expected in error
 
 
 def _schema_keys(schema: Any) -> set[str]:

@@ -118,7 +118,7 @@ plugins:
   #     version: ">=1.0,<2"
   #     config: {}
   # Steps that process each new task, in order, each with alternatives
-  # tried in order
+  # tried in order (the long form of FOCA's steps only)
   pipeline: []
   #   - id: route
   #     alternatives:
