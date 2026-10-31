@@ -91,6 +91,24 @@ def GetTask(id: str, *args: Any, **kwargs: Any) -> dict[str, Any]:
     return response
 
 
+# GET /tasks/{id}/provenance
+@log_traffic
+def GetTaskProvenance(id: str, *args: Any, **kwargs: Any) -> dict[str, Any]:
+    """Get the provenance of a task (proTES extension).
+
+    Args:
+        id: Task identifier.
+        *args: Variable length argument list.
+        **kwargs: Arbitrary keyword arguments.
+
+    Returns:
+        The provenance of the task, with its references expanded (cf.
+        :py:meth:`pro_tes.ga4gh.tes.task_runs.TaskRuns.get_task_provenance`).
+    """
+    task_runs = TaskRuns()
+    return task_runs.get_task_provenance(id=id)
+
+
 # GET /tasks
 @log_traffic
 def ListTasks(*args: Any, **kwargs: Any) -> dict[str, Any]:

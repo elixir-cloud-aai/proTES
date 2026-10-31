@@ -58,8 +58,9 @@ security:
   # Access control: users (the role `user`) may create tasks, and list their
   # own; the user creating a task becomes its owner, and only owners may read
   # and cancel a task. Admins (the role `admin`) may only use the permissions
-  # API, not the tasks of others. Roles are given to groups of the identity
-  # provider (values of the claim `claim_groups`) by `group_mapping`, e.g.:
+  # API and read the provenance of tasks, not the tasks of others. Roles are
+  # given to groups of the identity provider (values of the claim
+  # `claim_groups`) by `group_mapping`, e.g.:
   # claim_groups: groups
   # group_mapping:
   #   compute-users: user
@@ -84,6 +85,9 @@ security:
       users-create-list-tasks: [p, user, /ga4gh/tes/v1/tasks, (GET)|(HEAD)|(POST)]
       # `POST` is cancellation (`/tasks/{id}:cancel`)
       owners-get-cancel-tasks: [p, owner, "/ga4gh/tes/v1/tasks/:id", (GET)|(HEAD)|(POST)]
+      # the provenance of a task, also for admins (no inputs or logs)
+      owners-get-provenance: [p, owner, "/ga4gh/tes/v1/tasks/:id/provenance", (GET)|(HEAD)]
+      admins-get-provenance: [p, admin, "/ga4gh/tes/v1/tasks/:id/provenance", (GET)|(HEAD)]
       admins-list-add-permissions: [p, admin, /admin/access-control/permissions, (GET)|(POST)]
       admins-manage-permissions: [p, admin, "/admin/access-control/permissions/:id", (GET)|(PUT)|(DELETE)]
 
