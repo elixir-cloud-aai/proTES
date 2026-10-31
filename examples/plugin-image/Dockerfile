@@ -1,3 +1,5 @@
+# check=skip=InvalidDefaultArgInFrom
+## (The base image has no default: builds name the release image explicitly)
 ## Image with plugins, derived from a proTES release image (see
 ## `docs/plugin-images.md`). The build context holds `plugins.txt`, the
 ## distributions to install, each pinned with its hash, and `wheels/`, their

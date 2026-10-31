@@ -23,9 +23,11 @@ the config (see [Plugins](plugins.md)): installed is not enabled.
     [Testing the recipe](#testing-the-recipe)).
 
 The commands below run in a directory of their own (the build context),
-with Docker and [jq](https://jqlang.org/). pip runs inside the proTES image,
-so that the plugins are resolved for its Python version, platform and
-installed packages.
+with Docker and [jq](https://jqlang.org/), and the files `resolve.sh`,
+`Dockerfile` and `Dockerfile.dockerignore` of `examples/plugin-image/` of
+the proTES repository (of the release that you build on), copied to the
+directory. pip runs inside the proTES image, so that the plugins are
+resolved for its Python version, platform and installed packages.
 
 ## Base image
 
@@ -46,27 +48,28 @@ or a release train, e.g.:
 foca-plugin-tes-routing-distance==<version>
 ```
 
-Resolve them against the image, with its installed packages as
-constraints: pip lists the distributions that the image lacks (the plugins
-and their dependencies), with their exact versions and the hashes of their
-wheels, in `plugins.txt` (pip's report replaces tools such as `pip-compile`,
-as it resolves inside the image):
+Resolve them against the image:
 
 ```bash
-docker run --rm --volume "$PWD/plugins.in:/tmp/plugins.in:ro" "$PROTES_IMAGE" sh -c \
-  'pip list --format freeze > /tmp/image.txt \
-    && pip install --dry-run --quiet --no-cache-dir --only-binary :all: \
-      --constraint /tmp/image.txt --report - --requirement /tmp/plugins.in' \
-  | jq -r '.install[] | "\(.metadata.name)==\(.metadata.version) --hash=sha256:\(.download_info.archive_info.hashes.sha256)"' \
-  > plugins.txt
+./resolve.sh "$PROTES_IMAGE" plugins.in plugins.txt
 ```
 
-The constraints keep the packages of the image as they are: resolving
-fails if a plugin needs other versions of them (e.g., another FOCA version);
-choose plugin versions that work with those of the image. Review
-`plugins.txt` and keep it, e.g., in the repository of your deployment: it is
-the complete list of what the image adds. If it is empty, the image has all
-the plugins already, and there is nothing to build.
+`resolve.sh` runs pip inside the image, with the image's installed packages
+(`pip list`) as constraints, and writes the distributions that the image
+lacks (the plugins and their dependencies), with their exact versions and
+the hashes of their wheels, to `plugins.txt`. It uses pip's report of a dry
+run (`pip install --dry-run --report`) instead of tools such as
+`pip-compile`, as it resolves for the image's environment. Options of
+`docker run` follow the file names, e.g., `--env PIP_INDEX_URL=<index>` for
+another package index.
+
+The constraints keep the packages of the image as they are: resolving fails
+(with pip's errors, and without writing `plugins.txt`) if a plugin needs
+other versions of them (e.g., another FOCA version), or if a distribution
+can't be found; choose plugin versions that work with those of the image.
+Review `plugins.txt` and keep it, e.g., in the repository of your
+deployment: it is the complete list of what the image adds. If it is empty,
+the image has all the plugins already: skip the remaining steps.
 
 ## Downloading and verifying
 
@@ -94,9 +97,7 @@ Check other plugins and dependencies as their projects document.
 
 ## Building
 
-Copy the files `Dockerfile` and `Dockerfile.dockerignore` of
-`examples/plugin-image/` of the proTES repository (of the release that you
-build on) to the directory, and build the image:
+Build the image:
 
 ```bash
 docker build --build-arg PROTES_IMAGE="$PROTES_IMAGE" \
@@ -154,8 +155,7 @@ Rebuild the image for every release of proTES that you deploy, and resolve
 `plugins.in` against the new image again (see [Pinning
 plugins](#pinning-plugins)), as its packages change. Plugins declare the
 FOCA versions that they support (e.g., `foca>=0.18.0,<0.19`), so resolving
-them against an image with another FOCA version fails (see [Pinning
-plugins](#pinning-plugins)).
+them against an image with another FOCA version fails.
 
 ## Local builds
 
@@ -180,5 +180,6 @@ index).
 The smoke test of CI (`tests/smoke/plugins.sh`, see
 [Development](development.md)) builds the image of the recipe from the app's
 image with a test plugin (`tests/smoke/plugin/`, which tags each new task),
-pinned by hash, runs proTES with it enabled, and checks that new tasks get
-its tag.
+pinned by hash with `resolve.sh` (from a local directory instead of the
+package index), checks that a wrong hash fails the build, runs proTES with
+it enabled, and checks that new tasks get its tag.
