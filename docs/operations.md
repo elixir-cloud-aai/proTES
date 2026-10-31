@@ -262,16 +262,17 @@ as `elixir-cloud-aai/proTES`, releases after the rename as
 Images of commits on `dev` (`dev`, `sha-<commit>`) are signed and attested
 by the CI workflow instead (by `checks.yaml` instead of `ci.yml` before the
 workflow files were renamed). These commands accept both forms of the
-repository's name, for images built before and after the rename:
+repository's name and of the workflow file, for images built before and after
+the renames:
 
 ```bash
 gh attestation verify oci://docker.io/elixircloud/protes:dev \
     --owner elixir-cloud-aai \
-    --signer-regex '^https://github\.com/elixir-cloud-aai/(proTES|protes)/\.github/workflows/ci\.yml@refs/heads/dev$' \
+    --cert-identity-regex '^https://github\.com/elixir-cloud-aai/(proTES|protes)/\.github/workflows/(ci\.yml|checks\.yaml)@refs/heads/dev$' \
     --source-ref refs/heads/dev
 cosign verify docker.io/elixircloud/protes:dev \
     --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-    --certificate-identity-regexp '^https://github\.com/elixir-cloud-aai/(proTES|protes)/\.github/workflows/ci\.yml@refs/heads/dev$'
+    --certificate-identity-regexp '^https://github\.com/elixir-cloud-aai/(proTES|protes)/\.github/workflows/(ci\.yml|checks\.yaml)@refs/heads/dev$'
 ```
 
 To show an image's SBOM or provenance, run:
