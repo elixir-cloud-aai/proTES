@@ -25,6 +25,17 @@ LOG_OUTPUTS_FIELD = "task.logs.outputs"
 # Database and collection of the tasks (`db.dbs` of `config.yaml`)
 TASK_DB = "taskStore"
 TASK_COLLECTION = "tasks"
+# Collections of the provenance of tasks, in the database of the tasks (cf.
+# `foca.plugins.ProvenanceStore`): builds of plugins and default and preset
+# pipelines (by hash), and records of failed pipeline runs (only if
+# `plugins.provenance.record_failed`)
+PLUGIN_BUILDS_COLLECTION = "plugin_builds"
+PIPELINES_COLLECTION = "pipelines"
+FAILED_RUNS_COLLECTION = "failed_runs"
+# Projection of stored tasks without the MongoDB identifier and the
+# provenance, which may be large (up to 1 MiB) and is not needed to process
+# tasks
+TASK_PROJECTION: dict[str, bool] = {"_id": False, "provenance": False}
 # Number of shared task identifiers named when proTES refuses to start
 MAX_REPORTED_DUPLICATES = 10
 # Name of the index of the tasks of earlier versions (`task_id`, `worker_id`)
@@ -231,7 +242,7 @@ class DbDocumentConnector:
         Args:
             projection: A projection object indicating which fields of the
                 document to return. By default, all fields except the MongoDB
-                identifier `_id` are returned.
+                identifier `_id` and the provenance are returned.
 
         Returns:
             Instance of `pro_wes.ga4gh.wes.models.DbDocument` associated with
@@ -241,7 +252,7 @@ class DbDocumentConnector:
             ValueError: Returned document does not conform to schema.
         """
         if projection is None:
-            projection = {"_id": False}
+            projection = TASK_PROJECTION
         document_unvalidated = self.collection.find_one(
             filter={"worker_id": self.worker_id},
             projection=projection,
@@ -302,14 +313,14 @@ class DbDocumentConnector:
             root: Root field name.
             projection: A projection object indicating which fields of the
                 document to return. By default, all fields except the MongoDB
-                identifier `_id` are returned.
+                identifier `_id` and the provenance are returned.
             **kwargs: Key-value pairs of fields to insert/update.
 
         Returns:
             Inserted/updated document, or `None` if database operation failed.
         """
         if projection is None:
-            projection = {"_id": False}
+            projection = TASK_PROJECTION
         document_unvalidated = self.collection.find_one_and_update(
             {"worker_id": self.worker_id},
             {"$set": {".".join([root, key]): value for (key, value) in kwargs.items()}},
