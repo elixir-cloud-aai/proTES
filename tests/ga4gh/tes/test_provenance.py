@@ -234,7 +234,7 @@ def test_provenance_not_updated(
     task_runs.provenance = MagicMock()
     run = MagicMock()
     with caplog.at_level(logging.ERROR):
-        task_runs._update_provenance(run=run, worker_id="worker-1")
+        task_runs._update_records(run=run, db_document=DbDocument(worker_id="worker-1"))
     assert "Provenance of task with worker ID 'worker-1' not updated" in caplog.text
 
 

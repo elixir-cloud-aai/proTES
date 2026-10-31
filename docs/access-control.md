@@ -57,6 +57,7 @@ The roles and their permissions are the policies of
 `security.access_control.policies` in the base config (see
 [FOCA's access control](https://foca.readthedocs.io/en/latest/access-control/)),
 named rules (`users-create-list-tasks`, `owners-get-cancel-tasks`,
+`owners-get-provenance`, `admins-get-provenance`,
 `admins-list-add-permissions` and `admins-manage-permissions`): a config
 overlay adds, changes or removes (`null`) single rules by name, e.g., rules
 that let users only list their tasks, and owners only read them:
@@ -83,6 +84,13 @@ claim set in `security.access_control.claim_identity`) becomes its owner:
   only; everyone else gets `403 Forbidden`, also admins and for unknown
   tasks, so that responses don't tell which tasks exist. The owner gets
   `404 Not Found` for a task that was deleted from the database.
+
+- `GET /tasks/{id}/provenance` is allowed for the owner and for admins
+  (rules `owners-get-provenance` and `admins-get-provenance`); everyone else
+  gets `403 Forbidden`. The provenance holds no inputs or logs of the task,
+  only which plugins and TES instances processed it (see
+  [Provenance](api.md#provenance)); remove `admins-get-provenance` (`null`
+  in an overlay) to keep it from admins.
 
 Tasks are not shared with other users, and admins can't read or cancel the
 tasks of others through the API: tasks and their logs may hold sensitive

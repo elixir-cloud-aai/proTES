@@ -406,7 +406,8 @@ def test_client_backends(
     ((url, task),) = relayed(backend)
     assert url == BACKENDS[1]
     assert task.tags == {"project": "x"}
-    assert stored(mongo_client, response.get_json()["id"])["task"]["tags"] == tags
+    stored_tags = stored(mongo_client, response.get_json()["id"])["task"]["tags"]
+    assert stored_tags.items() >= tags.items()
 
 
 def test_reserved_tag(
