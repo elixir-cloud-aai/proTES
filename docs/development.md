@@ -51,8 +51,14 @@ and access control. To run it locally (with curl and jq):
 export COMPOSE_FILE=docker-compose.yaml:tests/smoke/compose.yaml
 docker compose up -d --build --wait
 tests/smoke/check.sh
+tests/smoke/plugins.sh  # the derived-image recipe for plugins
 docker compose down
 ```
+
+`tests/smoke/plugins.sh` builds the image of the [recipe for
+plugins](plugin-images.md) from the app's image, with a test plugin
+(`tests/smoke/plugin/`, built with `python3 -m pip wheel`), restarts proTES
+and the Celery worker with it, and checks that the plugin tags new tasks.
 
 To try changes in the running app, rebuild it with
 `docker compose up --build -d`. `python -m pro_tes.app` runs the app with

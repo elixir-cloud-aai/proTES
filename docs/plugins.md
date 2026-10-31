@@ -92,8 +92,8 @@ plugins:
 ## Installing and enabling plugins
 
 Plugins are Python packages that register their plugin classes as entry
-points of the group `foca.plugins`; install them next to proTES, e.g., in a
-custom image based on the proTES image. Only plugins listed in
+points of the group `foca.plugins`; install them in an image derived from
+that of proTES (see [Plugin images](plugin-images.md)). Only plugins listed in
 `plugins.available`, by their identifier (the entry point name), are loaded;
 FOCA's built-in plugins (`foca.*`) are always available. Entries may pin the
 distribution and version, set the plugin's admin settings (`config`), and
@@ -102,7 +102,7 @@ list or of the pipeline can't be loaded, e.g., because it isn't installed
 or doesn't support the TES API.
 
 For example, with the routing plugins of
-[foca-plugins](https://github.com/elixir-cloud-aai/foca-plugins) (once they
+[foca-plugins](https://foca-plugins.readthedocs.io/en/latest/) (once they
 are published), tasks go to the TES instances closest to their input data,
 with random order as the fallback, as with the former middlewares of
 proTES:
