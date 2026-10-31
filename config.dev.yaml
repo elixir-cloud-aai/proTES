@@ -31,3 +31,11 @@ security:
 #       - type: ga4gh-tes
 #         url: https://tes.example.org
 #         auth: none
+# Plugins that process new tasks (see `docs/plugins.md`); list installed
+# plugins in `available` to use them in the pipeline
+plugins:
+  # Explicit pipeline, FOCA's ordered failover (the default)
+  pipeline:
+    - id: route
+      alternatives:
+        - plugin: foca.routing.ordered

@@ -12,9 +12,12 @@ from pathlib import Path
 import re
 import subprocess
 import tarfile
+import typing
 from typing import Any
 
 from foca.models.config import SecurityConfig
+from foca.plugins.config import PluginsConfig
+import pydantic
 import pytest
 import yaml
 
@@ -318,8 +321,8 @@ def test_schema_of_library() -> None:
 
     That is the library's `app-values.schema.json`, with the app's key
     (`protes`, the library's app values plus `extraEnv`), Flower
-    (`flower`), the public URL (`publicUrl`) and the TES backends
-    (`tes`).
+    (`flower`), the public URL (`publicUrl`), the TES backends (`tes`) and
+    the plugins (`plugins`).
     """
     library = json.loads(_library_file("app-values.schema.json"))
     schema = json.loads((CHART / "values.schema.json").read_text())
@@ -332,6 +335,9 @@ def test_schema_of_library() -> None:
         yaml.safe_load((CHART / "values.yaml").read_text())["flower"]
     )
     assert set(properties.pop("tes")["properties"]) == {"backends"}
+    assert set(properties.pop("plugins")["properties"]) == set(
+        yaml.safe_load((CHART / "values.yaml").read_text())["plugins"]
+    )
     assert properties.pop("publicUrl")["type"] == "string"
     assert properties == library["properties"]
     assert {key: schema[key] for key in ("$schema", "type")} == {
@@ -1200,6 +1206,276 @@ def test_tes_backends_twice() -> None:
         *WITH_BACKENDS, "--set-json", f"config.custom.tes.backends={json.dumps([])}"
     )
     assert "either in tes.backends or in config.custom.tes.backends" in error
+
+
+CHART_PLUGINS: dict[str, Any] = {
+    "available": {
+        "tes.routing.distance": {
+            "version": ">=1.0",
+            "clientSelectable": False,
+            "config": {"maxDistance": 100, "nested": {"onFailure": "x"}},
+        }
+    },
+    "pipeline": [
+        {
+            "id": "route",
+            "alternatives": [
+                {"plugin": "tes.routing.distance", "params": {"maxSize": 1}},
+                {"plugin": "foca.routing.ordered"},
+            ],
+            "onFailure": "skip",
+        }
+    ],
+    "presets": {"fast": [{"alternatives": [{"plugin": "foca.routing.ordered"}]}]},
+    "clientPipelines": {
+        "enabled": True,
+        "maxSteps": 4,
+        "maxAlternatives": 2,
+        "append": [
+            {
+                "alternatives": [{"plugin": "foca.routing.ordered"}],
+                "ifMissingPhase": "route",
+            }
+        ],
+    },
+    "clientBackends": {"maxItems": 5},
+    "tags": {"maxRouteEntries": 3},
+    "provenance": {"recordFailed": True, "secretHeaders": ["X-Secret"]},
+}
+CONFIG_PLUGINS: dict[str, Any] = {
+    "available": {
+        "tes.routing.distance": {
+            "version": ">=1.0",
+            "client_selectable": False,
+            "config": {"maxDistance": 100, "nested": {"onFailure": "x"}},
+        }
+    },
+    "pipeline": [
+        {
+            "id": "route",
+            "alternatives": [
+                {"plugin": "tes.routing.distance", "params": {"maxSize": 1}},
+                {"plugin": "foca.routing.ordered"},
+            ],
+            "on_failure": "skip",
+        }
+    ],
+    "presets": {"fast": [{"alternatives": [{"plugin": "foca.routing.ordered"}]}]},
+    "client_pipelines": {
+        "enabled": True,
+        "max_steps": 4,
+        "max_alternatives": 2,
+        "append": [
+            {
+                "alternatives": [{"plugin": "foca.routing.ordered"}],
+                "if_missing_phase": "route",
+            }
+        ],
+    },
+    "client_backends": {"max_items": 5},
+    "tags": {"max_route_entries": 3},
+    "provenance": {"record_failed": True, "secret_headers": ["X-Secret"]},
+}
+WITH_PLUGINS = ("--set-json", f"plugins={json.dumps(CHART_PLUGINS)}")
+
+
+def test_plugins() -> None:
+    """`plugins` sets the plugins of the app config, with its keys.
+
+    The settings of plugins (`config`, `params`) are kept as they are; the
+    rendered section is valid for FOCA.
+    """
+    plugins = _overlay(_render(*WITH_PLUGINS))["plugins"]
+    assert plugins == CONFIG_PLUGINS
+    PluginsConfig.model_validate(plugins)
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        ("pipeline", []),
+        ("available", {}),
+        ("presets", {}),
+        ("clientPipelines", {}),
+        ("clientBackends", {}),
+        ("tags", {}),
+        ("provenance", {}),
+    ],
+)
+def test_plugins_default(value: tuple[str, Any]) -> None:
+    """Empty plugin values are left out, so the app's defaults apply."""
+    assert "plugins" not in _overlay(_render())
+    key, empty = value
+    docs = _render("--set-json", f"plugins.{key}={json.dumps(empty)}")
+    assert "plugins" not in _overlay(docs)
+
+
+def test_plugins_partial() -> None:
+    """Only the plugin values that are set are rendered; `config` merges."""
+    docs = _render(
+        "--set-json",
+        f"plugins.clientBackends={json.dumps({'enabled': False})}",
+        "--set",
+        "config.plugins.gateway_id=protes-1",
+    )
+    assert _overlay(docs)["plugins"] == {
+        "client_backends": {"enabled": False},
+        "gateway_id": "protes-1",
+    }
+
+
+def test_plugins_names_kept() -> None:
+    """The names of presets and the identifiers of plugins are kept as they are."""
+    plugins = {
+        "available": {"tes.max_size": {"clientSelectable": True}},
+        "presets": {"on-failure": [{"alternatives": [{"plugin": "tes.max_size"}]}]},
+    }
+    docs = _render("--set-json", f"plugins={json.dumps(plugins)}")
+    assert _overlay(docs)["plugins"] == {
+        "available": {"tes.max_size": {"client_selectable": True}},
+        "presets": {"on-failure": [{"alternatives": [{"plugin": "tes.max_size"}]}]},
+    }
+
+
+def test_plugins_long_identifier() -> None:
+    """Plugin identifiers may have up to 128 characters, as in FOCA."""
+    plugins: dict[str, Any] = {"available": {"x" * 128: {}}}
+    docs = _render("--set-json", f"plugins={json.dumps(plugins)}")
+    assert _overlay(docs)["plugins"] == plugins
+    PluginsConfig.model_validate(plugins)
+
+
+def test_plugins_twice() -> None:
+    """Rendering fails with a plugin setting in `plugins` and in `config`."""
+    error = _render_error(
+        *WITH_PLUGINS, "--set-json", f"config.plugins.pipeline={json.dumps([])}"
+    )
+    assert "either in plugins.pipeline or in config.plugins.pipeline" in error
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ("--set-json", f"config.custom.middlewares={json.dumps([['a.B']])}"),
+        ("--set-json", f"config.middlewares={json.dumps([['a.B']])}"),
+    ],
+)
+def test_plugins_middlewares(args: tuple[str, str]) -> None:
+    """Rendering fails with the middlewares that the plugins replaced."""
+    error = _render_error(*args)
+    assert "replaced by FOCA plugins" in error
+    key = args[1].split("=", 1)[0]
+    assert f"remove {key} " in error
+
+
+@pytest.mark.parametrize(
+    ("plugins", "expected"),
+    [
+        (
+            {"pipeline": [{"alternatives": [{"plugin": "x"}], "on_failure": "skip"}]},
+            "at '/plugins/pipeline/0'",
+        ),
+        ({"pipeline": [{"alternatives": []}]}, "at '/plugins/pipeline/0/alternatives'"),
+        ({"clientBackends": {"max_items": 5}}, "at '/plugins/clientBackends'"),
+        (
+            {"available": {"x": {"client_selectable": True}}},
+            "at '/plugins/available/x'",
+        ),
+        ({"gatewayId": "x"}, "at '/plugins'"),
+        ({"available": {"Tes.X": {}}}, "invalid propertyName 'Tes.X'"),
+        ({"available": {"x" * 129: {}}}, "invalid propertyName 'xxx"),
+        (
+            {"presets": {"Fast": [{"alternatives": [{"plugin": "x"}]}]}},
+            "invalid propertyName 'Fast'",
+        ),
+        (
+            {"pipeline": [{"id": "Route", "alternatives": [{"plugin": "x"}]}]},
+            "at '/plugins/pipeline/0/id'",
+        ),
+        (
+            {"pipeline": [{"alternatives": [{"plugin": "X"}]}]},
+            "at '/plugins/pipeline/0/alternatives/0/plugin'",
+        ),
+        ({"pipeline": ["foca.routing.ordered"]}, "at '/plugins/pipeline/0'"),
+        ({"clientPipelines": {"allowed": []}}, "at '/plugins/clientPipelines/allowed'"),
+    ],
+)
+def test_plugins_invalid(plugins: dict[str, Any], expected: str) -> None:
+    """Plugin values must have the chart's keys and values (as FOCA's)."""
+    error = _render_error("--set-json", f"plugins={json.dumps(plugins)}")
+    assert expected in error
+
+
+def _schema_keys(schema: Any) -> set[str]:
+    """Collect the keys of the plugin settings in the chart's schema.
+
+    Args:
+        schema: Part of the schema of the values `plugins`.
+
+    Returns:
+        The names of the properties, recursively, except those of the
+        settings of plugins (`config`, `params`), which are kept as they are.
+    """
+    keys: set[str] = set()
+    if isinstance(schema, dict):
+        for name, item in schema.get("properties", {}).items():
+            keys.add(name)
+            if name not in ("config", "params"):
+                keys |= _schema_keys(item)
+        for key in ("items", "additionalProperties"):
+            keys |= _schema_keys(schema.get(key))
+        for item in schema.get("definitions", {}).values():
+            keys |= _schema_keys(item)
+    return keys
+
+
+def _model_keys(
+    model: type[pydantic.BaseModel], exclude: frozenset[str] = frozenset()
+) -> set[str]:
+    """Collect the keys of a model of FOCA's plugin settings.
+
+    Args:
+        model: Model of (a part of) the section `plugins`.
+        exclude: Fields of the model to leave out, with their keys.
+
+    Returns:
+        The names of the fields, recursively through the models of their
+        types (also in lists and dicts).
+    """
+    keys: set[str] = set()
+    for name, field in model.model_fields.items():
+        if name in exclude:
+            continue
+        keys.add(name)
+        types = [field.annotation]
+        while types:
+            kind = types.pop()
+            if isinstance(kind, type) and issubclass(kind, pydantic.BaseModel):
+                keys |= _model_keys(kind)
+            types.extend(typing.get_args(kind))
+    return keys
+
+
+def test_plugins_keys() -> None:
+    """The schema of `plugins` has FOCA's keys, in camelCase, all converted.
+
+    With the conversion of `protes.pluginKeys`, the keys of the schema are
+    those of FOCA's model, except those set in `config.plugins` (`defaults`,
+    `gateway_id`); the conversion has no other keys.
+    """
+    helpers = (CHART / "templates" / "_helpers.tpl").read_text()
+    block = re.search(
+        r'define "protes.pluginKeys".*?\(dict(.*?)\) -}}', helpers, re.DOTALL
+    )
+    assert block is not None
+    pairs = re.findall(r'"(\w+)" "(\w+)"', block.group(1))
+    conversion = dict(pairs)
+    schema = json.loads((CHART / "values.schema.json").read_text())
+    keys = _schema_keys(schema["properties"]["plugins"])
+    assert set(conversion) <= keys
+    assert all(key.islower() for key in keys - set(conversion))
+    expected = _model_keys(PluginsConfig, frozenset({"defaults", "gateway_id"}))
+    assert {conversion.get(key, key) for key in keys} == expected
 
 
 def test_registry_public_url_null() -> None:

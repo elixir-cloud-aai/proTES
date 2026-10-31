@@ -426,7 +426,10 @@ task distribution and the dependency `geopy`.
 
 - `custom.middlewares` is refused: the app stops with a hint to the
   top-level section `plugins`. Remove it from custom configs; set
-  `plugins.pipeline` instead (see [Plugins](plugins.md)).
+  `plugins.pipeline` instead (see [Plugins](plugins.md)). The Helm chart
+  sets the plugins from the values `plugins` (e.g., `plugins.pipeline`,
+  with camelCase keys, see the chart's [README](deployment.md)) and refuses
+  `config.custom.middlewares`.
 - Tasks go to the TES instances in the order of `custom.tes.backends`
   (those of each registry shuffled), to the next one if a TES instance
   doesn't accept the task (FOCA's `foca.routing.ordered`). There is no
