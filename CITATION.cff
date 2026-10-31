@@ -42,7 +42,7 @@ identifiers:
     description: >-
       Concept DOI of all versions on Zenodo; it always resolves to the latest
       version
-repository-code: "https://github.com/elixir-cloud-aai/proTES"
+repository-code: "https://github.com/elixir-cloud-aai/protes"
 url: "https://protes.readthedocs.io/"
 keywords:
   - GA4GH

@@ -4,7 +4,7 @@ To quickly install the service for development/testing purposes, we recommend
 deployment via [Docker Compose](https://docs.docker.com/compose/install/), as
 described below. For more durable deployments on cloud native infrastructure,
 we also provide a [Helm](https://helm.sh/) chart in the
-[`deployment/`](https://github.com/elixir-cloud-aai/proTES/tree/dev/deployment)
+[`deployment/`](https://github.com/elixir-cloud-aai/protes/tree/dev/deployment)
 directory (see [Deployment](deployment.md)). The [FOCA deployment
 guide](https://foca.readthedocs.io/en/latest/deployment/) explains how FOCA
 apps, such as this one, are configured with Docker Compose and Helm.
@@ -19,7 +19,7 @@ kept in the Compose project's volumes `mongodb-data` and `rabbitmq-data`
 (e.g., `protes_mongodb-data`, see `docker volume ls`). Earlier versions kept
 the data elsewhere (see [Upgrading](upgrading.md#docker-compose)). The
 comments in
-[`docker-compose.yaml`](https://github.com/elixir-cloud-aai/proTES/blob/dev/docker-compose.yaml)
+[`docker-compose.yaml`](https://github.com/elixir-cloud-aai/protes/blob/dev/docker-compose.yaml)
 describe the settings, e.g., the RabbitMQ credentials.
 
 To also start [Flower](https://flower.readthedocs.io/), a web UI to monitor
@@ -65,7 +65,7 @@ startup while `id` or `organization` still have them.
 All endpoints except `GET /service-info`, the specification and the Swagger
 UI require an access token of a trusted identity provider (see [Access
 control](access-control.md)). The Docker Compose setup applies the config
-overlay [`config.dev.yaml`](https://github.com/elixir-cloud-aai/proTES/blob/dev/config.dev.yaml):
+overlay [`config.dev.yaml`](https://github.com/elixir-cloud-aai/protes/blob/dev/config.dev.yaml):
 set the issuer of your identity provider and map your groups to roles
 there. To try the API without an identity provider, use the Compose setup of
 the [smoke test](development.md), which brings a fake one.

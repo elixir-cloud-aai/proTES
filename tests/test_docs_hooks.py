@@ -8,7 +8,9 @@ from urllib.parse import unquote, urlsplit
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-REPO_URL = "https://github.com/elixir-cloud-aai/proTES"
+REPO_URL = "https://github.com/elixir-cloud-aai/protes"
+# The repository's name before the rename to `protes` (GitHub ignores the case)
+MIXED_CASE_REPO_URL = "https://github.com/elixir-cloud-aai/proTES"
 DOCS_URL = "https://protes.readthedocs.io/en/latest/"
 
 # `docs/` is not a package, so the hooks are loaded from their file
@@ -42,6 +44,34 @@ _spec.loader.exec_module(hooks)
 def test_adapt_link(target: str, expected: str) -> None:
     """Links are adapted to pages of the docs, or to files on GitHub."""
     assert hooks.adapt_link(target, f"{REPO_URL}/") == expected
+
+
+@pytest.mark.parametrize(
+    ("link_repo_url", "config_repo_url"),
+    [
+        (MIXED_CASE_REPO_URL, REPO_URL),
+        (REPO_URL, MIXED_CASE_REPO_URL),
+    ],
+)
+def test_adapt_link_case(link_repo_url: str, config_repo_url: str) -> None:
+    """Links match the repository's URL in any case, and get the configured."""
+    link = f"{link_repo_url}/blob/dev/deployment/values.yaml"
+    assert (
+        hooks.adapt_link(link, config_repo_url, "v1")
+        == f"{config_repo_url}/blob/v1/deployment/values.yaml"
+    )
+
+
+@pytest.mark.parametrize(
+    "target",
+    [
+        f"{REPO_URL}/blob/DEV/deployment/values.yaml",
+        f"{REPO_URL}-other/blob/dev/deployment/values.yaml",
+    ],
+)
+def test_adapt_link_other(target: str) -> None:
+    """Links to other branches or repositories are left as they are."""
+    assert hooks.adapt_link(target, REPO_URL, "v1") == target
 
 
 @pytest.mark.parametrize("repo_url", [REPO_URL, f"{REPO_URL}/"])

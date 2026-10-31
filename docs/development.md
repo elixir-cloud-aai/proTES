@@ -73,9 +73,9 @@ ast-grep hooks use the installed packages. The first run sets up the other
 hooks, which takes a few minutes.
 
 The checks are configured in
-[`.pre-commit-config.yaml`](https://github.com/elixir-cloud-aai/proTES/blob/dev/.pre-commit-config.yaml)
+[`.pre-commit-config.yaml`](https://github.com/elixir-cloud-aai/protes/blob/dev/.pre-commit-config.yaml)
 and
-[`pyproject.toml`](https://github.com/elixir-cloud-aai/proTES/blob/dev/pyproject.toml).
+[`pyproject.toml`](https://github.com/elixir-cloud-aai/protes/blob/dev/pyproject.toml).
 Project-specific rules are in `.semgrep/` (security) and `.ast-grep/`
 (anti-patterns such as HTTP status codes as strings). The ast-grep rule
 `framework-free-tasks` forbids imports of Flask, Werkzeug, Connexion and
@@ -152,9 +152,9 @@ rendered chart with the tests and `helm template`.
 This documentation is built with [MkDocs](https://www.mkdocs.org/) and
 [Material for MkDocs](https://squidfunk.github.io/mkdocs-material/), from
 `docs/` and
-[`mkdocs.yml`](https://github.com/elixir-cloud-aai/proTES/blob/dev/mkdocs.yml),
+[`mkdocs.yml`](https://github.com/elixir-cloud-aai/protes/blob/dev/mkdocs.yml),
 by Read the Docs (configured in
-[`.readthedocs.yaml`](https://github.com/elixir-cloud-aai/proTES/blob/dev/.readthedocs.yaml))
+[`.readthedocs.yaml`](https://github.com/elixir-cloud-aai/protes/blob/dev/.readthedocs.yaml))
 and in CI; warnings, e.g., of broken links, fail the build. The [API
 reference](reference.md) is generated from the docstrings with
 [mkdocstrings](https://mkdocstrings.github.io/). To build it locally, or serve
@@ -264,12 +264,12 @@ tagging.
 
 The tag must be annotated and signed (`git tag -s`), with a key that GitHub can
 verify (added to the tagger's GitHub account). The [release
-workflow](https://github.com/elixir-cloud-aai/proTES/blob/dev/.github/workflows/release.yml),
+workflow](https://github.com/elixir-cloud-aai/protes/blob/dev/.github/workflows/release.yml),
 triggered by the tag, checks that GitHub verified the signature, that the
 tag's commit is on `main` and its `CITATION.cff` has the release version and
 a date that is not in the future (UTC), that the dependencies are releases
 (see below), and that the [CI
-workflow](https://github.com/elixir-cloud-aai/proTES/blob/dev/.github/workflows/ci.yml)
+workflow](https://github.com/elixir-cloud-aai/protes/blob/dev/.github/workflows/ci.yml)
 passed for it (a run for the push of the commit to `dev`; if CI hasn't
 finished, failed or was cancelled, e.g., the image job of a commit that a
 later one superseded, re-run CI, then the release workflow). It packages

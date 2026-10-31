@@ -18,6 +18,10 @@ GATE = "passed"
 # The last release signed by the release workflow before its file was renamed
 # from `release.yaml` to `release.yml`
 LAST_RELEASE_YAML = Version("0.3.0")
+# The last release signed before the repository was renamed from `proTES` to
+# `protes` (the identities of signatures keep the case); a separate fact from
+# `LAST_RELEASE_YAML`: raise it if a release is published before the rename
+LAST_RELEASE_PROTES = Version("0.3.0")
 # A chart file name as the release workflow packages it
 CHART = "protes-1.2.3.tgz"
 
@@ -64,7 +68,9 @@ def test_verification_signer_workflow() -> None:
     """The verification commands name the workflow that signed the release.
 
     They are for the version in `CITATION.cff` (`{{ version }}`): releases up
-    to 0.3.0 were signed by `release.yaml`, later ones by `release.yml`.
+    to 0.3.0 were signed by `release.yaml` of the repository `proTES`, later
+    ones by `release.yml` of the repository `protes`. Fails on purpose once
+    `CITATION.cff` has a later version, until the commands are updated.
     """
     match = re.search(
         r"^version:\s*[\"']?([^\"'\s]+)",
@@ -72,15 +78,25 @@ def test_verification_signer_workflow() -> None:
         flags=re.MULTILINE,
     )
     assert match
-    expected = (
-        "release.yaml" if Version(match[1]) <= LAST_RELEASE_YAML else "release.yml"
-    )
-    signers = re.findall(
-        r"proTES/\.github/workflows/(release\.ya?ml)",
-        (ROOT / "docs" / "operations.md").read_text(),
-    )
-    assert signers
-    assert set(signers) == {expected}
+    version = Version(match[1])
+    workflow = "release.yaml" if version <= LAST_RELEASE_YAML else "release.yml"
+    repository = "proTES" if version <= LAST_RELEASE_PROTES else "protes"
+    text = (ROOT / "docs" / "operations.md").read_text()
+    signer = f"elixir-cloud-aai/{repository}/.github/workflows/{workflow}"
+    # Every value of each option, so that none is skipped (the commands for
+    # images of `dev` use regular expressions instead)
+    values = {
+        option: re.findall(rf"--{option} (\S+)", text)
+        for option in ("repo", "signer-workflow", "certificate-identity")
+    }
+    assert values["repo"]
+    assert set(values["repo"]) == {f"elixir-cloud-aai/{repository}"}
+    assert values["signer-workflow"]
+    assert set(values["signer-workflow"]) == {signer}
+    assert values["certificate-identity"]
+    assert set(values["certificate-identity"]) == {
+        f"https://github.com/{signer}@refs/tags/v{{{{"
+    }
 
 
 def test_publish_condition() -> None:

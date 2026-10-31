@@ -214,7 +214,7 @@ service_info:
     organization:
       name: Example Organization
       url: "https://example.org"
-    documentationUrl: "https://github.com/elixir-cloud-aai/proTES"
+    documentationUrl: "https://github.com/elixir-cloud-aai/protes"
     environment: dev
 
 # Exception handling: problem details of exceptions, sent with the media type

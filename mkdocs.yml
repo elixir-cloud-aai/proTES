@@ -3,8 +3,8 @@ site_description: >-
   Gateway for the GA4GH Task Execution Service API by ELIXIR On-Cloud
 # Read the Docs serves each version under its own path (e.g., `/en/latest/`)
 site_url: !ENV [READTHEDOCS_CANONICAL_URL, "https://protes.readthedocs.io/en/latest/"]
-repo_url: https://github.com/elixir-cloud-aai/proTES
-repo_name: elixir-cloud-aai/proTES
+repo_url: https://github.com/elixir-cloud-aai/protes
+repo_name: elixir-cloud-aai/protes
 edit_uri: edit/dev/docs/
 copyright: Copyright &copy; ELIXIR On-Cloud
 

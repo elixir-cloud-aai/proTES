@@ -247,14 +247,35 @@ cosign verify docker.io/elixircloud/protes:{{ version }} \
 These are the commands for release `{{ version }}`: replace it with the
 version to verify. `--source-ref` and the ref in
 `--certificate-identity` check that the workflow ran for the release tag,
-not for another branch. Images of commits on `dev` (`dev`, `sha-<commit>`)
-are signed and attested by the CI workflow instead: use `--signer-workflow
-elixir-cloud-aai/proTES/.github/workflows/ci.yml`,
-`--source-ref refs/heads/dev` and `--certificate-identity
-https://github.com/elixir-cloud-aai/proTES/.github/workflows/ci.yml@refs/heads/dev`.
-The workflow files were renamed after 0.3.0: releases after 0.3.0 are
-signed by `release.yml` instead of `release.yaml`, and images of commits on
-`dev` built before the rename by `checks.yaml` instead of `ci.yml`.
+not for another branch. The workflow files were renamed after 0.3.0:
+releases after 0.3.0 are signed by `release.yml` instead of `release.yaml`.
+
+The signatures and attestations name the repository as it was called when
+the workflow ran, and cosign compares the identity exactly, also its case.
+The repository's name changes from `proTES` to `protes` (GitHub ignores the
+case in URLs, so links of both forms work): releases up to 0.3.0 are signed
+as `elixir-cloud-aai/proTES`, releases after the rename as
+`elixir-cloud-aai/protes` (in `--repo`, `--signer-workflow` and
+`--certificate-identity`), for images and charts alike. The commands for
+images above and for charts below use the form of release
+`{{ version }}`.
+
+Images of commits on `dev` (`dev`, `sha-<commit>`) are signed and attested
+by the CI workflow instead (by `checks.yaml` instead of `ci.yml` before the
+workflow files were renamed). These commands accept both forms of the
+repository's name and of the workflow file, for images built before and after
+the renames:
+
+```bash
+gh attestation verify oci://docker.io/elixircloud/protes:dev \
+    --owner elixir-cloud-aai \
+    --cert-identity-regex '^https://github\.com/elixir-cloud-aai/(proTES|protes)/\.github/workflows/(ci\.yml|checks\.yaml)@refs/heads/dev$' \
+    --source-ref refs/heads/dev
+cosign verify docker.io/elixircloud/protes:dev \
+    --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+    --certificate-identity-regexp '^https://github\.com/elixir-cloud-aai/(proTES|protes)/\.github/workflows/(ci\.yml|checks\.yaml)@refs/heads/dev$'
+```
+
 To show an image's SBOM or provenance, run:
 
 ```bash

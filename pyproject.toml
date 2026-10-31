@@ -160,8 +160,8 @@ file = "README.md"
 content-type = "text/markdown"
 
 [project.urls]
-homepage = "https://github.com/elixir-cloud-aai/proTES"
-Tracker = "https://github.com/elixir-cloud-aai/proTES/issues"
+homepage = "https://github.com/elixir-cloud-aai/protes"
+Tracker = "https://github.com/elixir-cloud-aai/protes/issues"
 Documentation = "https://protes.readthedocs.io"
 
 [tool.setuptools_scm]
