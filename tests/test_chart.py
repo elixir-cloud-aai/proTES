@@ -1347,6 +1347,26 @@ def test_plugins_long_identifier() -> None:
     PluginsConfig.model_validate(plugins)
 
 
+@pytest.mark.parametrize(
+    "store",
+    [
+        {"maxTtl": 0.001, "maxEntrySize": 1},
+        {"maxTtl": 10 * 365 * 86400, "enabled": False},
+    ],
+)
+def test_plugins_store_bounds(store: dict[str, Any]) -> None:
+    """The store settings of plugins take FOCA's bounds, also at the limits."""
+    plugins = {"available": {"x": {"store": store}}}
+    docs = _render("--set-json", f"plugins={json.dumps(plugins)}")
+    rendered = _overlay(docs)["plugins"]
+    PluginsConfig.model_validate(rendered)
+    assert set(rendered["available"]["x"]["store"]) <= {
+        "enabled",
+        "max_entry_size",
+        "max_ttl",
+    }
+
+
 def test_plugins_twice() -> None:
     """Rendering fails with a plugin setting in `plugins` and in `config`."""
     error = _render_error(
