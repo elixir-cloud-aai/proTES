@@ -620,7 +620,7 @@
     "plugins": {
       "type": "object",
       "additionalProperties": false,
-      "description": "Plugins that process new tasks, rendered into the plugins section of the app config with its keys (see deployment/README.md, Plugins); empty values are left out",
+      "description": "Plugins that process new tasks, rendered into the plugins section of the app config with its keys (see deployment/README.md, Configuration); empty values are left out",
       "definitions": {
         "step": {
           "type": "object",

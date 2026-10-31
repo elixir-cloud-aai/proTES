@@ -11,8 +11,8 @@ database (`db.dbs`) and that of access control
 URL of the app (`server.public_url`, cf. `protes.publicUrl`), if known,
 the TES backends (`custom.tes.backends`) to those of `tes.backends`, if
 any, and the plugins (`plugins`) to those of the values `plugins` that are
-set (cf. `protes.plugins`). Every template includes the settings, so the app's checks
-(`protes.validate`) run first, before those of the library and whichever
+set (cf. `protes.plugins`). Every template includes the settings, so the
+app's checks (`protes.validate`) run first, before those of the library and whichever
 template Helm renders first.
 */}}
 {{- define "protes.settings" -}}
@@ -46,14 +46,24 @@ config:
 {{/*
 The plugin settings of the values `plugins` that are set (not empty), with
 the keys of the app config (`plugins`, e.g., `client_pipelines` for
-`clientPipelines`; cf. `protes.snakeKeys`), as a JSON object.
+`clientPipelines`; cf. `protes.snakeKeys`), as a JSON object. The
+identifiers of plugins (`available`) and the names of presets (`presets`)
+are kept as they are.
 */}}
 {{- define "protes.plugins" -}}
 {{- $plugins := dict -}}
+{{- $keys := include "protes.pluginKeys" . | fromJson -}}
 {{- range $key, $value := .Values.plugins | default dict -}}
 {{- if $value -}}
-{{- $converted := include "protes.snakeKeys" (dict "value" $value) | fromJson -}}
-{{- $_ := set $plugins (get (include "protes.pluginKeys" $ | fromJson) $key | default $key) (get $converted "value") -}}
+{{- $converted := dict -}}
+{{- if has $key (list "available" "presets") -}}
+{{- range $name, $item := $value -}}
+{{- $_ := set $converted $name (get (include "protes.snakeKeys" (dict "value" $item) | fromJson) "value") -}}
+{{- end -}}
+{{- else -}}
+{{- $converted = get (include "protes.snakeKeys" (dict "value" $value) | fromJson) "value" -}}
+{{- end -}}
+{{- $_ := set $plugins (get $keys $key | default $key) $converted -}}
 {{- end -}}
 {{- end -}}
 {{- toJson $plugins -}}

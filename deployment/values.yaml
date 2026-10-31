@@ -101,11 +101,12 @@ tes:
   #       passwordEnv: TES_EXAMPLE_COM_PASSWORD
 
 # Plugins that process new tasks (FOCA's plugin engine; see docs/plugins.md
-# and deployment/README.md, Plugins), rendered into the `plugins` section of
-# the app config, with the keys of the app config (e.g., `clientPipelines`
-# as `client_pipelines`, `onFailure` as `on_failure`; the `config` of
-# plugins and the `params` of pipeline steps are kept as they are). Empty
-# values are left out, so the app's defaults apply: FOCA's ordered failover
+# and deployment/README.md, Configuration), rendered into the `plugins`
+# section of the app config, with the keys of the app config (e.g.,
+# `clientPipelines` as `client_pipelines`, `onFailure` as `on_failure`; the
+# `config` of plugins, the `params` of pipeline steps, the identifiers of
+# plugins and the names of presets are kept as they are). Empty values are
+# left out, so the app's defaults apply: FOCA's ordered failover
 # (`foca.routing.ordered`) as the pipeline. Plugins must be installed in the
 # image (e.g., a custom image based on that of proTES).
 plugins:

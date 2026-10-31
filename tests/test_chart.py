@@ -1309,6 +1309,19 @@ def test_plugins_partial() -> None:
     }
 
 
+def test_plugins_names_kept() -> None:
+    """The names of presets and the identifiers of plugins are kept as they are."""
+    plugins = {
+        "available": {"maxSize": {"clientSelectable": True}},
+        "presets": {"onFailure": [{"alternatives": [{"plugin": "maxSize"}]}]},
+    }
+    docs = _render("--set-json", f"plugins={json.dumps(plugins)}")
+    assert _overlay(docs)["plugins"] == {
+        "available": {"maxSize": {"client_selectable": True}},
+        "presets": {"onFailure": [{"alternatives": [{"plugin": "maxSize"}]}]},
+    }
+
+
 def test_plugins_twice() -> None:
     """Rendering fails with a plugin setting in `plugins` and in `config`."""
     error = _render_error(

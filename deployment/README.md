@@ -87,7 +87,8 @@ The plugins that process new tasks (see
 `plugins` in camelCase (e.g., `clientSelectable`, `onFailure`,
 `ifMissingPhase`, `maxSteps`, `maxAlternatives`, `maxSize`, `maxItems`,
 `maxRouteEntries`, `recordFailed` and `secretHeaders`; the `config` of
-plugins and the `params` of pipeline steps are kept as they are), which the
+plugins and the `params` of pipeline steps are kept as they are, as are
+the identifiers of plugins and the names of presets), which the
 chart renders into the config; empty values are left out, so that the
 app's defaults apply (FOCA's ordered failover as the pipeline). Plugins
 must be installed in the image (e.g., a custom image based on that of
