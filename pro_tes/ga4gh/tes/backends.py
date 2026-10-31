@@ -28,7 +28,7 @@ checks the address of each connection itself, so that hosts whose addresses
 change between checks (DNS rebinding) can't lead requests to private
 addresses (unless allowed, `allow_private_addresses` of the registry entry);
 their redirects are not followed, and their responses are limited to
-`MAX_RESPONSE_SIZE` bytes (not those of redirects yet, which FOCA 0.18
+`MAX_RESPONSE_SIZE` bytes (not those of redirects yet, which FOCA 0.19
 reads whole). Requests to configured backends time out after
 `custom.tes.timeout` seconds without data, and after `CONNECT_TIMEOUT`
 seconds while connecting; requests to discovered backends must end within

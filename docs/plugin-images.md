@@ -154,7 +154,7 @@ wrong image fails at once, not with the first task.
 Rebuild the image for every release of proTES that you deploy, and resolve
 `plugins.in` against the new image again (see [Pinning
 plugins](#pinning-plugins)), as its packages change. Plugins declare the
-FOCA versions that they support (e.g., `foca>=0.18.0,<0.19`), so resolving
+FOCA versions that they support (e.g., `foca>=0.19.0,<0.20`), so resolving
 them against an image with another FOCA version fails.
 
 ## Local builds

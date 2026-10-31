@@ -14,7 +14,7 @@ description = "Test plugin of the proTES smoke test: tags each new task"
 requires-python = ">=3.11"
 license = "Apache-2.0"
 classifiers = ["Private :: Do Not Upload"]
-dependencies = ["foca>=0.18.0,<0.19"]
+dependencies = ["foca>=0.19.0,<0.20"]
 
 # The plugin ID (entry point name) and its class
 [project.entry-points."foca.plugins"]
