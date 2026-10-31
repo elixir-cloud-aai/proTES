@@ -7,8 +7,8 @@ FOCA 0.12).
 
 ## Configuration
 
-proTES runs on FOCA 0.18 and Python 3.13. Custom configs must apply the
-config changes of FOCA 0.14 to 0.18 (see the FOCA release notes and
+proTES runs on FOCA 0.19 and Python 3.13. Custom configs must apply the
+config changes of FOCA 0.14 to 0.19 (see the FOCA release notes and
 migration guides), e.g., `exceptions.mapping` instead of the old exception
 members, and no `validation_methods`, `validation_checks`, `environment` or
 `use_reloader`.
@@ -503,6 +503,29 @@ security:
       users-list-plugins: [p, user, /ga4gh/tes/v1/plugins, (GET)|(HEAD)]
       users-get-plugins: [p, user, "/ga4gh/tes/v1/plugins/:id", (GET)|(HEAD)]
 ```
+
+## Plugin store
+
+FOCA 0.19 gives plugins a key-value store (`ctx.store`, e.g., for caches
+and per-user counters; see [Plugin store](operations.md#plugin-store)).
+proTES keeps its entries in the collection `plugin_store` of the database of
+the tasks (`taskStore`, or the one in `MONGO_DBNAME`), and creates its
+indexes there on startup (a TTL index on `expires_at`, one on `ns`): the
+database user of proTES needs the right to create indexes (`createIndex`,
+part of the role `readWrite`, which the Helm chart grants its app user; for
+an external MongoDB, check the roles of the user). If the indexes can't be
+created, proTES starts anyway and logs it (as an error for missing rights,
+failed authentication or conflicting indexes), and writes of plugins to the
+store fail until the indexes exist. The new settings
+`plugins.defaults.store` and `plugins.available.<id>.store` (`enabled`,
+`max_entry_size`, `max_ttl`; see [Plugins](configuration.md#plugins)) have
+defaults, so configs need no change.
+
+The plugin listing (`GET /plugins`, `GET /plugins/{plugin_id}`) has two new
+required fields per plugin, from version 1.1.0 of FOCA's specification of
+the listing on: what the plugin keeps in its store (`data_stored`) and the
+store's mode (`storage`: `shared`, `local` or `off`). Clients that validate
+listings against an earlier specification must accept them.
 
 ## Middleware management API
 

@@ -9,7 +9,8 @@ A deployment of proTES consists of:
   instances (see [Task tracking](#task-tracking));
 - RabbitMQ, the broker between the app and the workers;
 - MongoDB, which stores the tasks (database `taskStore`, collection
-  `tasks`) and their provenance (see [Task provenance](#task-provenance));
+  `tasks`), their provenance (see [Task provenance](#task-provenance)) and
+  the entries of the plugin store (see [Plugin store](#plugin-store));
 - optionally Flower, a web UI to monitor the Celery workers.
 
 The Docker Compose setup and the [Helm chart](deployment.md) run all of them.
@@ -218,6 +219,39 @@ db.pipelines.findOne({ _id: record.pipeline.resolved_hash })
 db.plugin_builds.find({ _id: { $in: Object.keys(record.plugins) } })
 // failed runs of the last day
 db.failed_runs.find({ failed_at: { $gt: new Date(Date.now() - 864e5) } })
+```
+
+## Plugin store
+
+Plugins may keep small data across requests in FOCA's key-value store
+(`ctx.store`, e.g., caches and per-user counters; see FOCA's
+[documentation](https://foca.readthedocs.io/en/latest/configuration/plugins/#plugin-store)).
+proTES itself stores nothing there. The entries are in the collection
+`plugin_store` of the database of the tasks (`taskStore`, or the one in
+`MONGO_DBNAME`), shared by all instances, with a namespace (`ns`) per plugin
+distribution and an expiry (`expires_at`): entries live at most
+`max_ttl` seconds (by default 30 days; see [Plugins](configuration.md#plugins)),
+and MongoDB removes expired entries about once a minute.
+
+proTES creates the indexes of the collection on startup (a TTL index on
+`expires_at`, one on `ns`), so its database user needs the right to create
+indexes (`createIndex`, part of the role `readWrite`). If that fails,
+proTES starts anyway and logs a warning (an error, with the cause, for
+conflicting indexes, failed authentication or missing rights), and writes
+of plugins to the store fail until the indexes exist. On each start, proTES
+also cuts the expiry of stored entries to the current `max_ttl`; if that
+fails (logged), they keep their expiry until a later start succeeds.
+
+What each plugin keeps there is listed in the plugin listing (`data_stored`,
+with the mode of its store, `storage`: `shared` in the database, `local` in
+the memory of each process, or `off`; see [Choices of
+clients](plugins.md#choices-of-clients)). Entries keyed by users are
+personal data, kept at most `max_ttl`. To remove the entries of a plugin
+distribution earlier (e.g., one that is no longer installed), delete them
+in the database of the tasks:
+
+```js
+db.plugin_store.deleteMany({ ns: "<namespace>" })
 ```
 
 ## Verifying images and charts

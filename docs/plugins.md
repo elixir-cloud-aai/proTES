@@ -157,8 +157,11 @@ available: <id>`), invalid JSON, or a choice that the admin disabled
 Users (role `user`) list what they may choose with `GET /ga4gh/tes/v1/plugins`
 (the plugins and presets, the default pipeline, the limits of
 `plugins.client_pipelines` and `plugins.client_backends`, and the tag
-prefix), and get a plugin with `GET /ga4gh/tes/v1/plugins/{plugin_id}`;
-the public service info tells whether clients may choose, in its field
+prefix), and get a plugin with `GET /ga4gh/tes/v1/plugins/{plugin_id}`.
+Each plugin is listed with the data it sends to third parties
+(`data_transfers`), the data it keeps in its store (`data_stored`) and the
+store's mode (`storage`: `shared`, `local` or `off`; see [Plugin
+store](operations.md#plugin-store)); the public service info tells whether clients may choose, in its field
 `gateway`, without naming plugins. For example, with `curl` and an access
 token in `TOKEN` (in Bash), for a preset `fast` of the admin and a TES
 instance of the deployment:
@@ -206,8 +209,10 @@ described in FOCA's documentation.
 The Helm chart sets the plugins with the values `plugins.available`,
 `plugins.pipeline`, `plugins.presets`, `plugins.clientPipelines`,
 `plugins.clientBackends`, `plugins.tags` and `plugins.provenance`, with the
-keys of the config in camelCase (e.g., `onFailure` for `on_failure`), and
-other settings in `config.plugins` (see the chart's README, Configuration),
+keys of the config in camelCase (e.g., `onFailure` for `on_failure`,
+`maxTtl` for `max_ttl` in `plugins.available.<id>.store`), and other
+settings in `config.plugins` (e.g., `defaults.store`; see the chart's
+README, Configuration),
 and the image with the plugins in `protes.image` (see [Plugin
 images](plugin-images.md#deploying)).
 The config overlays of Docker Compose (`config.dev.yaml`) and of its smoke

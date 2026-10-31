@@ -88,15 +88,18 @@ of the config:
 - `available`, `pipeline`, `presets`, `clientPipelines`, `clientBackends`,
   `tags` and `provenance` take the settings of the same names in the app's
   `plugins`, with their keys in camelCase (e.g., `onFailure` for
-  `on_failure`, `maxItems` for `max_items`; see `values.schema.json`).
+  `on_failure`, `maxItems` for `max_items`, `maxTtl` for `max_ttl` in
+  the store settings of a plugin, `available.<id>.store`; see
+  `values.schema.json`).
   The `config` of plugins, the `params` of pipeline steps, the identifiers
   of plugins and the names of presets are kept as they are. Steps of
   pipelines take the long form (`alternatives`), not FOCA's short forms (a
   plugin's identifier, or `plugin` and `params`).
 - Empty values are left out, so that the app's defaults apply (FOCA's
   ordered failover as the pipeline).
-- Other settings of the app's `plugins` (e.g., `defaults`, `gateway_id`)
-  are set in `config.plugins`.
+- Other settings of the app's `plugins` (e.g., `defaults`, with the
+  defaults of the plugin store, `defaults.store`, and `gateway_id`) are
+  set in `config.plugins`.
 - Rendering fails if a setting is set both in `plugins` and in
   `config.plugins`, and on `config.custom.middlewares`, which the plugins
   replaced.
@@ -675,8 +678,11 @@ config:
 ```
 
 The app authenticates as the app user against its database (`taskStore`),
-so create that user there, with the `readWrite` role on `taskStore`; allow
-the app's and the worker's pods to connect to the database.
+so create that user there, with the `readWrite` role on `taskStore` (the
+app creates the indexes of its collections on startup, also those of the
+plugin store, `plugin_store`, so the user needs `createIndex`, which
+`readWrite` includes); allow the app's and the worker's pods to connect to
+the database.
 
 ## Upgrades
 
