@@ -310,7 +310,9 @@ plugins:
 `custom.storeLogs.execution_trace` sets whether proTES records the TES
 instance and the remote task identifier of each forwarded task in the task's
 logs (`logs[].metadata.forwarded_to`); proTES keeps them for cancellation
-either way.
+either way. `forwarded_to` is deprecated in favour of the [gateway
+tags](api.md#gateway-tags) of tasks (e.g., `gateway.backend`), and will be
+removed, with this setting, in a later release.
 
 ## Security
 

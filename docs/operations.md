@@ -29,7 +29,8 @@ at its TES instance every `polling.wait` seconds (see
 [Tasks](configuration.md#tasks)): each poll is a short Celery task, which
 schedules the next one, so no worker process is held for the runtime of a
 task, and long tasks don't keep the others from being tracked. Once a task has
-finished, its logs and outputs are stored, and tracking ends; a canceled
+finished, its state, logs and outputs are stored (tracking writes no other
+fields of a task, so its tags are kept), and tracking ends; a canceled
 task stays `CANCELED` until its TES instance has finished it. After
 `polling.attempts` consecutive failed polls (e.g., while the TES instance or
 the identity provider is down), the state of the task is `UNKNOWN` until the
@@ -155,8 +156,12 @@ outcome, reason, remote identifier, times) and the final reason, if no TES
 instance accepted the task. The record is stored with the task (after
 routing), and replaced, with the attempts, once a TES instance accepted the
 task (or may have, `SYSTEM_ERROR`). Records hold no IP addresses, tokens,
-header values or claims, and take at most 1 MiB. The API doesn't serve
-them yet, and tasks created by earlier versions have none.
+header values or claims, and take at most 1 MiB. Owners and admins get
+them with `GET /tasks/{id}/provenance` (see [Provenance](api.md#provenance)),
+and tasks carry a summary in their tags (`gateway.*`, see [Gateway
+tags](api.md#gateway-tags)). Tasks created by earlier versions have none.
+Records add no personal data to the task, besides the request identifier,
+and are deleted with it.
 
 Shared parts are stored once, by hash (`_id`), in two more collections of
 the database of the tasks, and the records refer to them:

@@ -76,8 +76,9 @@ Remove the keys that had no effect from config overlays: all of
 API specifications (`api.specs`) and access control rules
 (`security.access_control.policies`) of the base config are named entries
 (the spec `tes`; rules `users-create-list-tasks`,
-`owners-get-cancel-tasks`, `admins-list-add-permissions` and
-`admins-manage-permissions`), which overlays change by name (see
+`owners-get-cancel-tasks`, `owners-get-provenance`, `admins-get-provenance`,
+`admins-list-add-permissions` and `admins-manage-permissions`), which
+overlays change by name (see
 [Roles](access-control.md#roles)); overlays that give lists still replace
 them. The configured rules replace the stored ones atomically on startup,
 and stored configured rules are removed if an overlay sets no rules. During
@@ -478,6 +479,16 @@ instead of the base config (not as overlays, which keep its collections)
 must declare them, too. Records of failed runs are stored only with
 `plugins.provenance.record_failed: true`; without it, `failed_runs` stays
 empty.
+
+Owners and admins get the provenance with `GET /tasks/{id}/provenance`
+(rules `owners-get-provenance` and `admins-get-provenance` of the base
+config; custom lists of `security.access_control.policies` must add them).
+New tasks have the gateway tags of FOCA (`gateway.pipeline_source`,
+`gateway.backend`, ...; see [Gateway tags](api.md#gateway-tags)), served
+with the task: clients that submit a fetched task again must drop the tags
+under `gateway.` other than `gateway.backends` and `gateway.pipeline`, or
+it is rejected (`400`). `logs[].metadata.forwarded_to` is deprecated in
+favour of these tags, and will be removed in a later release.
 
 ## Middleware management API
 

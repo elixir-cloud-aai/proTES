@@ -100,6 +100,13 @@ class TaskNotFound(NotFound):
     """Raised when task with given task identifier was not found."""
 
 
+class ProvenanceNotFound(NotFound):
+    """Raised when a task has no provenance.
+
+    E.g., because it was created by an earlier version of proTES.
+    """
+
+
 class TaskNotCancelable(Conflict):
     """Raised when a task has not finished, but can't be canceled.
 
@@ -158,6 +165,11 @@ exceptions = {
     TaskNotFound: {
         "title": "Not found",
         "detail": "The requested task wasn't found.",
+        "status": 404,
+    },
+    ProvenanceNotFound: {
+        "title": "Not found",
+        "detail": "No provenance was recorded for the task.",
         "status": 404,
     },
     TaskNotCancelable: {
