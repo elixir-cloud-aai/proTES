@@ -226,6 +226,7 @@ def test_release_chart_checked() -> None:
             None, None, False, False, "protes-1.tar", None, False, id="not-tgz"
         ),
         pytest.param(None, None, False, False, CHART, "abc", False, id="bad-hash"),
+        pytest.param(None, None, False, False, CHART, "", False, id="no-hash"),
         pytest.param(None, None, False, False, CHART, "A" * 64, False, id="upper-hash"),
     ],
 )
@@ -241,8 +242,9 @@ def test_release_chart_check_runs(
 ) -> None:
     """The chart check of `publish` passes only for the chart of `prepare`.
 
-    The step's script runs as GitHub runs it (`bash -e -o pipefail`) in a
-    directory whose `dist/` holds the downloaded artifact. It needs `bash`
+    The step's script runs with the options of GitHub's default shell for
+    steps without `shell:` (`bash -e`, no `pipefail`) in a directory whose
+    `dist/` holds the downloaded artifact. It needs `bash`
     and GNU `sha256sum`, as on the GitHub runners.
 
     Args:
@@ -273,11 +275,15 @@ def test_release_chart_check_runs(
     if empty:
         chart.unlink()
     result = subprocess.run(  # noqa: S603 (fixed arguments, no shell)
-        [bash, "--noprofile", "--norc", "-e", "-o", "pipefail", "-c", script],
+        [bash, "--noprofile", "--norc", "-e", "-c", script],
         capture_output=True,
         text=True,
         cwd=tmp_path,
-        env={**os.environ, "FILE": file, "SHA256": sha256 or digest},
+        env={
+            **os.environ,
+            "FILE": file,
+            "SHA256": digest if sha256 is None else sha256,
+        },
         check=False,
     )
     assert (result.returncode == 0) == passes, result.stdout + result.stderr
