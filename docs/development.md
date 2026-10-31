@@ -278,8 +278,8 @@ that the app reports the release version; it then scans exactly that digest
 for vulnerabilities, in a job without credentials. After a second approval
 in the `release` environment (once the scan passed), it checks that the
 chart it downloads is the one it packaged (a single file with the name and
-SHA-256 recorded when packaging; if not, the job fails before anything is
-attested or signed), attests the build provenance of the scanned digest
+SHA-256 recorded when packaging; if not, the job fails before it attests,
+signs or tags anything), attests the build provenance of the scanned digest
 and signs it (see [Verifying images and
 charts](operations.md#verifying-images-and-charts)), tags exactly that image
 `X.Y.Z` (and `latest`, if it is the highest stable release on `main`),

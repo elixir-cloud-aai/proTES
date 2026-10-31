@@ -357,8 +357,10 @@ jobs:
       # the artifact must be exactly the chart that `prepare` packaged: a
       # single file with the name and checksum of `prepare`. Hidden files
       # count too, so that nothing else is in `dist/` (globs of actions match
-      # hidden files). Checked first, so that a rejected chart leaves nothing
-      # attested or signed, the image included
+      # hidden files). Checked first, so that a rejected chart leaves the
+      # image (pushed untagged by `push`, with its build's SBOM and provenance
+      # attestations) without GitHub attestation, signature and tags, and the
+      # chart unattested and unsigned
       - name: Check chart
         env:
           FILE: ${{ needs.prepare.outputs.chart_file }}

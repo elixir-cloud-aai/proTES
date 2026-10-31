@@ -189,7 +189,11 @@ def test_release_chart_checked() -> None:
     # Re-runs of all jobs replace the chart, so its checksum is the new one
     assert packaging["Upload chart"]["with"]["overwrite"] is True
     steps = {step["name"]: step for step in release["publish"]["steps"]}
+    assert steps["Download chart"]["with"] == {"name": "chart", "path": "dist/"}
     check = steps["Check chart"]
+    # A failed check stops the job
+    assert "continue-on-error" not in check
+    assert "if" not in check
     assert check["env"]["FILE"] == "${{ needs.prepare.outputs.chart_file }}"
     assert check["env"]["SHA256"] == "${{ needs.prepare.outputs.chart_sha256 }}"
     chart = "dist/${{ needs.prepare.outputs.chart_file }}"
@@ -199,7 +203,8 @@ def test_release_chart_checked() -> None:
     assert sign == 'cosign sign-blob --yes --bundle "${CHART}.sigstore.json" "${CHART}"'
     names = list(steps)
     assert names.index("Download chart") < names.index("Check chart")
-    # A rejected chart leaves the image unattested and unsigned too
+    # A rejected chart leaves the image (pushed untagged by `push`) without
+    # GitHub attestation, signature and tags too
     assert names.index("Check chart") < names.index("Attest build provenance")
     assert names.index("Check chart") < names.index("Sign image")
     assert names.index("Check chart") < names.index("Attest chart provenance")
@@ -223,7 +228,14 @@ def test_release_chart_checked() -> None:
         pytest.param(None, None, False, True, CHART, None, False, id="empty"),
         pytest.param(None, None, False, False, "../x.tgz", None, False, id="bad-name"),
         pytest.param(
-            None, None, False, False, "protes-1.tar", None, False, id="not-tgz"
+            None,
+            "protes-1.tar",
+            False,
+            False,
+            "protes-1.tar",
+            None,
+            False,
+            id="not-tgz",
         ),
         pytest.param(None, None, False, False, CHART, "abc", False, id="bad-hash"),
         pytest.param(None, None, False, False, CHART, "", False, id="no-hash"),
