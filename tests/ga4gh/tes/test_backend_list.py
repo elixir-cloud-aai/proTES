@@ -248,7 +248,9 @@ def test_get_backend_no_registry(app: FlaskApp, fake_registry: FakeRegistry) -> 
 def test_service_info_fields(discovering: FakeRegistry) -> None:
     """The service info lists the configured and discovered backends."""
     discovering.add("a", "https://tes1.example.org")
-    assert backends.service_info_fields() == {
+    fields = backends.service_info_fields()
+    assert fields.pop("gateway")["plugins_url"] == "/ga4gh/tes/v1/plugins"
+    assert fields == {
         "backends": [
             {
                 "id": STATIC,

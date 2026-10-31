@@ -45,7 +45,8 @@ check() {
   fi
 }
 
-check GET /service-info 200 '.type.artifact == "tes"'
+check GET /service-info 200 '.gateway.plugins_url == "/ga4gh/tes/v1/plugins"'
+check GET /plugins 200 '.tag_prefix == "gateway."'
 check POST /tasks 200 '.id | length > 0' \
   '{"name": "smoke", "executors": [{"image": "alpine", "command": ["true"]}]}'
 id="$(jq -r .id "${body}")"
@@ -71,6 +72,7 @@ check GET /tasks/UNKNWN 403 '.status == 403'
 auth=""
 check GET /service-info 200 '.type.artifact == "tes"'
 check GET /tasks 401 '.status == 401'
+check GET /plugins 401 '.status == 401'
 auth="$(token eve)"
 check GET /tasks 403 '.status == 403'
 auth="$(token bob)"
