@@ -23,17 +23,11 @@ HTTP API, see [API](api.md) and the Swagger UI of a deployment.
 
 ::: pro_tes.ga4gh.tes.states
 
-## Middlewares
+## Plugins and TES instances
 
-::: pro_tes.middleware.abstract_middleware
+::: pro_tes.gateway
 
-::: pro_tes.middleware.middleware_handler
-
-::: pro_tes.plugins.middlewares.task_distribution.base
-
-::: pro_tes.plugins.middlewares.task_distribution.distance
-
-::: pro_tes.plugins.middlewares.task_distribution.random
+::: pro_tes.ga4gh.tes.backends
 
 ## Task tracking
 

@@ -2,19 +2,30 @@
 
 from contextlib import suppress
 from copy import deepcopy
+from dataclasses import replace
 import logging
 import re
-from typing import Any, Literal
+from typing import Any, NamedTuple
 
 from bson.errors import InvalidId
 from bson.objectid import ObjectId
 from celery import uuid
 from foca import get_collection, get_custom_config
+from foca.plugins import (
+    Attempt,
+    Backend,
+    BackendResponse,
+    GatewayError,
+    InboundRequest,
+    NoBackendAvailable,
+    Principal,
+)
+from foca.plugins.engine import PipelineRun
+from foca.plugins.runtime import get_host
 from foca.utils.misc import generate_id
 from pymongo.collection import Collection
 from pymongo.errors import DuplicateKeyError
 import requests
-import tes
 from tes.models import Task
 
 from pro_tes.config_models import CustomConfig
@@ -22,13 +33,16 @@ from pro_tes.exceptions import (
     BackendAuthError,
     BackendOutcomeUnknown,
     BadRequest,
-    InlineContentTooLarge,
-    MiddlewareException,
-    NoTesInstancesAvailable,
     TaskNotCancelable,
     TaskNotFound,
 )
-from pro_tes.ga4gh.tes.backends import create_client
+from pro_tes.ga4gh.tes.backends import (
+    TesClient,
+    client_for,
+    create_client,
+    forward_reason,
+    get_backends,
+)
 from pro_tes.ga4gh.tes.models import (
     DbDocument,
     Metadata,
@@ -46,14 +60,15 @@ from pro_tes.ga4gh.tes.ownership import (
     task_has_roles,
 )
 from pro_tes.ga4gh.tes.states import States
-from pro_tes.middleware.middleware_handler import MiddlewareHandler
+from pro_tes.gateway import (
+    check_inline_content,
+    handle_url_credentials,
+    relayed_task,
+    validate_task,
+)
 from pro_tes.tasks.track_task_progress import task__track_task_progress
 from pro_tes.utils.db import TASK_COLLECTION, TASK_DB, DbDocumentConnector
-from pro_tes.utils.misc import (
-    has_credentials,
-    strip_auth,
-    utc_now,
-)
+from pro_tes.utils.misc import utc_now
 from pro_tes.utils.models import TaskModelConverter
 
 logger = logging.getLogger(__name__)
@@ -81,6 +96,22 @@ def flatten_forwards(task: dict[str, Any]) -> dict[str, Any]:
     return task
 
 
+class _Accepted(NamedTuple):
+    """Attempt of the backend that accepted a task.
+
+    Attributes:
+        attempt: Attempt of the backend.
+        cli: Client of the backend.
+        response: Response of the backend.
+        remote_task_id: Identifier of the task at the backend.
+    """
+
+    attempt: Attempt
+    cli: TesClient
+    response: BackendResponse
+    remote_task_id: str
+
+
 class TaskRuns:
     """Class for TES API server-side controller methods.
 
@@ -100,48 +131,66 @@ class TaskRuns:
         self.store_logs = self.custom_config.storeLogs.execution_trace
 
     def create_task(
-        self, task: dict[str, Any] | None, collection: str, **kwargs: Any
-    ) -> dict[str, Any]:
+        self,
+        task: dict[str, Any] | None,
+        collection: str,
+        inbound: InboundRequest,
+        principal: Principal,
+        request_id: str | None = None,
+        **kwargs: Any,
+    ) -> tuple[Any, dict[str, str]]:
         """Start task.
 
         The user of the request becomes the owner of the task (cf.
-        :py:mod:`pro_tes.ga4gh.tes.ownership`). Tasks that fail validation,
-        and tasks that no TES instance accepts, are not kept: they are
-        deleted, with the owner's roles on them. Tasks that a TES instance
-        may have accepted are kept (as `SYSTEM_ERROR`).
+        :py:mod:`pro_tes.ga4gh.tes.ownership`). The task is checked, then
+        the plugin pipeline of the request runs (cf.
+        :py:mod:`pro_tes.gateway`): its `request` phase may change the task,
+        and its `route` phase chooses the TES backends, in order, from
+        `custom.tes.backends`. Tasks that fail validation, are rejected by a
+        plugin, or have no backend are not stored.
 
-        Tasks are sent to the TES instances in turn, until one accepts the
-        task. They are sent to the next one only if a TES instance certainly
-        did not accept the task, never if it may have (cf.
-        :py:class:`pro_tes.ga4gh.tes.backends.TesClient`).
+        The task is then stored, and relayed to the backends in turn, after
+        the `forward` phase of each attempt, until one accepts the task. It
+        is relayed to the next one only if a backend certainly did not
+        accept it, never if it may have (cf.
+        :py:class:`pro_tes.ga4gh.tes.backends.TesClient`). Tasks that no
+        backend accepts are not kept: they are deleted, with the owner's
+        roles on them. Tasks that a backend may have accepted are kept (as
+        `SYSTEM_ERROR`).
 
         Args:
             task: Task of the request (its JSON body); not changed.
             collection: Request path of the tasks (e.g.,
                 `/ga4gh/tes/v1/tasks`), the resource of the access control
                 policies of the task's owner.
+            inbound: Inbound request (cf.
+                :py:func:`foca.plugins.adapter.inbound_from_request`); its
+                payload is replaced by the checked task.
+            principal: Caller of the request (cf.
+                :py:func:`foca.plugins.adapter.current_principal`).
+            request_id: Identifier of the request, for logs.
             **kwargs: Additional keyword arguments passed along with request.
 
         Returns:
-            Task identifier.
+            Response to the client: by default, the task identifier; and its
+            headers (none by default; plugins may change both in the
+            `response` phase).
 
         Raises:
+            foca.plugins.GatewayError: The pipeline run failed (e.g., a
+                plugin rejected the task, a step failed, the tags choose an
+                invalid pipeline or backends, the request passed proTES
+                before), or no backend accepted the task (in time); in the
+                latter case, the task is not kept.
             pro_tes.exceptions.BackendOutcomeUnknown: A TES instance may
                 have accepted the task, but did not confirm it; the task is
                 stored with the state `SYSTEM_ERROR`, and with the TES
                 instance, without remote identifier.
             pro_tes.exceptions.BadRequest: The request has no JSON body,
-                or the task is invalid (e.g., after the middlewares changed
-                it; the task is then not kept).
+                or the task is invalid.
             pro_tes.exceptions.InlineContentTooLarge: The inline contents of
-                the inputs of the task exceed the limit, before or after the
-                middlewares.
-            pro_tes.exceptions.MiddlewareException: A middleware step could
-                not be applied, or no middleware left a list of URL strings
-                in `tes_urls`; the task is not kept.
-            pro_tes.exceptions.NoTesInstancesAvailable: No TES instance
-                accepted the task, or the middlewares selected none (then
-                before the task is stored); the task is not kept.
+                the inputs of the task exceed the limit, also after a plugin
+                changed the task.
             pro_tes.exceptions.Unauthorized: The user of the request could
                 not be identified.
         """
@@ -153,23 +202,39 @@ class TaskRuns:
         owner = get_owner()
         payload_original: dict[str, Any] = deepcopy(task)
         # credentials in URLs are neither stored nor forwarded; removed before
-        # the middlewares, so that they don't get them either
-        self._handle_url_credentials(
+        # the plugins, so that they don't get them either
+        handle_url_credentials(
             payload=payload_original,
             mode=self.custom_config.controllers.post_task.url_credentials,
         )
         max_inline_content = self.custom_config.controllers.post_task.max_inline_content
-        self._check_inline_content(payload=payload_original, limit=max_inline_content)
+        check_inline_content(payload=payload_original, limit=max_inline_content)
         db_document.task_original = TesTask(**payload_original)
+        try:
+            validate_task(payload_original)
+        except (TypeError, ValueError) as exc:
+            raise BadRequest(
+                f"Task could not be validated. Original error message:"
+                f" '{type(exc).__name__}: {exc}'"
+            ) from exc
 
-        # apply middlewares
-        payload, tes_urls = self._apply_middlewares(task=payload_original)
+        # run the plugins of the request and route phases; the engine
+        # sanitizes and validates the task after each plugin that changed it
+        host = get_host()
+        run = host.start(
+            replace(inbound, payload=deepcopy(payload_original)),
+            principal,
+            request_id=request_id,
+        )
+        payload: dict[str, Any] = run.request().payload
+        candidates = run.route(get_backends())
+        # before the task is stored: no task is left
+        if not candidates:
+            run.final_reason = "no_backend"
+            raise NoBackendAvailable("No TES backend available", run=run)
 
-        # update task document
-        # also credentials and contents that middlewares added
-        self._handle_url_credentials(payload=payload, mode="strip")
-        self._check_inline_content(payload=payload, limit=max_inline_content)
-        # set by the server (TES), not by clients
+        # update task document; set by the server (TES), not by clients
+        payload = deepcopy(payload)
         payload["creation_time"] = start_time
         db_document.task = TesTask(**payload)
 
@@ -180,6 +245,7 @@ class TaskRuns:
             owner=owner,
             collection=collection,
         )
+        run.task_id = db_document.task.id
         db_connector = DbDocumentConnector(
             collection=self.db_client,
             worker_id=db_document.worker_id,
@@ -191,66 +257,84 @@ class TaskRuns:
             db_document.worker_id,
         )
 
-        # validate request; the TES instance sets its own creation time and
-        # logs (TES servers may reject tasks that set them, as proTES does);
-        # clients can't set them, but middlewares could
-        for field in ("creation_time", "logs"):
-            payload.pop(field, None)
+        # relay request
+        logger.info(
+            "Attempting to forward task '%s' to the TES instances, in the"
+            " following order: %s",
+            db_document.task.id,
+            [backend.id for backend in candidates],
+        )
         try:
-            payload = self._sanitize_request(payload=payload)
-            payload_marshalled = tes.Task(**payload)
-        except (TypeError, ValueError) as exc:
+            accepted = self._forward(
+                run=run,
+                candidates=candidates,
+                prefix=host.conf.tags.prefix,
+                db_document=db_document,
+                db_connector=db_connector,
+            )
+        except GatewayError:
+            # no backend accepted the task (in time), or a plugin of the
+            # `forward` phase rejected it
             self._discard_task(
                 db_document=db_document, owner=owner, collection=collection
             )
-            raise BadRequest(
-                f"Task '{db_document.task.id}' could not be "
-                f"validated. Original error message: '{type(exc).__name__}: "
-                f"{exc}'"
-            ) from exc
-
-        # relay request
-        logger.info(
-            "Attempting to forward the task request to any of the known TES"
-            " instances, in the following order: %s",
-            tes_urls,
+            raise
+        # errors of the `response` phase don't discard the task: it runs at
+        # the backend, so it is kept, tracked and cancelable
+        return self._forwarded(
+            accepted=accepted, db_document=db_document, db_connector=db_connector
         )
-        for tes_url in tes_urls:
-            db_document.tes_endpoint = TesEndpoint(host=tes_url)
-            url: str = (
-                f"{db_document.tes_endpoint.host.rstrip('/')}/"
-                f"{db_document.tes_endpoint.base_path.lstrip('/')}"
-            )
-            try:
-                cli = create_client(
-                    host=db_document.tes_endpoint.host,
-                    base_path=db_document.tes_endpoint.base_path,
-                )
-            except ValueError as exc:
-                # also backends that are not configured (e.g., added by
-                # middlewares): proTES has no credentials for them
-                logger.warning(
-                    "Task '%s' could not be sent to TES endpoint hosted at: %s."
-                    " Invalid or unknown TES endpoint URL. Original error"
-                    " message: '%s: %s'",
-                    db_document.task.id,
-                    url,
-                    type(exc).__name__,
-                    exc,
-                )
-                continue
 
-            task_relayed = self._relayed_task(task=payload_marshalled)
+    def _forward(
+        self,
+        run: PipelineRun,
+        candidates: list[Backend],
+        prefix: str,
+        db_document: DbDocument,
+        db_connector: DbDocumentConnector,
+    ) -> _Accepted:
+        """Relay a stored task to the backends in turn, until one accepts it.
+
+        Args:
+            run: Pipeline run of the request.
+            candidates: Backends to try, in order (from the `route` phase).
+            prefix: Prefix of the tags reserved for the gateway.
+            db_document: Database document of the task.
+            db_connector: Connector to the database document.
+
+        Returns:
+            The attempt of the backend that accepted the task, its client,
+            response and identifier of the task.
+
+        Raises:
+            foca.plugins.GatewayError: No backend accepted the task (in
+                time), or a plugin of the `forward` phase rejected it.
+            pro_tes.exceptions.BackendOutcomeUnknown: A backend may have
+                accepted the task; it is stored as `SYSTEM_ERROR`.
+            RuntimeError: The attempts ended without outcome (a bug of the
+                plugin engine).
+        """
+        for attempt in run.attempts(candidates):
+            tes_url = attempt.backend.url
+            db_document.tes_endpoint = TesEndpoint(host=tes_url)
+            # checked by `check_outbound` before the attempt
+            task = relayed_task(attempt.outbound.payload, prefix=prefix)
             try:
-                remote_task_id = cli.create_task(task_relayed)
+                cli = client_for(attempt.backend)
+                remote_task_id, response = cli.forward(
+                    attempt.outbound,
+                    task=task,
+                    connect_timeout=attempt.remaining(),
+                )
             except BackendOutcomeUnknown as exc:
                 # the backend may run the task, so it is not sent elsewhere
+                attempt.unknown(exc.reason)
                 logger.error(
-                    "Task '%s' may or may not have been accepted by TES endpoint"
-                    " hosted at: %s; not sent to other TES endpoints. Original"
-                    " error message: '%s: %s'",
+                    "Task '%s' may or may not have been accepted by TES"
+                    " endpoint hosted at: %s; not sent to other TES"
+                    " endpoints. Original error message: '%s: %s'",
                     db_document.task.id,
-                    url,
+                    tes_url,
                     type(exc).__name__,
                     exc,
                 )
@@ -259,68 +343,101 @@ class TaskRuns:
                 )
                 db_connector.update_task_state(state=TesState.SYSTEM_ERROR.value)
                 raise
-            except (requests.RequestException, BackendAuthError) as exc:
-                # the backend did not accept the task (cf. `TesClient`)
+            except (requests.RequestException, BackendAuthError, ValueError) as exc:
+                # the backend did not accept the task (cf. `TesClient`), has
+                # no client (e.g., it is no longer configured,
+                # `BackendNotConfigured`), or its entry is invalid
+                attempt.failed(forward_reason(exc))
                 logger.warning(
-                    "Task '%s' could not be sent to TES endpoint hosted at: %s."
-                    " Original error message: '%s: %s'",
+                    "Task '%s' could not be sent to TES endpoint hosted at:"
+                    " %s. Original error message: '%s: %s'",
                     db_document.task.id,
-                    url,
+                    tes_url,
                     type(exc).__name__,
                     exc,
                 )
                 continue
-
-            logger.info(
-                "Task '%s' successfully forwarded to TES endpoint hosted at:"
-                " %s. Remote task identifier: %s",
-                db_document.task.id,
-                url,
-                remote_task_id,
-            )
-            # the task is stored with its backend first, so that it is
-            # cancelable even if the rest fails (e.g., the instance stops)
-            db_document = self._update_doc_in_db(
-                db_connector=db_connector,
-                tes_url=tes_url,
+            return _Accepted(
+                attempt=attempt,
+                cli=cli,
+                response=response,
                 remote_task_id=remote_task_id,
             )
-            try:
-                remote_task: Task = cli.get_task(remote_task_id)
-                task_model_converter = TaskModelConverter(task=remote_task)
-                task_converted: TesTask = task_model_converter.convert_task()
-                state = TesState(task_converted.state)
-                # unless a request to cancel the task changed it meanwhile
-                if db_connector.update_task_state(
-                    state=state.value, if_state=TesState.UNKNOWN.value
-                ):
-                    db_document.task.state = state
-            except Exception as exc:
-                # the task is tracked anyway, also if its backend serves it
-                # invalid (e.g., with an unknown state)
-                logger.error(
-                    "Task '%s' info could not be retrieved from TES endpoint"
-                    " hosted at: %s. Original error message: '%s: %s'",
-                    db_document.task.id,
-                    url,
-                    type(exc).__name__,
-                    exc,
-                )
-            task__track_task_progress.apply_async(
-                None,
-                {
-                    "worker_id": db_document.worker_id,
-                    "remote_host": db_document.tes_endpoint.host,
-                    "remote_base_path": db_document.tes_endpoint.base_path,
-                    "remote_task_id": remote_task_id,
-                },
-            )
-            return {"id": db_document.task.id}
+        # the attempts end with a success, or raise
+        raise RuntimeError("Forwarding ended without outcome")
 
-        self._discard_task(db_document=db_document, owner=owner, collection=collection)
-        raise NoTesInstancesAvailable(
-            "Could not forward the task request to any TES instance"
+    def _forwarded(
+        self,
+        accepted: _Accepted,
+        db_document: DbDocument,
+        db_connector: DbDocumentConnector,
+    ) -> tuple[Any, dict[str, str]]:
+        """Store and track a task that a backend accepted.
+
+        Args:
+            accepted: The attempt of the backend that accepted the task, its
+                client, response and identifier of the task.
+            db_document: The stored task.
+            db_connector: Connector of the stored task.
+
+        Returns:
+            Response to the client and its headers, after the `response`
+            phase.
+
+        Raises:
+            foca.plugins.GatewayError: A plugin of the `response` phase
+                rejected the response, or a step of it failed; the task is
+                kept (and tracked).
+        """
+        attempt, cli, response, remote_task_id = accepted
+        tes_url = attempt.backend.url
+        logger.info(
+            "Task '%s' successfully forwarded to TES endpoint hosted at:"
+            " %s. Remote task identifier: %s",
+            db_document.task.id,
+            tes_url,
+            remote_task_id,
         )
+        # the task is stored with its backend first, so that it is
+        # cancelable even if the rest fails (e.g., the instance stops)
+        db_document = self._update_doc_in_db(
+            db_connector=db_connector,
+            tes_url=tes_url,
+            remote_task_id=remote_task_id,
+        )
+        try:
+            remote_task: Task = cli.get_task(remote_task_id)
+            task_model_converter = TaskModelConverter(task=remote_task)
+            task_converted: TesTask = task_model_converter.convert_task()
+            state = TesState(task_converted.state)
+            # unless a request to cancel the task changed it meanwhile
+            if db_connector.update_task_state(
+                state=state.value, if_state=TesState.UNKNOWN.value
+            ):
+                db_document.task.state = state
+        except Exception as exc:
+            # the task is tracked anyway, also if its backend serves it
+            # invalid (e.g., with an unknown state)
+            logger.error(
+                "Task '%s' info could not be retrieved from TES endpoint"
+                " hosted at: %s. Original error message: '%s: %s'",
+                db_document.task.id,
+                tes_url,
+                type(exc).__name__,
+                exc,
+            )
+        task__track_task_progress.apply_async(
+            None,
+            {
+                "worker_id": db_document.worker_id,
+                "remote_host": db_document.tes_endpoint.host,
+                "remote_base_path": db_document.tes_endpoint.base_path,
+                "remote_task_id": remote_task_id,
+            },
+        )
+        response.client_payload = {"id": db_document.task.id}
+        response = attempt.succeeded(response, remote_id=remote_task_id)
+        return response.client_payload, dict(response.client_headers)
 
     def list_tasks(self, collection: str, **kwargs: Any) -> dict[str, Any]:
         """Return list of the tasks of the user of the request.
@@ -506,43 +623,6 @@ class TaskRuns:
                 )
         return {}
 
-    def _apply_middlewares(
-        self, task: dict[str, Any]
-    ) -> tuple[dict[str, Any], list[str]]:
-        """Apply the middlewares of the config to a task.
-
-        The middlewares select the TES backends that the task is forwarded
-        to, as `tes_urls` of the task (cf.
-        :py:class:`pro_tes.plugins.middlewares.task_distribution.base.TaskDistributionBaseClass`).
-
-        Args:
-            task: Task, after the checks of the request; not changed.
-
-        Returns:
-            The task as changed by the middlewares, without `tes_urls`, and
-            the URLs of the TES backends to try, in order.
-
-        Raises:
-            pro_tes.exceptions.MiddlewareException: A middleware step could
-                not be applied, or no middleware selected TES backends.
-            pro_tes.exceptions.NoTesInstancesAvailable: The middlewares
-                selected an empty list of TES backends (e.g., as none are
-                configured or discovered).
-        """
-        mw_handler = MiddlewareHandler()
-        mw_handler.set_middlewares(paths=self.custom_config.middlewares.root)
-        logger.debug("Middlewares registered: %s", mw_handler.middlewares)
-        payload = mw_handler.apply_middlewares(task=task)
-        tes_urls = payload.pop("tes_urls", None)
-        if not isinstance(tes_urls, list) or not all(
-            isinstance(url, str) for url in tes_urls
-        ):
-            raise MiddlewareException("Middlewares selected no TES backends")
-        # before the task is stored: the same error as if no backend accepted
-        if not tes_urls:
-            raise NoTesInstancesAvailable("Middlewares selected an empty list")
-        return payload, tes_urls
-
     def _find_task(self, id: str) -> tuple[dict[str, Any], DbDocument]:
         """Get a stored task.
 
@@ -660,31 +740,6 @@ class TaskRuns:
                 )
             return
         logger.info("Task '%s' not kept: it was not forwarded", db_document.task.id)
-
-    def _sanitize_request(self, payload: dict[str, Any]) -> dict[str, Any]:
-        """Sanitize request for use with py-tes.
-
-        Args:
-            payload: Request payload.
-
-        Returns:
-            Sanitized request payload.
-        """
-        if "inputs" in payload:
-            payload["inputs"] = [
-                tes.models.Input(**input) for input in payload["inputs"]
-            ]
-        if "outputs" in payload:
-            payload["outputs"] = [
-                tes.models.Output(**output) for output in payload["outputs"]
-            ]
-        if "resources" in payload:
-            payload["resources"] = tes.models.Resources(**payload["resources"])
-        if "executors" in payload:
-            payload["executors"] = [
-                tes.models.Executor(**executor) for executor in payload["executors"]
-            ]
-        return payload
 
     def _set_projection(self, view: str) -> dict[str, bool]:
         """Set database projection for selected view.
@@ -886,96 +941,6 @@ class TaskRuns:
         if page_size < 1:
             raise BadRequest(f"Page size must be positive: {page_size}")
         return min(page_size, maximum)
-
-    @staticmethod
-    def _handle_url_credentials(
-        payload: dict[str, Any], mode: Literal["reject", "strip"]
-    ) -> None:
-        """Reject or remove credentials in the URLs of inputs and outputs.
-
-        Credentials are user names and passwords (user information, e.g.,
-        `https://user:password@host/path`). Inputs and outputs are kept
-        otherwise, also inputs without URL (with `content`); malformed ones
-        are left to the validation of the task.
-
-        Args:
-            payload: Task (JSON); changed in place.
-            mode: Whether tasks with credentials are rejected (`reject`), or
-                the credentials are removed (`strip`).
-
-        Raises:
-            pro_tes.exceptions.BadRequest: A URL has credentials, and `mode`
-                is `reject`; or a URL is malformed.
-        """
-        for field in ("inputs", "outputs"):
-            items = payload.get(field)
-            if not isinstance(items, list):
-                continue
-            for item in items:
-                url = item.get("url") if isinstance(item, dict) else None
-                if not isinstance(url, str):
-                    continue
-                try:
-                    found = has_credentials(url)
-                except ValueError as exc:
-                    raise BadRequest(f"Malformed URL in `{field}`") from exc
-                if not found:
-                    continue
-                if mode == "reject":
-                    raise BadRequest(
-                        f"URLs in `{field}` must not have credentials (user"
-                        " names or passwords)"
-                    )
-                item["url"] = strip_auth(url)
-
-    @staticmethod
-    def _check_inline_content(payload: dict[str, Any], limit: int) -> None:
-        """Check the size of the inline contents of the inputs of a task.
-
-        Each input's, as the TES specification recommends a minimum size per
-        field; all together are limited by the size of request bodies.
-
-        Args:
-            payload: Task (JSON).
-            limit: Maximum size of the content of an input
-                (`inputs[].content`), in bytes (UTF-8).
-
-        Raises:
-            pro_tes.exceptions.InlineContentTooLarge: A content is larger.
-        """
-        inputs = payload.get("inputs")
-        if not isinstance(inputs, list):
-            return
-        size = max(
-            (
-                len(item["content"].encode("utf-8", errors="surrogatepass"))
-                for item in inputs
-                if isinstance(item, dict) and isinstance(item.get("content"), str)
-            ),
-            default=0,
-        )
-        if size > limit:
-            raise InlineContentTooLarge(
-                f"Inline content of an input (`inputs[].content`) exceeds"
-                f" {limit} bytes: {size}"
-            )
-
-    @staticmethod
-    def _relayed_task(task: tes.Task) -> tes.Task:
-        """Get a task as it is relayed to a TES backend.
-
-        Each backend gets a copy of the task as validated, without changes
-        made for other backends. Changes of tasks for their backends belong
-        here, e.g., tags with the identity of the user (planned, but not
-        decided yet).
-
-        Args:
-            task: Task, as validated.
-
-        Returns:
-            The task to be relayed.
-        """
-        return deepcopy(task)
 
     @staticmethod
     def _remote_task_id(

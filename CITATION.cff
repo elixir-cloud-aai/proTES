@@ -10,10 +10,10 @@ title: proTES
 abstract: >-
   proTES is a gateway for the GA4GH Task Execution Service (TES) API that
   federates TES instances. Clients send their tasks to proTES as to any TES
-  instance; proTES passes each task through a configurable stack of
-  middlewares, which pick the TES instance to run it on (e.g., randomly, for
-  load balancing, or the one closest to the task's input data) or change the
-  request, forwards it there and tracks its state. It is built with FOCA and
+  instance; proTES passes each task through a configurable pipeline of
+  plugins, which pick the TES instance to run it on (e.g., in order, with
+  failover, randomly, for load balancing, or the one closest to the task's
+  input data) or change the request, forwards it there and tracks its state. It is built with FOCA and
   deployed with Docker Compose or its Helm chart.
 type: software
 authors:

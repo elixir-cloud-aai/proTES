@@ -100,7 +100,7 @@ nav:
   - Getting started: getting-started.md
   - Configuration: configuration.md
   - API: api.md
-  - Middlewares: middlewares.md
+  - Plugins: plugins.md
   - Access control: access-control.md
   - Deployment: deployment.md
   - Operations: operations.md

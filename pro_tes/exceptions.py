@@ -1,4 +1,9 @@
-"""proTES exceptions."""
+"""proTES exceptions.
+
+Errors of the plugin engine of FOCA (cf. :py:mod:`foca.plugins.errors`) get
+the problem details of the gateway error, with their problem type, from the
+controller of `POST /tasks`; the mapping below is their fallback.
+"""
 
 from connexion.exceptions import (
     BadRequestProblem,
@@ -6,6 +11,14 @@ from connexion.exceptions import (
     Forbidden,
     OAuthProblem,
     Unauthorized,
+)
+from foca.plugins import (
+    ForwardTimeout,
+    InvalidSelection,
+    InvalidVia,
+    LoopDetected,
+    NoBackendAvailable,
+    PipelineFailed,
 )
 from pydantic import ValidationError
 from pymongo.errors import PyMongoError
@@ -43,7 +56,21 @@ class BackendOutcomeUnknown(RuntimeError):
     request was sent, or the backend answered with a server error. Such
     requests (to create or cancel tasks) are not sent again, neither to the
     backend nor to other backends, so that tasks are never created twice.
+
+    Attributes:
+        reason: Reason code, e.g., `read_timeout` or `http_502` (cf.
+            :py:class:`foca.plugins.OutcomeUnknown`).
     """
+
+    def __init__(self, message: str, reason: str = "outcome_unknown") -> None:
+        """Create the error.
+
+        Args:
+            message: Description of the error.
+            reason: Reason code.
+        """
+        super().__init__(message)
+        self.reason = reason
 
 
 class BackendNotConfigured(ValueError):
@@ -61,26 +88,6 @@ class InlineContentTooLarge(RequestEntityTooLarge):
     """
 
 
-class InputUriError(ValueError):
-    """Raised when input URI cannot be parsed."""
-
-
-class IPDistanceCalculationError(ValueError):
-    """Raised when IP distance cannot be calculated."""
-
-
-class MiddlewareException(ValueError):
-    """Raised when a middleware could not be applied."""
-
-
-class InvalidMiddleware(MiddlewareException):
-    """Raised when a middleware is invalid."""
-
-
-class NoTesInstancesAvailable(ValueError):
-    """Raised when no TES instances are available."""
-
-
 class TaskNotFound(NotFound):
     """Raised when task with given task identifier was not found."""
 
@@ -91,10 +98,6 @@ class TaskNotCancelable(Conflict):
     E.g., because it was not forwarded yet, so that its identifier at its
     TES instance is unknown.
     """
-
-
-class TesUriError(ValueError):
-    """Raised when TES URI cannot be parsed."""
 
 
 # problem details of exceptions (cf. `exceptions.mapping` in `config.yaml`)
@@ -122,16 +125,6 @@ exceptions = {
     ValidationError: {
         "title": "Bad request",
         "detail": "The request is malformed.",
-        "status": 400,
-    },
-    TesUriError: {
-        "title": "Bad request",
-        "detail": "TES URI cannot be parsed.",
-        "status": 400,
-    },
-    InputUriError: {
-        "title": "Bad request",
-        "detail": "Input URI cannot be parsed.",
         "status": 400,
     },
     Unauthorized: {
@@ -188,11 +181,6 @@ exceptions = {
         "detail": "No/few unique task identifiers available.",
         "status": 500,
     },
-    NoTesInstancesAvailable: {
-        "title": "Internal server error",
-        "detail": "No TES instance accepted the task.",
-        "status": 500,
-    },
     BackendAuthError: {
         "title": "Internal server error",
         "detail": "No credentials for the TES instance of the task available.",
@@ -210,19 +198,36 @@ exceptions = {
         ),
         "status": 502,
     },
-    MiddlewareException: {
+    # Errors of the plugin engine; `PipelineRejected` has the status of the
+    # plugin's rejection, so it is not mapped
+    InvalidSelection: {
+        "title": "Bad request",
+        "detail": "The pipeline or backends chosen in the tags are invalid.",
+        "status": 400,
+    },
+    InvalidVia: {
+        "title": "Bad request",
+        "detail": "The Via header is too long.",
+        "status": 400,
+    },
+    PipelineFailed: {
         "title": "Internal server error",
-        "detail": "Middleware could not be applied.",
+        "detail": "A step of the plugin pipeline failed.",
         "status": 500,
     },
-    InvalidMiddleware: {
-        "title": "Internal server error",
-        "detail": "Middleware is invalid.",
-        "status": 500,
+    NoBackendAvailable: {
+        "title": "Service unavailable",
+        "detail": "No TES instance accepted the task.",
+        "status": 503,
     },
-    IPDistanceCalculationError: {
-        "title": "Internal server error",
-        "detail": "IP distance calculation failed.",
-        "status": 500,
+    ForwardTimeout: {
+        "title": "Service unavailable",
+        "detail": "No TES instance accepted the task in time.",
+        "status": 503,
+    },
+    LoopDetected: {
+        "title": "Loop detected",
+        "detail": "The request passed proTES before.",
+        "status": 508,
     },
 }

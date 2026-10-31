@@ -13,7 +13,7 @@ from pro_tes.app import init_app
 from pro_tes.config_models import Tes
 from pro_tes.ga4gh.tes.backends import CLIENT_ID_ENV, CLIENT_SECRET_ENV
 from pro_tes.security import check_backends
-from tests.conftest import ADMIN_GROUP, USER_GROUP, set_overlays
+from tests.conftest import ADMIN_GROUP, USER_GROUP, reset_gateway, set_overlays
 
 ROOT = Path(__file__).parents[1]
 CONFIG = ROOT / "pro_tes" / "config.yaml"
@@ -431,12 +431,13 @@ def test_registry_public_url_missing(
 ) -> None:
     """With registries, the app refuses to start without its public URL.
 
-    So that it never discovers, and forwards tasks to, itself.
+    So that it never discovers, and forwards tasks to, itself; FOCA checks
+    the backend list of the gateway first.
     """
     monkeypatch.setenv(CLIENT_ID_ENV, "protes")
     monkeypatch.setenv(CLIENT_SECRET_ENV, "client-secret")
     set_overlays(monkeypatch, backends_overlay(tmp_path / "overlay.yaml", REGISTRY))
-    with pytest.raises(RuntimeError, match=r"`server\.public_url` is not set"):
+    with pytest.raises(ValueError, match=r"need `server\.public_url`"):
         init_app()
 
 
@@ -513,6 +514,7 @@ def test_backend_at_public_url(
         public_url="https://protes.example.org/tes/",
     )
     set_overlays(monkeypatch, other)
+    reset_gateway()
     init_app()
 
 

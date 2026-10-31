@@ -310,6 +310,20 @@ custom:
   storeLogs:
     execution_trace: True
 
-  middlewares:
-    - - "pro_tes.plugins.middlewares.task_distribution.distance.TaskDistributionDistance"
-      - "pro_tes.plugins.middlewares.task_distribution.random.TaskDistributionRandom"
+# Plugins (FOCA's gateway plugins, `foca.plugins`) process each new task
+# (`POST /tasks`): they may change the task, choose and order the TES backends
+# of `custom.tes.backends`, and change the request to each backend. Only
+# installed plugins listed in `available` (by entry point name) are loaded;
+# FOCA's built-in ones (`foca.*`) are always available. The default pipeline
+# is ordered failover: the backends in the order of `custom.tes.backends`
+# (those of each registry shuffled), the next one if a backend didn't accept
+# the task. Steps have alternatives, tried in order; clients may choose
+# backends (tag `gateway.backends`), and pipelines if `client_pipelines` is
+# enabled. See `docs/plugins.md`
+# Cf. https://foca.readthedocs.io/en/latest/plugins/
+plugins:
+  available: {}
+  pipeline:
+    - id: route
+      alternatives:
+        - plugin: foca.routing.ordered

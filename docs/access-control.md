@@ -271,9 +271,11 @@ that you trust, and keep the lifetime of the tokens short. Tasks are only
 forwarded to configured TES instances, and to those discovered in the
 service registries of `custom.tes.backends` (only verified ones, see
 [Discovery in a service
-registry](configuration.md#discovery-in-a-service-registry)): TES instances
-that middlewares add (`tes_urls`) are skipped, as proTES has no credentials
-for them. Keep TES instances in the list until their tasks have finished:
+registry](configuration.md#discovery-in-a-service-registry)); plugins
+can only choose among them (see [Plugins](plugins.md)). Plugins never see
+the credentials of TES instances, and can't choose other credentials for
+a TES instance than its own; in the `forward` phase, they may only drop
+them (`none`), e.g., to send credentials of their own. Keep TES instances in the list until their tasks have finished:
 tasks of TES instances that are no longer configured can't be tracked or
 canceled (their state becomes `UNKNOWN`, and is tracked again once the TES
 instance is configured again).
@@ -289,8 +291,11 @@ Credentials in the URLs of inputs and outputs of tasks
 rejected with `400 Bad Request`, or, if
 `custom.controllers.post_task.url_credentials` is `strip`, the credentials
 are removed before the task is stored and forwarded (see
-[Tasks](configuration.md#tasks)). Credentials that middlewares add are
-always removed.
+[Tasks](configuration.md#tasks)). Credentials that plugins add are
+always removed. The headers `Authorization`, `Cookie` and
+`Proxy-Authorization` of callers are left out of what plugins see, but
+plugins get the caller's validated access token (FOCA's `Principal.token`,
+e.g., for token exchange): enable only plugins that you trust with it.
 
 proTES doesn't tell TES instances on whose behalf it forwards tasks yet:
 they only see proTES. Tags with the identity of the user are planned, once

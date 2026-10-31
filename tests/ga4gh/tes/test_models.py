@@ -17,6 +17,7 @@ from pro_tes.ga4gh.tes.models import (
     TesTaskLog,
 )
 from pro_tes.ga4gh.tes.task_runs import TaskRuns
+from pro_tes.gateway import relayed_task
 from pro_tes.utils.models import TaskModelConverter
 
 ADDITIONS = Path(__file__).parents[3] / "pro_tes" / "api" / "additions.openapi.yaml"
@@ -29,12 +30,11 @@ def test_executor_defaults() -> None:
     assert not DbDocument().task_original.executors
 
 
-def test_ignore_error_relayed(app: FlaskApp) -> None:
+def test_ignore_error_relayed() -> None:
     """`ignore_error` of executors is relayed to TES backends (cf. #176)."""
     executor = {"image": "alpine", "command": ["true"], "ignore_error": True}
-    with app.app.app_context():
-        payload = TaskRuns()._sanitize_request(payload={"executors": [executor]})
-    assert payload["executors"][0].ignore_error is True
+    task = relayed_task({"executors": [executor]}, prefix="gateway.")
+    assert task.executors[0].ignore_error is True
 
 
 def test_ignore_error_converted() -> None:

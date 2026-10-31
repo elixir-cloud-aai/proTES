@@ -188,14 +188,19 @@ def test_smoke_test_config(
     assert entry.url == "http://fake-tes:8080"
     assert entry.auth == "client_credentials"
     assert custom.tes.client_credentials.issuer == "http://fake-tes:8080/oidc/"
+    # tasks go through the default pipeline, FOCA's ordered failover
+    with app.app.app_context():
+        plugins = get_config().plugins
+    assert plugins is not None
+    pipeline = plugins.pipeline
+    assert [alt.plugin for step in pipeline for alt in step.alternatives] == [
+        "foca.routing.ordered"
+    ]
     # the Celery worker has the same client
     assert (
         smoke["services"]["protes-worker"]["environment"]
         == smoke["services"]["protes"]["environment"]
     )
-    assert custom.middlewares.root == [
-        ["pro_tes.plugins.middlewares.task_distribution.random.TaskDistributionRandom"]
-    ]
 
 
 def test_run_app(app: FlaskApp, monkeypatch: pytest.MonkeyPatch) -> None:
