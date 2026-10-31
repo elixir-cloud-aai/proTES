@@ -479,6 +479,16 @@ must declare them, too. Records of failed runs are stored only with
 `plugins.provenance.record_failed: true`; without it, `failed_runs` stays
 empty.
 
+Owners and admins get the provenance with `GET /tasks/{id}/provenance`
+(rules `owners-get-provenance` and `admins-get-provenance` of the base
+config; custom lists of `security.access_control.policies` must add them).
+New tasks have the gateway tags of FOCA (`gateway.pipeline_source`,
+`gateway.backend`, ...; see [Gateway tags](api.md#gateway-tags)), served
+with the task: clients that submit a fetched task again must drop the tags
+under `gateway.` other than `gateway.backends` and `gateway.pipeline`, or
+it is rejected (`400`). `logs[].metadata.forwarded_to` is deprecated in
+favour of these tags, and will be removed in a later release.
+
 ## Middleware management API
 
 The middleware management API is no longer registered, and its

@@ -15,6 +15,7 @@ control](access-control.md)).
 | `POST /tasks` | Create a task: proTES forwards it to a TES instance (see [Tasks](#tasks)) and returns its own identifier of the task. |
 | `GET /tasks` | List the caller's tasks, newest first, one page at a time (`page_size`, at most `max_page_size` of the [config](configuration.md#tasks), and `max_page_size_full` for the view `FULL`; `page_token` from `next_page_token` of the previous page, which is empty on the last page), optionally only those whose name starts with `name_prefix` (taken literally). |
 | `GET /tasks/{id}` | Get a task of the caller, with its state as last tracked from the TES instance. |
+| `GET /tasks/{id}/provenance` | proTES extension: get the provenance of a task, for its owner and for admins (see [Provenance](#provenance)). |
 | `POST /tasks/{id}:cancel` | Cancel a task of the caller that has not finished yet (also in state `UNKNOWN`, e.g., not tracked yet), at the TES instance that runs it; finished tasks are left as they are, also tasks that finish while they are canceled (their final state is kept). Unfinished tasks whose identifier at their TES instance is unknown (e.g., while they are being forwarded, or if forwarding failed unexpectedly) can't be canceled (`409 Conflict`). |
 
 Only the owner of a task, the user who created it, can read and cancel it
@@ -76,7 +77,73 @@ For `POST /tasks`, proTES:
 proTES keeps the task as received (`task_original`) as well as the task as
 forwarded, and, if `custom.storeLogs.execution_trace` is set, records the TES
 instance and the remote identifier of the task in its logs
-(`logs[].metadata.forwarded_to`).
+(`logs[].metadata.forwarded_to`). `forwarded_to` is deprecated (an array of
+objects in the string map `metadata`, which the TES specification doesn't
+allow, so strict clients may fail on it): use the gateway tags below
+instead; it will be removed in a later release.
+
+## Gateway tags
+
+proTES adds tags to each new task (FOCA's gateway tags, under the reserved
+prefix `plugins.tags.prefix`, `gateway.` by default), served with the task in
+the views `BASIC` and `FULL`, besides the client's own tags:
+
+| Tag | Value | Added |
+| --- | --- | --- |
+| `gateway.pipeline_source` | `default`, `preset:<name>` or `client` | when the task is stored |
+| `gateway.pipeline_hash` | `sha256:` hash of the resolved pipeline | when the task is stored |
+| `gateway.plugins` | the plugins that ran in the `request` and `route` phases, as `id@version`, comma-separated | when the task is stored |
+| `gateway.provenance` | the path of the task's provenance (`/ga4gh/tes/v1/tasks/<id>/provenance`) | when the task is stored |
+| `gateway.backend` | the URL of the TES instance that accepted the task (or may have) | after forwarding |
+| `gateway.backend_task_id` | the identifier of the task at that TES instance, if it accepted it | after forwarding |
+| `gateway.forwarded_at` | when the task was sent to it (RFC 3339, UTC) | after forwarding |
+| `gateway.attempts` | the number of TES instances tried | after forwarding |
+| `gateway.route` | the last attempts as compact JSON (`url`, `outcome`, `reason`) | after forwarding |
+| `gateway.route_truncated` | `true` if `gateway.route` leaves out attempts | after forwarding |
+
+Clients can't set these tags (`400 Bad Request`; only `gateway.backends`,
+and `gateway.pipeline` if enabled, are theirs, see
+[Plugins](plugins.md#choices-of-clients)), and plugins can't change them.
+TES instances get tasks without any tag under the prefix. Clients that
+submit a fetched task again drop the tags under the prefix first, except
+their own choices. Tasks created by earlier versions have none.
+
+## Provenance
+
+`GET /tasks/{id}/provenance` (a proTES extension) returns the provenance of
+a task: the record that FOCA's plugin engine made when the task was created
+and forwarded (see [Task provenance](operations.md#task-provenance)), with
+the builds of the plugins that ran (`builds`, by build hash) and the
+resolved pipeline (`pipeline.resolved`), e.g., shortened:
+
+```json
+{
+  "engine": {"foca": "0.18.0", "plugin_api": 1,
+             "app": {"name": "proTES", "version": "0.4.0"}},
+  "request_id": "4f3c...",
+  "pipeline": {"source": "default", "preset": null, "requested": null,
+               "resolved": [{"id": "route", "alternatives": ["..."]}],
+               "resolved_hash": "sha256:9a1e..."},
+  "plugins": {"sha256:77b0...": "foca.routing.ordered"},
+  "builds": {"sha256:77b0...": {"id": "foca.routing.ordered",
+                                "distribution": "foca", "version": "0.18.0"}},
+  "executions": [{"step": "route", "phase": "route", "outcome": "ok"}],
+  "route": {"candidates_in": ["https://tes.example.org"],
+            "candidates_out": ["https://tes.example.org"]},
+  "selection": null,
+  "attempts": [{"number": 1, "backend": "https://tes.example.org",
+                "outcome": "accepted", "reason": null, "remote_id": "task-1",
+                "started_at": "2026-10-31T09:00:00.020Z", "duration_ms": 80.1}],
+  "final_reason": null
+}
+```
+
+The owner of the task and admins may get it; everyone else gets
+`403 Forbidden`, also for unknown tasks (see [Access
+control](access-control.md#task-ownership)). Tasks without provenance (e.g.,
+created by earlier versions) give `404 Not Found`. The record holds no
+inputs, logs, IP addresses, tokens, header values or claims: plugins'
+changes are recorded as paths and hashes only.
 
 ## Errors
 
