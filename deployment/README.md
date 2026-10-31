@@ -101,10 +101,17 @@ of the config:
   `config.plugins`, and on `config.custom.middlewares`, which the plugins
   replaced.
 
-Plugins other than FOCA's built-in ones must be installed in the image
-(e.g., a custom image based on that of proTES). For example:
+Plugins other than FOCA's built-in ones must be installed in the image:
+build an image derived from that of proTES, with the plugins pinned by hash
+(see [Plugin
+images](https://protes.readthedocs.io/en/latest/plugin-images/)), and set
+it in `protes.image` (see [Image](#image)). For example:
 
 ```yaml
+protes:
+  image: registry.example.org/protes-plugins@sha256:<digest>
+  tag: ""
+  imagePullPolicy: IfNotPresent
 plugins:
   available:
     tes.routing.distance: {}

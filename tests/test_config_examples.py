@@ -225,7 +225,11 @@ def _plugin_examples() -> list[Any]:
                 continue
             param_id = f"{path.relative_to(ROOT)}[{index}]"
             examples.append(pytest.param(example["plugins"], id=param_id))
-    for name in ("config.dev.yaml", "tests/smoke/config.yaml"):
+    for name in (
+        "config.dev.yaml",
+        "tests/smoke/config.yaml",
+        "tests/smoke/plugins.config.yaml",
+    ):
         overlay = yaml.safe_load((ROOT / name).read_text(encoding="utf-8"))
         examples.append(pytest.param(overlay["plugins"], id=name))
     return examples
@@ -239,7 +243,9 @@ def test_plugin_examples_collected() -> None:
     sources = {str(param.id).split("[")[0] for param in PLUGIN_EXAMPLES}
     assert sources >= {
         "docs/plugins.md",
+        "docs/plugin-images.md",
         "config.dev.yaml",
+        "tests/smoke/plugins.config.yaml",
         "tests/smoke/config.yaml",
     }
 
