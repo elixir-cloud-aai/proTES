@@ -12,8 +12,8 @@ URL of the app (`server.public_url`, cf. `protes.publicUrl`), if known,
 the TES backends (`custom.tes.backends`) to those of `tes.backends`, if
 any, and the plugins (`plugins`) to those of the values `plugins` that are
 set (cf. `protes.plugins`). Every template includes the settings, so the
-app's checks (`protes.validate`) run first, before those of the library and whichever
-template Helm renders first.
+app's checks (`protes.validate`) run first, before those of the library
+and whichever template Helm renders first.
 */}}
 {{- define "protes.settings" -}}
 {{- include "protes.validate" . -}}

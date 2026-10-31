@@ -12,10 +12,12 @@ from pathlib import Path
 import re
 import subprocess
 import tarfile
+import typing
 from typing import Any
 
 from foca.models.config import SecurityConfig
 from foca.plugins.config import PluginsConfig
+import pydantic
 import pytest
 import yaml
 
@@ -1288,10 +1290,23 @@ def test_plugins() -> None:
     PluginsConfig.model_validate(plugins)
 
 
-def test_plugins_default() -> None:
-    """Without plugin values, the overlay has no plugins (the app's defaults)."""
+@pytest.mark.parametrize(
+    "value",
+    [
+        ("pipeline", []),
+        ("available", {}),
+        ("presets", {}),
+        ("clientPipelines", {}),
+        ("clientBackends", {}),
+        ("tags", {}),
+        ("provenance", {}),
+    ],
+)
+def test_plugins_default(value: tuple[str, Any]) -> None:
+    """Empty plugin values are left out, so the app's defaults apply."""
     assert "plugins" not in _overlay(_render())
-    docs = _render("--set-json", f"plugins.pipeline={json.dumps([])}")
+    key, empty = value
+    docs = _render("--set-json", f"plugins.{key}={json.dumps(empty)}")
     assert "plugins" not in _overlay(docs)
 
 
@@ -1343,18 +1358,97 @@ def test_plugins_middlewares(args: tuple[str, str]) -> None:
 
 
 @pytest.mark.parametrize(
-    "plugins",
+    ("plugins", "path"),
     [
-        {"pipeline": [{"alternatives": [{"plugin": "x"}], "on_failure": "skip"}]},
-        {"pipeline": [{"alternatives": []}]},
-        {"clientBackends": {"max_items": 5}},
-        {"available": {"x": {"client_selectable": True}}},
-        {"gatewayId": "x"},
+        (
+            {"pipeline": [{"alternatives": [{"plugin": "x"}], "on_failure": "skip"}]},
+            "/plugins/pipeline/0",
+        ),
+        ({"pipeline": [{"alternatives": []}]}, "/plugins/pipeline/0/alternatives"),
+        ({"clientBackends": {"max_items": 5}}, "/plugins/clientBackends"),
+        (
+            {"available": {"x": {"client_selectable": True}}},
+            "/plugins/available/x",
+        ),
+        ({"gatewayId": "x"}, "/plugins"),
     ],
 )
-def test_plugins_invalid(plugins: dict[str, Any]) -> None:
+def test_plugins_invalid(plugins: dict[str, Any], path: str) -> None:
     """Plugin values must have the chart's keys and values."""
-    assert "/plugins" in _render_error("--set-json", f"plugins={json.dumps(plugins)}")
+    error = _render_error("--set-json", f"plugins={json.dumps(plugins)}")
+    assert f"at '{path}'" in error
+
+
+def _schema_keys(schema: Any) -> set[str]:
+    """Collect the keys of the plugin settings in the chart's schema.
+
+    Args:
+        schema: Part of the schema of the values `plugins`.
+
+    Returns:
+        The names of the properties, recursively, except those of the
+        settings of plugins (`config`, `params`), which are kept as they are.
+    """
+    keys: set[str] = set()
+    if isinstance(schema, dict):
+        for name, item in schema.get("properties", {}).items():
+            keys.add(name)
+            if name not in ("config", "params"):
+                keys |= _schema_keys(item)
+        for key in ("items", "additionalProperties"):
+            keys |= _schema_keys(schema.get(key))
+        for item in schema.get("definitions", {}).values():
+            keys |= _schema_keys(item)
+    return keys
+
+
+def _model_keys(
+    model: type[pydantic.BaseModel], exclude: frozenset[str] = frozenset()
+) -> set[str]:
+    """Collect the keys of a model of FOCA's plugin settings.
+
+    Args:
+        model: Model of (a part of) the section `plugins`.
+        exclude: Fields of the model to leave out, with their keys.
+
+    Returns:
+        The names of the fields, recursively through the models of their
+        types (also in lists and dicts).
+    """
+    keys: set[str] = set()
+    for name, field in model.model_fields.items():
+        if name in exclude:
+            continue
+        keys.add(name)
+        types = [field.annotation]
+        while types:
+            kind = types.pop()
+            if isinstance(kind, type) and issubclass(kind, pydantic.BaseModel):
+                keys |= _model_keys(kind)
+            types.extend(typing.get_args(kind))
+    return keys
+
+
+def test_plugins_keys() -> None:
+    """The schema of `plugins` has FOCA's keys, in camelCase, all converted.
+
+    With the conversion of `protes.pluginKeys`, the keys of the schema are
+    those of FOCA's model, except those set in `config.plugins` (`defaults`,
+    `gateway_id`); the conversion has no other keys.
+    """
+    helpers = (CHART / "templates" / "_helpers.tpl").read_text()
+    block = re.search(
+        r'define "protes.pluginKeys".*?\(dict(.*?)\) -}}', helpers, re.DOTALL
+    )
+    assert block is not None
+    pairs = re.findall(r'"(\w+)" "(\w+)"', block.group(1))
+    conversion = dict(pairs)
+    schema = json.loads((CHART / "values.schema.json").read_text())
+    keys = _schema_keys(schema["properties"]["plugins"])
+    assert set(conversion) <= keys
+    assert all(key.islower() for key in keys - set(conversion))
+    expected = _model_keys(PluginsConfig, frozenset({"defaults", "gateway_id"}))
+    assert {conversion.get(key, key) for key in keys} == expected
 
 
 def test_registry_public_url_null() -> None:
