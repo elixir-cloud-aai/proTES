@@ -233,6 +233,21 @@ The top-level section `plugins` sets which installed plugins are available
 The former `custom.middlewares` is refused: the app stops with a hint to
 `plugins` (see [Upgrading](upgrading.md#plugins)).
 
+The provenance of each task's pipeline run is stored with the task (see
+[Task provenance](operations.md#task-provenance)). Records of failed runs
+(e.g., tasks rejected by a plugin, which leave no task) are stored only
+with `plugins.provenance.record_failed: true`, for 30 days; headers whose
+values must not be guessable from the hashes of changes (e.g., API keys
+that plugins add for TES instances) belong in
+`plugins.provenance.secret_headers`:
+
+```yaml
+plugins:
+  provenance:
+    record_failed: true
+    secret_headers: [X-Api-Key]
+```
+
 ## Tasks
 
 `custom.controllers` sets how tasks are created and listed:

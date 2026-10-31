@@ -625,6 +625,9 @@ class DbDocument(CustomBaseModel):
             created by earlier versions, which have no owner.
         worker_id: Identifier of worker task.
         tes_endpoint: External TES endpoint.
+        provenance: Provenance of the pipeline run that created the task
+            (cf. :py:meth:`foca.plugins.ProvenanceStore.save`); `None`
+            for tasks created by earlier versions.
 
     Attributes:
         task: Information about task.
@@ -633,6 +636,9 @@ class DbDocument(CustomBaseModel):
             created by earlier versions, which have no owner.
         worker_id: Identifier of worker task.
         tes_endpoint: External TES endpoint.
+        provenance: Provenance of the pipeline run that created the task
+            (cf. :py:meth:`foca.plugins.ProvenanceStore.save`); `None`
+            for tasks created by earlier versions.
     """
 
     task: TesTask = TesTask()
@@ -640,3 +646,4 @@ class DbDocument(CustomBaseModel):
     user_id: str | None = None
     worker_id: str = ""
     tes_endpoint: TesEndpoint = TesEndpoint()
+    provenance: dict[str, Any] | None = None

@@ -111,6 +111,21 @@ db:
             - keys:
                 task.state: 1
                 tracking.polled_at: 1
+        # Provenance of tasks (see `docs/operations.md`): the builds of the
+        # plugins and the default and preset pipelines that tasks ran
+        # through, each stored once, by hash (`_id`); tasks refer to them
+        plugin_builds: {}
+        pipelines: {}
+        # Records of failed pipeline runs (e.g., tasks rejected by plugins),
+        # stored only if `plugins.provenance.record_failed`; deleted 30 days
+        # after they failed (FOCA's default retention); change
+        # `expireAfterSeconds` for another retention
+        failed_runs:
+          indexes:
+            - keys:
+                failed_at: 1
+              options:
+                expireAfterSeconds: 2592000
 
 # API configuration
 # Cf. https://foca.readthedocs.io/en/latest/configuration/api/

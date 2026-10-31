@@ -3,6 +3,7 @@
 from contextlib import suppress
 from copy import deepcopy
 from dataclasses import replace
+from functools import cached_property
 import logging
 import re
 from typing import Any, NamedTuple
@@ -19,6 +20,7 @@ from foca.plugins import (
     InboundRequest,
     NoBackendAvailable,
     Principal,
+    ProvenanceStore,
 )
 from foca.plugins.engine import PipelineRun
 from foca.plugins.runtime import get_host
@@ -67,7 +69,15 @@ from pro_tes.gateway import (
     validate_task,
 )
 from pro_tes.tasks.track_task_progress import task__track_task_progress
-from pro_tes.utils.db import TASK_COLLECTION, TASK_DB, DbDocumentConnector
+from pro_tes.utils.db import (
+    FAILED_RUNS_COLLECTION,
+    PIPELINES_COLLECTION,
+    PLUGIN_BUILDS_COLLECTION,
+    TASK_COLLECTION,
+    TASK_DB,
+    TASK_PROJECTION,
+    DbDocumentConnector,
+)
 from pro_tes.utils.misc import utc_now
 from pro_tes.utils.models import TaskModelConverter
 
@@ -118,8 +128,7 @@ class TaskRuns:
     Attributes:
         custom_config: Custom configuration of the app.
         db_client: Database collection storing task objects.
-        document: Document to be inserted into the collection. Note that it is
-            built up iteratively.
+        store_logs: Whether forwards are recorded in the logs of tasks.
     """
 
     def __init__(self) -> None:
@@ -129,6 +138,22 @@ class TaskRuns:
             TASK_DB, TASK_COLLECTION
         )
         self.store_logs = self.custom_config.storeLogs.execution_trace
+
+    @cached_property
+    def provenance(self) -> ProvenanceStore:
+        """Store of the provenance of pipeline runs, in the database of the tasks.
+
+        Created on first use (by `POST /tasks` only), so that the other
+        endpoints don't depend on its collections.
+
+        Returns:
+            The store (cf. :py:class:`foca.plugins.ProvenanceStore`).
+        """
+        return ProvenanceStore(
+            plugin_builds=get_collection(TASK_DB, PLUGIN_BUILDS_COLLECTION),
+            pipelines=get_collection(TASK_DB, PIPELINES_COLLECTION),
+            failures=get_collection(TASK_DB, FAILED_RUNS_COLLECTION),
+        )
 
     def create_task(
         self,
@@ -157,6 +182,14 @@ class TaskRuns:
         backend accepts are not kept: they are deleted, with the owner's
         roles on them. Tasks that a backend may have accepted are kept (as
         `SYSTEM_ERROR`).
+
+        The provenance of the pipeline run (cf.
+        :py:class:`foca.plugins.ProvenanceStore`) is stored with the task
+        (`provenance`): the pipeline, plugins and route when the task is
+        stored, with the attempts once a backend accepted the task (or may
+        have). Runs that fail after they started (e.g., tasks rejected by
+        a plugin, or accepted by no backend) are recorded only if
+        `plugins.provenance.record_failed` is on.
 
         Args:
             task: Task of the request (its JSON body); not changed.
@@ -220,12 +253,63 @@ class TaskRuns:
 
         # run the plugins of the request and route phases; the engine
         # sanitizes and validates the task after each plugin that changed it
-        host = get_host()
-        run = host.start(
+        run = get_host().start(
             replace(inbound, payload=deepcopy(payload_original)),
             principal,
             request_id=request_id,
         )
+        try:
+            accepted, db_document, db_connector = self._run_pipeline(
+                run=run,
+                db_document=db_document,
+                start_time=start_time,
+                owner=owner,
+                collection=collection,
+            )
+        except GatewayError as exc:
+            # e.g., tasks rejected by plugins or accepted by no backend,
+            # which are not kept; recorded only if
+            # `plugins.provenance.record_failed` (never raises)
+            self.provenance.save_failure(run, exc)
+            raise
+        # errors of the `response` phase don't discard the task: it runs at
+        # the backend, so it is kept, tracked and cancelable, with its
+        # provenance; it is no failed run
+        return self._forwarded(
+            run=run,
+            accepted=accepted,
+            db_document=db_document,
+            db_connector=db_connector,
+        )
+
+    def _run_pipeline(
+        self,
+        run: PipelineRun,
+        db_document: DbDocument,
+        start_time: str,
+        owner: str,
+        collection: str,
+    ) -> tuple[_Accepted, DbDocument, DbDocumentConnector]:
+        """Run the pipeline of a new task, store the task, and relay it.
+
+        Args:
+            run: Pipeline run of the request, started.
+            db_document: Database document of the task, with the task as
+                received (`task_original`).
+            start_time: Time of the request.
+            owner: Owner of the task.
+            collection: Request path of the tasks.
+
+        Returns:
+            The attempt of the backend that accepted the task (cf.
+            :py:meth:`_forward`), and the stored task and its connector.
+
+        Raises:
+            foca.plugins.GatewayError: The pipeline run failed, or no backend
+                accepted the task (in time); the task is not kept.
+            pro_tes.exceptions.BackendOutcomeUnknown: A TES instance may
+                have accepted the task (cf. :py:meth:`create_task`).
+        """
         payload: dict[str, Any] = run.request().payload
         candidates = run.route(get_backends())
         # before the task is stored: no task is left
@@ -237,6 +321,10 @@ class TaskRuns:
         payload = deepcopy(payload)
         payload["creation_time"] = start_time
         db_document.task = TesTask(**payload)
+        # the prospective part of the provenance (pipeline, plugins, route),
+        # stored with the task; the attempts are added once a backend
+        # accepted the task, or may have (cf. `_update_provenance`)
+        db_document.provenance = self.provenance.save(run)
 
         # create database document
         db_document = self._update_task(
@@ -268,7 +356,7 @@ class TaskRuns:
             accepted = self._forward(
                 run=run,
                 candidates=candidates,
-                prefix=host.conf.tags.prefix,
+                prefix=run.host.conf.tags.prefix,
                 db_document=db_document,
                 db_connector=db_connector,
             )
@@ -279,11 +367,7 @@ class TaskRuns:
                 db_document=db_document, owner=owner, collection=collection
             )
             raise
-        # errors of the `response` phase don't discard the task: it runs at
-        # the backend, so it is kept, tracked and cancelable
-        return self._forwarded(
-            accepted=accepted, db_document=db_document, db_connector=db_connector
-        )
+        return accepted, db_document, db_connector
 
     def _forward(
         self,
@@ -338,10 +422,15 @@ class TaskRuns:
                     type(exc).__name__,
                     exc,
                 )
-                db_connector.upsert_fields_in_root_object(
-                    root="tes_endpoint", host=tes_url, base_path=""
-                )
-                db_connector.update_task_state(state=TesState.SYSTEM_ERROR.value)
+                # the loop is left before the engine sets it
+                run.final_reason = "outcome_unknown"
+                try:
+                    db_connector.upsert_fields_in_root_object(
+                        root="tes_endpoint", host=tes_url, base_path=""
+                    )
+                    db_connector.update_task_state(state=TesState.SYSTEM_ERROR.value)
+                finally:
+                    self._update_provenance(run=run, worker_id=db_document.worker_id)
                 raise
             except (requests.RequestException, BackendAuthError, ValueError) as exc:
                 # the backend did not accept the task (cf. `TesClient`), has
@@ -368,6 +457,7 @@ class TaskRuns:
 
     def _forwarded(
         self,
+        run: PipelineRun,
         accepted: _Accepted,
         db_document: DbDocument,
         db_connector: DbDocumentConnector,
@@ -375,6 +465,7 @@ class TaskRuns:
         """Store and track a task that a backend accepted.
 
         Args:
+            run: Pipeline run of the request.
             accepted: The attempt of the backend that accepted the task, its
                 client, response and identifier of the task.
             db_document: The stored task.
@@ -405,39 +496,75 @@ class TaskRuns:
             tes_url=tes_url,
             remote_task_id=remote_task_id,
         )
-        try:
-            remote_task: Task = cli.get_task(remote_task_id)
-            task_model_converter = TaskModelConverter(task=remote_task)
-            task_converted: TesTask = task_model_converter.convert_task()
-            state = TesState(task_converted.state)
-            # unless a request to cancel the task changed it meanwhile
-            if db_connector.update_task_state(
-                state=state.value, if_state=TesState.UNKNOWN.value
-            ):
-                db_document.task.state = state
-        except Exception as exc:
-            # the task is tracked anyway, also if its backend serves it
-            # invalid (e.g., with an unknown state)
-            logger.error(
-                "Task '%s' info could not be retrieved from TES endpoint"
-                " hosted at: %s. Original error message: '%s: %s'",
-                db_document.task.id,
-                tes_url,
-                type(exc).__name__,
-                exc,
-            )
-        task__track_task_progress.apply_async(
-            None,
-            {
-                "worker_id": db_document.worker_id,
-                "remote_host": db_document.tes_endpoint.host,
-                "remote_base_path": db_document.tes_endpoint.base_path,
-                "remote_task_id": remote_task_id,
-            },
-        )
         response.client_payload = {"id": db_document.task.id}
-        response = attempt.succeeded(response, remote_id=remote_task_id)
+        failed: Exception | None = None
+        try:
+            # reported once the backend is stored, so that the provenance
+            # has the attempt whatever fails later
+            response = attempt.succeeded(response, remote_id=remote_task_id)
+        except Exception as exc:
+            # raised once the task is tracked
+            failed = exc
+        try:
+            try:
+                remote_task: Task = cli.get_task(remote_task_id)
+                task_model_converter = TaskModelConverter(task=remote_task)
+                task_converted: TesTask = task_model_converter.convert_task()
+                state = TesState(task_converted.state)
+                # unless a request to cancel the task changed it meanwhile
+                if db_connector.update_task_state(
+                    state=state.value, if_state=TesState.UNKNOWN.value
+                ):
+                    db_document.task.state = state
+            except Exception as exc:
+                # the task is tracked anyway, also if its backend serves it
+                # invalid (e.g., with an unknown state)
+                logger.error(
+                    "Task '%s' info could not be retrieved from TES endpoint"
+                    " hosted at: %s. Original error message: '%s: %s'",
+                    db_document.task.id,
+                    tes_url,
+                    type(exc).__name__,
+                    exc,
+                )
+            task__track_task_progress.apply_async(
+                None,
+                {
+                    "worker_id": db_document.worker_id,
+                    "remote_host": db_document.tes_endpoint.host,
+                    "remote_base_path": db_document.tes_endpoint.base_path,
+                    "remote_task_id": remote_task_id,
+                },
+            )
+        finally:
+            # with the attempts and the `response` phase
+            self._update_provenance(run=run, worker_id=db_document.worker_id)
+        if failed is not None:
+            raise failed
         return response.client_payload, dict(response.client_headers)
+
+    def _update_provenance(self, run: PipelineRun, worker_id: str) -> None:
+        """Store the provenance of a stored task's run, with its attempts.
+
+        Replaces the provenance stored when the task was created (cf.
+        :py:meth:`foca.plugins.ProvenanceStore.save`). Errors are logged,
+        not raised: a backend has (or may have) the task already.
+
+        Args:
+            run: Pipeline run of the request that created the task.
+            worker_id: Worker identifier of the task.
+        """
+        try:
+            self.db_client.update_one(
+                {"worker_id": worker_id},
+                {"$set": {"provenance": self.provenance.save(run)}},
+            )
+        except Exception as exc:
+            logger.error(
+                "Provenance of task with worker ID '%s' not updated: %s",
+                worker_id,
+                type(exc).__name__,
+            )
 
     def list_tasks(self, collection: str, **kwargs: Any) -> dict[str, Any]:
         """Return list of the tasks of the user of the request.
@@ -637,7 +764,7 @@ class TaskRuns:
         """
         document = self.db_client.find_one(
             filter={"task.id": id},
-            projection={"_id": False},
+            projection=TASK_PROJECTION,
         )
         if document is None:
             logger.error("Task '%s' not found.", id)
@@ -766,12 +893,14 @@ class TaskRuns:
                 "task.logs.logs.stderr": False,
                 "task_original": False,
                 "tes_endpoint": False,
+                "provenance": False,
             }
         elif view == "FULL":
             projection = {
                 "task_original": False,
                 "worker_id": False,
                 "tes_endpoint": False,
+                "provenance": False,
             }
         else:
             raise BadRequest

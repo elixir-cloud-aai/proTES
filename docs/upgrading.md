@@ -465,6 +465,20 @@ Code that calls `TaskRuns` directly passes the request path of the tasks:
 `create_task(task=…, collection=…, …)` and `list_tasks(collection=…, …)`;
 `TaskRuns` no longer reads them from the request.
 
+## Task provenance
+
+New tasks have the provenance of their plugin pipeline in `provenance` of
+their document (see [Task provenance](operations.md#task-provenance));
+tasks stored by earlier versions have none, and are read, tracked and
+canceled as before. proTES declares three collections in the database of the
+tasks: `plugin_builds`, `pipelines` and `failed_runs`, whose TTL index on
+`failed_at` (30 days) it creates on startup; MongoDB creates the
+collections with their first document. Custom configs that are used
+instead of the base config (not as overlays, which keep its collections)
+must declare them, too. Records of failed runs are stored only with
+`plugins.provenance.record_failed: true`; without it, `failed_runs` stays
+empty.
+
 ## Middleware management API
 
 The middleware management API is no longer registered, and its
