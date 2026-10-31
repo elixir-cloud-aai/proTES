@@ -290,7 +290,8 @@ jobs:
           fi
   # Runs the app as deployed with Docker Compose (app, Celery worker,
   # MongoDB, RabbitMQ), relaying tasks to a fake TES backend instead of the
-  # public TES instances of the config (`tests/smoke/`)
+  # public TES instances of the config (`tests/smoke/`), then again with the
+  # image of the derived-image recipe for plugins
   smoke:
     name: Smoke test
     runs-on: ubuntu-latest
@@ -323,6 +324,11 @@ jobs:
             echo "::error::App reports version '${actual}', expected '${SETUPTOOLS_SCM_PRETEND_VERSION}'"
             exit 1
           fi
+      # Builds the image of the derived-image recipe for plugins
+      # (`examples/plugin-image/`) with a test plugin, restarts the app with
+      # it and checks that the plugin ran (see the script)
+      - name: Check plugin image
+        run: tests/smoke/plugins.sh "${PROBE_ENDPOINT%/ui/}"
       - name: Show app logs
         if: failure()
         run: docker compose logs

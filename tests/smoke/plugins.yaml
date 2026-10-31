@@ -1,0 +1,19 @@
+# Compose override of the plugin smoke test (`plugins.sh`), on top of
+# `compose.yaml`: proTES and the Celery worker run the image derived with the
+# test plugin (`plugin/`, built by `plugins.sh`, never pulled nor built by
+# Compose), with the plugin enabled (overlay `plugins.config.yaml`, after
+# `config.yaml`)
+
+services:
+
+    protes:
+        image: ${PLUGIN_IMAGE:-protes:plugins}
+        pull_policy: never
+        environment:
+            FOCA_CONFIG_OVERLAY: /smoke/config.yaml:/smoke/plugins.config.yaml
+
+    protes-worker:
+        image: ${PLUGIN_IMAGE:-protes:plugins}
+        pull_policy: never
+        environment:
+            FOCA_CONFIG_OVERLAY: /smoke/config.yaml:/smoke/plugins.config.yaml

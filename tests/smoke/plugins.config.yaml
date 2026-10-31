@@ -1,0 +1,15 @@
+# Config overlay of the plugin smoke test (`plugins.yaml`), after
+# `config.yaml`: enables the test plugin `smoke.tag` (`plugin/`), pinned to
+# its distribution and version, before FOCA's ordered failover
+plugins:
+  available:
+    smoke.tag:
+      distribution: protes-smoke-plugin
+      version: "==0.1.0"
+  pipeline:
+    - id: tag
+      alternatives:
+        - plugin: smoke.tag
+    - id: route
+      alternatives:
+        - plugin: foca.routing.ordered

@@ -1,0 +1,5 @@
+# Only send the files that the build installs to the build context (BuildKit
+# reads `<Dockerfile>.dockerignore` next to the Dockerfile)
+*
+!plugins.txt
+!wheels/
