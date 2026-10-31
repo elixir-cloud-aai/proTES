@@ -19,7 +19,7 @@ policy](https://github.com/elixir-cloud-aai/.github/blob/main/SECURITY.md).
 ## Getting started
 
 1. Find an issue in the [issue
-   tracker](https://github.com/elixir-cloud-aai/proTES/issues), or
+   tracker](https://github.com/elixir-cloud-aai/protes/issues), or
    open one (see [Issues](#issues)).
 2. Join the ELIXIR On-Cloud chat and introduce yourself in the open source
    community channel: your skills and experience, your GitHub username and
@@ -108,7 +108,7 @@ history easier to review.
 ## Citation metadata
 
 proTES is cited with the metadata in
-[`CITATION.cff`](https://github.com/elixir-cloud-aai/proTES/blob/dev/CITATION.cff)
+[`CITATION.cff`](https://github.com/elixir-cloud-aai/protes/blob/dev/CITATION.cff)
 ([Citation File Format](https://citation-file-format.github.io/)), which
 GitHub ("Cite this repository") and Zenodo use. Its `doi` is the Zenodo
 concept DOI, which stays the same for all versions (see

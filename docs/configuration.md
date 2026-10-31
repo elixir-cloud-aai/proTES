@@ -1,7 +1,7 @@
 # Configuration
 
 The app is configured by
-[`pro_tes/config.yaml`](https://github.com/elixir-cloud-aai/proTES/blob/dev/pro_tes/config.yaml),
+[`pro_tes/config.yaml`](https://github.com/elixir-cloud-aai/protes/blob/dev/pro_tes/config.yaml),
 the base config, which documents its values. It is a
 [FOCA](https://foca.readthedocs.io/) config: the sections `server`,
 `security`, `db`, `api`, `log`, `jobs`, `service_info` and `exceptions` are
@@ -19,7 +19,7 @@ reads the same config.
 ## Local overrides
 
 Docker Compose mounts
-[`config.dev.yaml`](https://github.com/elixir-cloud-aai/proTES/blob/dev/config.dev.yaml),
+[`config.dev.yaml`](https://github.com/elixir-cloud-aai/protes/blob/dev/config.dev.yaml),
 an overlay for local development (see [Getting
 started](getting-started.md#usage)), into the app and the Celery worker. To
 override values locally without changing it, put them in
@@ -356,7 +356,7 @@ allows executing arbitrary code.
 The Celery worker runs from the same image, with the command `celery --app
 pro_tes.celery_worker worker`; it connects to the broker at
 `CELERY_BROKER_URL` (with the RabbitMQ credentials; see
-[`docker-compose.yaml`](https://github.com/elixir-cloud-aai/proTES/blob/dev/docker-compose.yaml)).
+[`docker-compose.yaml`](https://github.com/elixir-cloud-aai/protes/blob/dev/docker-compose.yaml)).
 
 ## Service info
 

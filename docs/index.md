@@ -71,7 +71,7 @@ deployments on Kubernetes and for development, respectively.
 
 This project is covered by the [Apache License
 2.0](https://www.apache.org/licenses/LICENSE-2.0) also [shipped with this
-repository](https://github.com/elixir-cloud-aai/proTES/blob/dev/LICENSE).
+repository](https://github.com/elixir-cloud-aai/protes/blob/dev/LICENSE).
 
 ## Contact
 

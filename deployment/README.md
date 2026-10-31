@@ -13,7 +13,7 @@ dependency build` (see [Installation](#installation)).
 ## Configuration
 
 The image contains the app's complete base config
-([`pro_tes/config.yaml`](https://github.com/elixir-cloud-aai/proTES/blob/dev/pro_tes/config.yaml)).
+([`pro_tes/config.yaml`](https://github.com/elixir-cloud-aai/protes/blob/dev/pro_tes/config.yaml)).
 The chart renders a config overlay into the `<app>-config` ConfigMap (see
 [Names and labels](#names-and-labels)), which FOCA merges into the base
 config on startup (via `FOCA_CONFIG_OVERLAY`), for the app and the worker:
@@ -173,7 +173,7 @@ upgrade. As `config` is stored in a ConfigMap, it must not contain secrets
 The app image is `protes.image` (default `elixircloud/protes`) with tag
 `protes.tag`, which defaults to the chart's `appVersion`; the worker runs the
 same image. Charts attached to [GitHub
-releases](https://github.com/elixir-cloud-aai/proTES/releases) have the
+releases](https://github.com/elixir-cloud-aai/protes/releases) have the
 release version as `version` and `appVersion`, so they deploy the image of
 their release (`X.Y.Z`). In the repository, both are placeholders, and
 `appVersion` is `dev`: the chart deploys the latest image of branch `dev`,
@@ -209,12 +209,12 @@ Create the Secrets with the MongoDB credentials (see
 [Authentication](#authentication)) and the broker URL (see [Celery worker
 and broker](#celery-worker-and-broker)), and set their names in the values
 file (`mongodb.auth.existingSecret`, `broker.existingSecret`). Then install
-the chart of a [release](https://github.com/elixir-cloud-aai/proTES/releases)
+the chart of a [release](https://github.com/elixir-cloud-aai/protes/releases)
 (`protes-X.Y.Z.tgz`, attached to the release `vX.Y.Z`):
 
 ```bash
 helm install protes \
-  https://github.com/elixir-cloud-aai/proTES/releases/download/vX.Y.Z/protes-X.Y.Z.tgz \
+  https://github.com/elixir-cloud-aai/protes/releases/download/vX.Y.Z/protes-X.Y.Z.tgz \
   -n <namespace> -f values-prod.yaml
 ```
 
@@ -252,7 +252,7 @@ instances from a Secret of your own; rendering fails for the variables that
 the chart sets itself. Credentials of proTES for TES instances (client
 credentials of an identity provider, or HTTP Basic credentials, see
 [Credentials of TES
-instances](https://github.com/elixir-cloud-aai/proTES/blob/dev/docs/access-control.md#credentials-of-tes-instances))
+instances](https://github.com/elixir-cloud-aai/protes/blob/dev/docs/access-control.md#credentials-of-tes-instances))
 are read from environment variables: `PROTES_CLIENT_ID` and
 `PROTES_CLIENT_SECRET` for TES instances with `auth: client_credentials`,
 and those named in `basic.username_env` and `basic.password_env` for TES
@@ -679,7 +679,7 @@ chart of a release (or `deployment`, as when installing):
 
 ```bash
 helm upgrade protes \
-  https://github.com/elixir-cloud-aai/proTES/releases/download/vX.Y.Z/protes-X.Y.Z.tgz \
+  https://github.com/elixir-cloud-aai/protes/releases/download/vX.Y.Z/protes-X.Y.Z.tgz \
   -n <namespace> -f values-prod.yaml
 ```
 

@@ -44,7 +44,7 @@ None listed yet.
 
 Running proTES yourself? Open a pull request that adds your deployment
 (URL, operator and notes) to this section of
-[`README.md`](https://github.com/elixir-cloud-aai/proTES/blob/dev/README.md).
+[`README.md`](https://github.com/elixir-cloud-aai/protes/blob/dev/README.md).
 <!-- --8<-- [end:deployments] -->
 
 ## Quick start
@@ -57,8 +57,8 @@ the repository and start proTES with its MongoDB database, RabbitMQ broker and
 Celery worker:
 
 ```bash
-git clone https://github.com/elixir-cloud-aai/proTES.git
-cd proTES
+git clone https://github.com/elixir-cloud-aai/protes.git
+cd protes
 docker compose up --build -d
 ```
 
@@ -72,12 +72,12 @@ curl -X GET "http://localhost:8080/ga4gh/tes/v1/service-info" -H "accept: applic
 
 Tasks are forwarded to the TES instances listed in `custom.tes.backends` of
 the config, with the credentials of proTES for each; list yours in
-[`config.dev.yaml`](https://github.com/elixir-cloud-aai/proTES/blob/dev/config.dev.yaml)
+[`config.dev.yaml`](https://github.com/elixir-cloud-aai/protes/blob/dev/config.dev.yaml)
 (see [Credentials of TES
 instances](https://protes.readthedocs.io/en/latest/access-control/#credentials-of-tes-instances)).
 All endpoints except `GET /service-info`, the specification and the Swagger
 UI require access tokens of the identity provider set in
-[`config.dev.yaml`](https://github.com/elixir-cloud-aai/proTES/blob/dev/config.dev.yaml):
+[`config.dev.yaml`](https://github.com/elixir-cloud-aai/protes/blob/dev/config.dev.yaml):
 replace its placeholder issuer and groups with those of your identity
 provider, or try the API with the Compose setup of the smoke test, which
 brings a fake one (see [Access
@@ -91,7 +91,7 @@ If you use proTES, please cite it with its DOI
 [10.5281/zenodo.23619646](https://doi.org/10.5281/zenodo.23619646), which
 always resolves to the latest version on [Zenodo](https://zenodo.org/); the
 Zenodo record lists the DOI of each version, too. The citation metadata is in
-[`CITATION.cff`](https://github.com/elixir-cloud-aai/proTES/blob/dev/CITATION.cff):
+[`CITATION.cff`](https://github.com/elixir-cloud-aai/protes/blob/dev/CITATION.cff):
 on GitHub, "Cite this repository" in the sidebar of the repository formats it
 as APA or BibTeX.
 <!-- --8<-- [end:citation] -->
@@ -102,19 +102,19 @@ Contributions are welcome! See [Contributing][docs-contributing] in the
 documentation and the organisation's [contributing guide][contributing], and
 mind our [code of conduct][code-of-conduct].
 
-[badge-build-status]: <https://github.com/elixir-cloud-aai/proTES/actions/workflows/ci.yml/badge.svg?branch=dev>
-[badge-coverage]: <https://codecov.io/gh/elixir-cloud-aai/proTES/branch/dev/graph/badge.svg?branch=dev>
+[badge-build-status]: <https://github.com/elixir-cloud-aai/protes/actions/workflows/ci.yml/badge.svg?branch=dev>
+[badge-coverage]: <https://codecov.io/gh/elixir-cloud-aai/protes/branch/dev/graph/badge.svg?branch=dev>
 [badge-docker]: <https://img.shields.io/docker/v/elixircloud/protes?sort=semver&label=image&color=C39BD3>
 [badge-doi]: <https://zenodo.org/badge/DOI/10.5281/zenodo.23619646.svg>
 [badge-docs]: <https://img.shields.io/readthedocs/protes>
-[badge-github-tag]: <https://img.shields.io/github/v/tag/elixir-cloud-aai/proTES?color=C39BD3>
+[badge-github-tag]: <https://img.shields.io/github/v/tag/elixir-cloud-aai/protes?color=C39BD3>
 [badge-license]: <https://img.shields.io/badge/license-Apache%202.0-blue.svg>
-[badge-url-build-status]: <https://github.com/elixir-cloud-aai/proTES/actions/workflows/ci.yml?query=branch%3Adev>
-[badge-url-coverage]: <https://codecov.io/gh/elixir-cloud-aai/proTES?branch=dev>
+[badge-url-build-status]: <https://github.com/elixir-cloud-aai/protes/actions/workflows/ci.yml?query=branch%3Adev>
+[badge-url-coverage]: <https://codecov.io/gh/elixir-cloud-aai/protes?branch=dev>
 [badge-url-docker]: <https://hub.docker.com/r/elixircloud/protes/tags>
 [badge-url-doi]: <https://doi.org/10.5281/zenodo.23619646>
 [badge-url-docs]: <https://protes.readthedocs.io/en/latest/>
-[badge-url-github-tag]: <https://github.com/elixir-cloud-aai/proTES/releases>
+[badge-url-github-tag]: <https://github.com/elixir-cloud-aai/protes/releases>
 [badge-url-license]: <https://www.apache.org/licenses/LICENSE-2.0>
 [code-of-conduct]: <https://github.com/elixir-cloud-aai/.github/blob/main/CODE_OF_CONDUCT.md>
 [contributing]: <https://github.com/elixir-cloud-aai/.github/blob/main/CONTRIBUTING.md>

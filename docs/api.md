@@ -2,7 +2,7 @@
 
 proTES implements the [GA4GH Task Execution Service (TES)
 API](https://github.com/ga4gh/task-execution-schemas), version 1.0
-([specification](https://github.com/elixir-cloud-aai/proTES/blob/dev/pro_tes/api/9e9c5aa.task_execution_service.openapi.yaml)),
+([specification](https://github.com/elixir-cloud-aai/protes/blob/dev/pro_tes/api/9e9c5aa.task_execution_service.openapi.yaml)),
 at `/ga4gh/tes/v1/`. A deployment's Swagger UI (`/ga4gh/tes/v1/ui/`) shows
 the endpoints and lets you try them; the specification is served at
 `/ga4gh/tes/v1/openapi.json`. All endpoints except `GET /service-info`, the
@@ -182,7 +182,7 @@ The TES specification declares only the successful responses. The served
 specification adds, as proTES extensions, `413 Content Too Large` to
 `POST /tasks` and `409 Conflict` to `POST /tasks/{id}:cancel`, with the
 schema `ProblemDetails` (cf.
-[`additions.openapi.yaml`](https://github.com/elixir-cloud-aai/proTES/blob/dev/pro_tes/api/additions.openapi.yaml)),
+[`additions.openapi.yaml`](https://github.com/elixir-cloud-aai/protes/blob/dev/pro_tes/api/additions.openapi.yaml)),
 as clients don't get these from TES servers in general; the operations are
 otherwise those of the TES specification. The other errors are those of
 any HTTP API, and are not declared.

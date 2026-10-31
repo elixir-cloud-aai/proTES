@@ -11,8 +11,8 @@ FROM elixircloud/foca:0.18.0-py3.13@sha256:dd8dd927d8d5e7ccb616d441c8db7a5e2c0b2
 ## licenses with the repository's metadata
 LABEL org.opencontainers.image.title="proTES"
 LABEL org.opencontainers.image.description="Proxy for GA4GH Task Execution Service (TES) instances by ELIXIR On-Cloud"
-LABEL org.opencontainers.image.url="https://github.com/elixir-cloud-aai/proTES"
-LABEL org.opencontainers.image.source="https://github.com/elixir-cloud-aai/proTES"
+LABEL org.opencontainers.image.url="https://github.com/elixir-cloud-aai/protes"
+LABEL org.opencontainers.image.source="https://github.com/elixir-cloud-aai/protes"
 LABEL org.opencontainers.image.documentation="https://protes.readthedocs.io/"
 LABEL org.opencontainers.image.licenses="Apache-2.0"
 LABEL org.opencontainers.image.authors="ELIXIR On-Cloud <cloud-service@elixir-europe.org>"

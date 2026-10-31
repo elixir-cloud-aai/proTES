@@ -249,12 +249,21 @@ version to verify. `--source-ref` and the ref in
 `--certificate-identity` check that the workflow ran for the release tag,
 not for another branch. Images of commits on `dev` (`dev`, `sha-<commit>`)
 are signed and attested by the CI workflow instead: use `--signer-workflow
-elixir-cloud-aai/proTES/.github/workflows/ci.yml`,
+elixir-cloud-aai/protes/.github/workflows/ci.yml`,
 `--source-ref refs/heads/dev` and `--certificate-identity
-https://github.com/elixir-cloud-aai/proTES/.github/workflows/ci.yml@refs/heads/dev`.
+https://github.com/elixir-cloud-aai/protes/.github/workflows/ci.yml@refs/heads/dev`.
 The workflow files were renamed after 0.3.0: releases after 0.3.0 are
 signed by `release.yml` instead of `release.yaml`, and images of commits on
 `dev` built before the rename by `checks.yaml` instead of `ci.yml`.
+
+The identities name the repository as it was called when the workflow ran,
+and the checks compare them exactly, also the case. The repository was
+renamed from `proTES` to `protes` after 0.3.0 (GitHub ignores the case in
+URLs, so both forms of its links work): releases up to 0.3.0, and images of
+commits on `dev` built before the rename, are signed and attested as
+`elixir-cloud-aai/proTES` (in `--repo`, `--signer-workflow` and
+`--certificate-identity`), later ones as `elixir-cloud-aai/protes`. If a
+check of an image of `dev` fails, try the other form.
 To show an image's SBOM or provenance, run:
 
 ```bash

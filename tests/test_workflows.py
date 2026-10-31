@@ -13,6 +13,9 @@ GATE = "passed"
 # The last release signed by the release workflow before its file was renamed
 # from `release.yaml` to `release.yml`
 LAST_RELEASE_YAML = Version("0.3.0")
+# The last release signed before the repository was renamed from `proTES` to
+# `protes` (the identities of signatures keep the case)
+LAST_RELEASE_PROTES = Version("0.3.0")
 
 
 def _load(path: Path) -> dict[str, Any]:
@@ -57,7 +60,8 @@ def test_verification_signer_workflow() -> None:
     """The verification commands name the workflow that signed the release.
 
     They are for the version in `CITATION.cff` (`{{ version }}`): releases up
-    to 0.3.0 were signed by `release.yaml`, later ones by `release.yml`.
+    to 0.3.0 were signed by `release.yaml` of the repository `proTES`, later
+    ones by `release.yml` of the repository `protes`.
     """
     match = re.search(
         r"^version:\s*[\"']?([^\"'\s]+)",
@@ -65,15 +69,20 @@ def test_verification_signer_workflow() -> None:
         flags=re.MULTILINE,
     )
     assert match
-    expected = (
-        "release.yaml" if Version(match[1]) <= LAST_RELEASE_YAML else "release.yml"
-    )
+    version = Version(match[1])
+    workflow = "release.yaml" if version <= LAST_RELEASE_YAML else "release.yml"
+    repository = "proTES" if version <= LAST_RELEASE_PROTES else "protes"
+    text = (ROOT / "docs" / "operations.md").read_text()
     signers = re.findall(
-        r"proTES/\.github/workflows/(release\.ya?ml)",
-        (ROOT / "docs" / "operations.md").read_text(),
+        r"elixir-cloud-aai/(protes)/\.github/workflows/(release\.ya?ml)",
+        text,
+        flags=re.IGNORECASE,
     )
     assert signers
-    assert set(signers) == {expected}
+    assert set(signers) == {(repository, workflow)}
+    repositories = re.findall(r"--repo elixir-cloud-aai/(\S+)", text)
+    assert repositories
+    assert set(repositories) == {repository}
 
 
 def test_publish_condition() -> None:
