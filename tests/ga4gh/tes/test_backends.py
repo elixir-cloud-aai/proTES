@@ -42,8 +42,6 @@ BACKEND_URL = "https://tes.example.org"
 # Fictitious client of proTES
 CLIENT_ID = "protes client"
 CLIENT_SECRET = "s3cret:&"  # noqa: S105 (fictitious)
-# Connecting of sockets, as before the tests block network access
-_CONNECT = socket.socket.connect
 
 
 class FakeResponse:
@@ -476,17 +474,16 @@ def test_client_token_request(
     """Requests of py-tes carry the token."""
     sent: list[dict[str, Any]] = []
 
-    def get(url: str, **kwargs: Any) -> FakeResponse:
+    def fake_request(method: str, url: str, **kwargs: Any) -> FakeResponse:
         """Record the request, and serve a task."""
-        if url == DISCOVERY_URL:
-            return idp.get(url)
-        sent.append({"url": url, **kwargs})
+        sent.append({"method": method, "url": url, **kwargs})
         return FakeResponse({"id": "remote-1", "state": "QUEUED"})
 
-    monkeypatch.setattr(backends.requests, "get", get)
+    monkeypatch.setattr(backends.requests, "request", fake_request)
     task = backends.create_client(host=f"{BACKEND_URL}/token").get_task("remote-1")
     assert task.state == "QUEUED"
     (request,) = sent
+    assert request["method"] == "GET"
     assert request["url"] == f"{BACKEND_URL}/token/ga4gh/tes/v1/tasks/remote-1"
     assert request["headers"]["Authorization"] == "Bearer token-1"
 
@@ -745,26 +742,6 @@ def test_cancel_task_once(post: Callable[..., FakePost]) -> None:
     assert kwargs["allow_redirects"] is False
 
 
-@pytest.fixture
-def loopback(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Allow connections to local servers (the tests block network access).
-
-    Requests go there directly, also behind proxies.
-    """
-    blocked = socket.socket.connect
-
-    def connect(sock: socket.socket, address: Any) -> None:
-        """Connect to local addresses only (else as blocked)."""
-        if isinstance(address, tuple) and address[0] == "127.0.0.1":
-            _CONNECT(sock, address)
-            return
-        blocked(sock, address)
-
-    monkeypatch.setattr(socket.socket, "connect", connect)
-    for name in ("NO_PROXY", "no_proxy"):
-        monkeypatch.setenv(name, "127.0.0.1")
-
-
 class RedirectingHandler(BaseHTTPRequestHandler):
     """Handler of a local server that redirects `POST` requests.
 
@@ -839,12 +816,12 @@ def test_get_task_once(
     """Tasks are got with a single request; their identifier is quoted."""
     sent: list[str] = []
 
-    def get(url: str, **kwargs: Any) -> FakeResponse:
+    def fake_request(method: str, url: str, **kwargs: Any) -> FakeResponse:
         """Record the request, and fail."""
         sent.append(url)
         return FakeResponse({}, status_code=404)
 
-    monkeypatch.setattr(backends.requests, "get", get)
+    monkeypatch.setattr(backends.requests, "request", fake_request)
     with pytest.raises(requests.HTTPError):
         backends.create_client(host=NONE_URL).get_task("remote/1")
     assert sent == [f"{NONE_URL}/ga4gh/tes/v1/tasks/remote%2F1"]

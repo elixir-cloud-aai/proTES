@@ -6,19 +6,31 @@ proTES uses it, with a fake registry and fake DNS.
 """
 
 from collections.abc import Iterator
+import socket
+import ssl
+import threading
 from typing import Any
 from urllib.parse import urlsplit
 
 from connexion import FlaskApp
 from flask.testing import FlaskClient
 from foca import get_config, get_custom_config
+from foca.plugins import OutboundRequest
 from foca.plugins.backends import BackendListConfig, registry
 from foca.utils import http
 from foca.utils.http import AddressNotAllowed, HostNotResolved
 import pytest
+import requests
+import tes
+from urllib3.exceptions import ConnectTimeoutError, NewConnectionError
 
 from pro_tes.config_models import ClientCredentials, CustomConfig
-from pro_tes.exceptions import BackendAddressNotAllowed, BackendNotConfigured
+from pro_tes.exceptions import (
+    BackendAddressNotAllowed,
+    BackendNotConfigured,
+    BackendOutcomeUnknown,
+    BackendRequestNotSent,
+)
 from pro_tes.ga4gh.tes import backends
 from tests.ga4gh.tes.conftest import BASE_PATH, TASK, FakeBackend, relayed
 
@@ -125,7 +137,6 @@ def fake_registry(monkeypatch: pytest.MonkeyPatch) -> FakeRegistry:
     fake = FakeRegistry()
     monkeypatch.setattr(registry, "fetch_json", fake.fetch_json)
     monkeypatch.setattr(registry, "check_public_host", fake.check_public_host)
-    monkeypatch.setattr(backends, "check_public_host", fake.check_public_host)
     return fake
 
 
@@ -277,48 +288,241 @@ def test_client_discovered(discovering: FakeRegistry) -> None:
     assert "Authorization" not in kwargs["headers"]
 
 
-@pytest.mark.parametrize("addresses", [["127.0.0.1"], None])
-def test_client_address_checked(
-    discovering: FakeRegistry, addresses: list[str] | None
-) -> None:
-    """Before each request to a discovered backend, its host is checked."""
-    discovering.add("a", "https://tes1.example.org")
-    client = backends.create_client(host="https://tes1.example.org")
-    if addresses is None:
-        del discovering.hosts["tes1.example.org"]
-    else:
-        discovering.hosts["tes1.example.org"] = addresses
-    with pytest.raises(BackendAddressNotAllowed, match="tes1"):
-        client._request_params()
+class Listener:
+    """Local TCP server that counts and closes the connections it accepts.
+
+    Attributes:
+        port: Port.
+        accepted: Number of connections accepted.
+    """
+
+    def __init__(self) -> None:
+        """Listen on a free port of `127.0.0.1`."""
+        self._sock = socket.create_server(("127.0.0.1", 0))
+        self.port: int = self._sock.getsockname()[1]
+        self.accepted = 0
+        self.connected = threading.Event()
+        threading.Thread(target=self._serve, daemon=True).start()
+
+    def _serve(self) -> None:
+        """Accept and close connections until closed."""
+        while True:
+            try:
+                conn, _ = self._sock.accept()
+            except OSError:
+                return
+            self.accepted += 1
+            self.connected.set()
+            conn.close()
+
+    def close(self) -> None:
+        """Stop listening."""
+        self._sock.close()
 
 
-def test_client_address_check_foca(
-    discovering: FakeRegistry, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """FOCA's check of hosts is used (hosts are not resolved in the tests)."""
-    discovering.add("a", "https://tes1.example.org")
-    client = backends.create_client(host="https://tes1.example.org")
-    monkeypatch.setattr(backends, "check_public_host", http.check_public_host)
-    with pytest.raises(BackendAddressNotAllowed, match="not resolved"):
-        client._request_params()
+@pytest.fixture
+def rebinding(
+    discovering: FakeRegistry, loopback: None, monkeypatch: pytest.MonkeyPatch
+) -> Iterator[tuple[str, Listener]]:
+    """A discovered backend whose host gets a private address after discovery.
+
+    Discovery saw a public address (the fake DNS of the registry); connections
+    resolve the host to `127.0.0.1`, where a local server listens.
+
+    Yields:
+        URL of the backend, and the local server.
+    """
+    listener = Listener()
+    resolve = socket.getaddrinfo
+
+    def getaddrinfo(host: Any, *args: Any, **kwargs: Any) -> Any:
+        """Resolve the backend's host to the local address."""
+        if host == "tes1.example.org":
+            host = "127.0.0.1"
+        return resolve(host, *args, **kwargs)
+
+    monkeypatch.setattr(socket, "getaddrinfo", getaddrinfo)
+    url = f"https://tes1.example.org:{listener.port}"
+    discovering.add("a", url)
+    try:
+        yield url, listener
+    finally:
+        listener.close()
 
 
-def test_client_private_allowed(discovering: FakeRegistry) -> None:
-    """Hosts of discovered backends aren't checked if private ones are allowed."""
+def test_client_connection_checked(rebinding: tuple[str, Listener]) -> None:
+    """Each connection to a discovered backend is checked (DNS rebinding).
+
+    Neither the task nor the request for it reaches a private address: no
+    connection is made.
+    """
+    url, listener = rebinding
+    client = backends.create_client(host=url)
+    assert client.guarded is not None
+    assert not client.guarded.allow_private_addresses
+    assert not client.guarded.allow_http
+    assert client.guarded.max_response_size == backends.MAX_RESPONSE_SIZE
+    assert client.guarded.timeout == client.timeout
+    with pytest.raises(BackendAddressNotAllowed, match="not public"):
+        client.get_task("r1")
+    request = OutboundRequest(
+        backend=client.backend, method="POST", path="/ga4gh/tes/v1/tasks"
+    )
+    with pytest.raises(BackendAddressNotAllowed) as info:
+        client.forward(request, tes.Task(executors=[]))
+    assert backends.not_sent(info.value)
+    assert backends.forward_reason(info.value) == "address_not_allowed"
+    assert listener.accepted == 0
+
+
+def test_client_private_allowed(rebinding: tuple[str, Listener]) -> None:
+    """Discovered backends may have private addresses if allowed.
+
+    The local server isn't a TES backend (no TLS), so the request fails
+    after connecting.
+    """
+    url, listener = rebinding
     get_custom_config(CustomConfig).tes.backends = backend_list(
         allow_private_addresses=True
     )
+    client = backends.create_client(host=url)
+    assert client.guarded is not None
+    assert client.guarded.allow_private_addresses
+    # the TLS handshake fails, a TLS error of unknown outcome
+    with pytest.raises(requests.ConnectionError):
+        client.get_task("r1")
+    assert listener.connected.wait(5)
+    assert listener.accepted == 1
+
+
+@pytest.mark.parametrize(
+    "error, expected",
+    [
+        (HostNotResolved("x not resolved"), BackendAddressNotAllowed),
+        (http.RequestNotSent("x not reached"), BackendRequestNotSent),
+        (http.InvalidRequest("x", reason="invalid_header"), requests.ConnectionError),
+        (http.InvalidRequestURL("x"), requests.ConnectionError),
+        (http.RequestMaybeSent("x", reason="read_timeout"), requests.ReadTimeout),
+        (http.RequestMaybeSent("x lost"), requests.ConnectionError),
+    ],
+)
+def test_client_guarded_errors(
+    discovering: FakeRegistry,
+    monkeypatch: pytest.MonkeyPatch,
+    error: Exception,
+    expected: type[Exception],
+) -> None:
+    """Errors of the guarded client are those of `requests`, as classified."""
     discovering.add("a", "https://tes1.example.org")
-    discovering.hosts["tes1.example.org"] = ["10.0.0.1"]
     client = backends.create_client(host="https://tes1.example.org")
-    assert client._request_params()["allow_redirects"] is False
+
+    def fail(*args: Any, **kwargs: Any) -> Any:
+        """Fail as the guarded client does."""
+        raise error
+
+    assert client.guarded is not None
+    monkeypatch.setattr(client.guarded, "request", fail)
+    with pytest.raises(expected) as info:
+        client.get_task("r1")
+    assert isinstance(info.value, requests.RequestException)
+    assert backends.not_sent(info.value) is issubclass(expected, BackendRequestNotSent)
+    assert backends.forward_reason(info.value) in {
+        "address_not_allowed",
+        "connect_error",
+    }
+
+
+@pytest.mark.parametrize(
+    "cause, sent",
+    [(ssl.SSLCertVerificationError("bad certificate"), False), (ssl.SSLError(), None)],
+)
+def test_client_guarded_tls_error(
+    discovering: FakeRegistry,
+    monkeypatch: pytest.MonkeyPatch,
+    cause: Exception,
+    sent: bool | None,
+) -> None:
+    """Only refused certificates count as TLS errors before sending.
+
+    Other TLS errors may come after the request was sent (outcome unknown).
+    """
+    discovering.add("a", "https://tes1.example.org")
+    client = backends.create_client(host="https://tes1.example.org")
+
+    def fail(*args: Any, **kwargs: Any) -> Any:
+        """Fail with a TLS error, as the guarded client does."""
+        raise http.RequestNotSent("TLS error", reason="tls_error") from cause
+
+    assert client.guarded is not None
+    monkeypatch.setattr(client.guarded, "request", fail)
+    request = OutboundRequest(
+        backend=client.backend, method="POST", path="/ga4gh/tes/v1/tasks"
+    )
+    if sent is False:
+        with pytest.raises(BackendRequestNotSent):
+            client.forward(request, tes.Task(executors=[]))
+    else:
+        with pytest.raises(BackendOutcomeUnknown):
+            client.forward(request, tes.Task(executors=[]))
+
+
+@pytest.mark.parametrize(
+    "cause, reason",
+    [
+        (ConnectTimeoutError("timed out"), "connect_timeout"),
+        (NewConnectionError(None, "refused"), "connect_error"),  # type: ignore[arg-type]
+    ],
+)
+def test_client_guarded_connect_errors(
+    discovering: FakeRegistry,
+    monkeypatch: pytest.MonkeyPatch,
+    cause: Exception,
+    reason: str,
+) -> None:
+    """Connect timeouts of discovered backends are reported as such."""
+    discovering.add("a", "https://tes1.example.org")
+    client = backends.create_client(host="https://tes1.example.org")
+
+    def fail(*args: Any, **kwargs: Any) -> Any:
+        """Fail as the guarded client does when connecting fails."""
+        raise http.RequestNotSent("not reached") from cause
+
+    assert client.guarded is not None
+    monkeypatch.setattr(client.guarded, "request", fail)
+    with pytest.raises(BackendRequestNotSent) as info:
+        client.get_task("r1")
+    assert backends.not_sent(info.value)
+    assert backends.forward_reason(info.value) == reason
+
+
+def test_client_guarded_arguments(discovering: FakeRegistry) -> None:
+    """Guarded requests take the arguments that the guarded client supports."""
+    discovering.add("a", "https://tes1.example.org")
+    client = backends.create_client(host="https://tes1.example.org")
+    with pytest.raises(TypeError, match="stream"):
+        client._request("GET", "https://tes1.example.org", (1, 1), stream=True)
+
+
+@pytest.mark.parametrize(
+    "status, reason, encoding",
+    [(200, "OK", "utf-8"), (299, "", None)],
+)
+def test_as_response(status: int, reason: str, encoding: str | None) -> None:
+    """Responses of the guarded client keep status, reason and media type."""
+    headers = {"content-type": "application/json; charset=utf-8"} if encoding else {}
+    response = backends.as_response(
+        http.HttpResponse(status=status, headers=headers, content=b"{}"), "https://x"
+    )
+    assert (response.status_code, response.reason) == (status, reason)
+    assert response.encoding == encoding
+    assert response.json() == {}
 
 
 def test_client_configured_not_checked(discovering: FakeRegistry) -> None:
-    """Hosts of configured backends are not checked (e.g., internal ones)."""
-    assert "static.example.org" not in discovering.hosts
-    kwargs = backends.create_client(host=STATIC)._request_params()
-    assert "allow_redirects" not in kwargs
+    """Configured backends are not guarded (e.g., internal ones)."""
+    client = backends.create_client(host=STATIC)
+    assert client.guarded is None
+    assert "allow_redirects" not in client._request_params()
 
 
 def test_client_discovered_token(
@@ -369,3 +573,40 @@ def test_task_relayed_to_discovered_backend(
     (discovered,) = backend.clients
     assert discovered.source == "discovered"
     assert discovered.group == REGISTRY
+
+
+def test_client_guarded_response(
+    discovering: FakeRegistry, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Responses of the guarded client are used as those of `requests`."""
+    discovering.add("a", "https://tes1.example.org")
+    client = backends.create_client(host="https://tes1.example.org")
+    sent: list[tuple[str, str, dict[str, Any]]] = []
+
+    def answer(method: str, url: str, **kwargs: Any) -> http.HttpResponse:
+        """Record the request, and answer with a task."""
+        sent.append((method, url, kwargs))
+        return http.HttpResponse(
+            status=200,
+            headers={"content-type": "application/json"},
+            content=b'{"id": "r1", "state": "RUNNING"}',
+        )
+
+    assert client.guarded is not None
+    monkeypatch.setattr(client.guarded, "request", answer)
+    assert client.get_task("r1").state == "RUNNING"
+    request = OutboundRequest(
+        backend=client.backend,
+        method="POST",
+        path="/ga4gh/tes/v1/tasks",
+        query={"x": ["1"]},
+    )
+    task_id, response = client.forward(request, tes.Task(executors=[]))
+    assert task_id == "r1"
+    assert response.headers["Content-Type"] == "application/json"
+    (_, get_url, _), (method, post_url, kwargs) = sent
+    assert get_url == "https://tes1.example.org/ga4gh/tes/v1/tasks/r1"
+    assert (method, post_url) == ("POST", "https://tes1.example.org/ga4gh/tes/v1/tasks")
+    assert kwargs["params"] == {"x": ["1"]}
+    assert kwargs["data"] == tes.Task(executors=[]).as_json()
+    assert "allow_redirects" not in kwargs

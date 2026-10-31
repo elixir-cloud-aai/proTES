@@ -2,6 +2,7 @@
 
 from collections.abc import Callable
 from pathlib import Path
+import socket
 from typing import Any, ClassVar
 
 from connexion import FlaskApp
@@ -27,6 +28,9 @@ from pro_tes.app import init_app
 from pro_tes.config_models import CustomConfig
 from pro_tes.ga4gh.tes import backends, task_runs
 from tests.conftest import DB, make_headers, reset_gateway, set_overlays
+
+# Connecting of sockets, as before the tests block network access
+_CONNECT = socket.socket.connect
 
 BASE_PATH = "/ga4gh/tes/v1"
 TASK: dict[str, Any] = {
@@ -292,3 +296,23 @@ class AddCredentials(Plugin[Any, Any]):
     def on_request(self, request: InboundRequest, ctx: Context) -> None:
         """Add the credentials."""
         request.payload["inputs"][0]["url"] = "s3://key:secret@bucket/in"
+
+
+@pytest.fixture
+def loopback(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Allow connections to local servers (the tests block network access).
+
+    Requests go there directly, also behind proxies.
+    """
+    blocked = socket.socket.connect
+
+    def connect(sock: socket.socket, address: Any) -> None:
+        """Connect to local addresses only (else as blocked)."""
+        if isinstance(address, tuple) and address[0] == "127.0.0.1":
+            _CONNECT(sock, address)
+            return
+        blocked(sock, address)
+
+    monkeypatch.setattr(socket.socket, "connect", connect)
+    for name in ("NO_PROXY", "no_proxy"):
+        monkeypatch.setenv(name, "127.0.0.1")

@@ -39,13 +39,21 @@ class BackendAuthError(RuntimeError):
     """
 
 
-class BackendAddressNotAllowed(requests.ConnectionError):
+class BackendRequestNotSent(requests.ConnectionError):
+    """Raised when a request to a discovered TES backend was certainly not sent.
+
+    E.g., because connecting failed or timed out (cf.
+    :py:class:`foca.utils.http.RequestNotSent`). A connection error, so that
+    proTES handles it as it handles unreachable backends.
+    """
+
+
+class BackendAddressNotAllowed(BackendRequestNotSent):
     """Raised when the host of a discovered TES backend is not public.
 
-    Or can't be resolved (cf. :py:func:`foca.utils.http.check_public_host`).
-
-    A connection error, so that proTES handles it as it handles unreachable
-    backends; no request is sent.
+    Or can't be resolved: FOCA's guarded HTTP client checks the address of
+    each connection (cf. :py:class:`foca.utils.http.GuardedClient`). No
+    request is sent.
     """
 
 
