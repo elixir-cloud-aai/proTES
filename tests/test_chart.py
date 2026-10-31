@@ -1214,6 +1214,7 @@ CHART_PLUGINS: dict[str, Any] = {
             "version": ">=1.0",
             "clientSelectable": False,
             "config": {"maxDistance": 100, "nested": {"onFailure": "x"}},
+            "store": {"enabled": True, "maxEntrySize": 1024, "maxTtl": 3600},
         }
     },
     "pipeline": [
@@ -1248,6 +1249,7 @@ CONFIG_PLUGINS: dict[str, Any] = {
             "version": ">=1.0",
             "client_selectable": False,
             "config": {"maxDistance": 100, "nested": {"onFailure": "x"}},
+            "store": {"enabled": True, "max_entry_size": 1024, "max_ttl": 3600},
         }
     },
     "pipeline": [
@@ -1382,6 +1384,22 @@ def test_plugins_middlewares(args: tuple[str, str]) -> None:
             "at '/plugins/available/x'",
         ),
         ({"gatewayId": "x"}, "at '/plugins'"),
+        (
+            {"available": {"x": {"store": {"max_ttl": 60}}}},
+            "at '/plugins/available/x/store'",
+        ),
+        (
+            {"available": {"x": {"store": {"maxTtl": 0}}}},
+            "at '/plugins/available/x/store/maxTtl'",
+        ),
+        (
+            {"available": {"x": {"store": {"maxTtl": 10 * 365 * 86400 + 1}}}},
+            "at '/plugins/available/x/store/maxTtl'",
+        ),
+        (
+            {"available": {"x": {"store": {"maxEntrySize": 0}}}},
+            "at '/plugins/available/x/store/maxEntrySize'",
+        ),
         ({"available": {"Tes.X": {}}}, "invalid propertyName 'Tes.X'"),
         ({"available": {"x" * 129: {}}}, "invalid propertyName 'xxx"),
         (
