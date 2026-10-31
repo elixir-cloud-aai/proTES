@@ -29,8 +29,8 @@ change between checks (DNS rebinding) can't lead requests to private
 addresses (unless allowed, `allow_private_addresses` of the registry entry);
 their redirects are not followed, and their responses are limited to
 `MAX_RESPONSE_SIZE` bytes. Requests time out after `custom.tes.timeout`
-seconds (and after `CONNECT_TIMEOUT` seconds while connecting; for
-discovered backends, after FOCA's `MAX_CONNECT_TIMEOUT` at most).
+seconds (and after `CONNECT_TIMEOUT` seconds while connecting); requests
+to discovered backends as a whole (cf. :py:meth:`TesClient._request`).
 
 Tasks are created and canceled with a single `POST` request each (which
 doesn't follow redirects), to the API path of the backend's URL
@@ -43,6 +43,7 @@ again (cf. :py:class:`pro_tes.exceptions.BackendOutcomeUnknown`).
 from collections.abc import Iterator
 from contextlib import suppress
 from dataclasses import dataclass
+from http import HTTPStatus
 import logging
 import os
 import ssl
@@ -58,6 +59,7 @@ from foca.utils.http import (
     AddressNotAllowed,
     GuardedClient,
     HostNotResolved,
+    HttpResponse,
     RequestMaybeSent,
     RequestNotSent,
 )
@@ -97,11 +99,10 @@ API_PATH = "ga4gh/tes/v1"
 # requests, `custom.tes.timeout`); short, as requests that time out while
 # connecting are sent to the next backend
 CONNECT_TIMEOUT = 5
-# Errors of `requests` raised before anything is sent
 # Maximum size of responses of discovered backends, in bytes (e.g., tasks
 # with their logs)
 MAX_RESPONSE_SIZE = 64 * 1024 * 1024
-
+# Errors of `requests` raised before anything is sent
 NOT_SENT_ERRORS = (
     BackendRequestNotSent,
     requests.ConnectTimeout,
@@ -741,14 +742,17 @@ class TesClient(tes.HTTPClient):
     ) -> requests.Response:
         """Send a request, through the guarded client for discovered backends.
 
+        Discovered backends: the guarded client limits the whole request to
+        `custom.tes.timeout` seconds (`timeout` is not used) and connecting
+        to FOCA's `MAX_CONNECT_TIMEOUT` seconds; it never follows redirects.
+
         Args:
             method: HTTP method.
             url: URL of the request.
-            timeout: Timeouts of connecting and of reading, in seconds; for
-                discovered backends, the latter is that of the whole request.
-            **kwargs: Other arguments of `requests.request()` (`params`,
-                `headers`, `data`, `auth`; `allow_redirects` is ignored for
-                discovered backends, whose redirects are never followed).
+            timeout: Timeouts of connecting and of reading, in seconds
+                (configured backends only).
+            **kwargs: Other arguments of `requests.request()`; for discovered
+                backends, only `params`, `headers`, `data` and `auth`.
 
         Returns:
             The response.
@@ -762,6 +766,15 @@ class TesClient(tes.HTTPClient):
         """
         if self.guarded is None:
             return requests.request(method, url, timeout=timeout, **kwargs)
+        unsupported = set(kwargs) - {
+            "params",
+            "headers",
+            "data",
+            "auth",
+            "allow_redirects",
+        }
+        if unsupported:
+            raise TypeError(f"Unsupported arguments of guarded requests: {unsupported}")
         try:
             guarded = self.guarded.request(
                 method,
@@ -774,18 +787,20 @@ class TesClient(tes.HTTPClient):
         except (AddressNotAllowed, HostNotResolved) as exc:
             raise BackendAddressNotAllowed(str(exc)) from exc
         except RequestNotSent as exc:
+            # TLS errors after the handshake may come after the request was
+            # sent; only refused certificates certainly prevent sending (as
+            # for configured backends, cf. `not_sent`)
+            if exc.reason == "tls_error" and not any(
+                isinstance(cause, ssl.SSLCertVerificationError)
+                for cause in _causes(exc)
+            ):
+                raise requests.ConnectionError(str(exc)) from exc
             raise BackendRequestNotSent(str(exc)) from exc
         except RequestMaybeSent as exc:
             if exc.reason == "read_timeout":
                 raise requests.ReadTimeout(str(exc)) from exc
             raise requests.ConnectionError(str(exc)) from exc
-        response = requests.Response()
-        response.status_code = guarded.status
-        response.headers = CaseInsensitiveDict(guarded.headers)
-        response._content = guarded.content
-        response.url = url
-        response.encoding = "utf-8"
-        return response
+        return as_response(guarded, url)
 
     def _request_params(
         self,
@@ -855,6 +870,31 @@ def response_headers(response: requests.Response) -> Headers:
     return headers
 
 
+def as_response(guarded: HttpResponse, url: str) -> requests.Response:
+    """Get a response of the guarded client as a response of `requests`.
+
+    Args:
+        guarded: Response of the guarded client, with its whole body.
+        url: URL of the request.
+
+    Returns:
+        The response; its encoding is that of its media type, as `requests`
+        finds it.
+    """
+    response = requests.Response()
+    response.status_code = guarded.status
+    try:
+        response.reason = HTTPStatus(guarded.status).phrase
+    except ValueError:
+        response.reason = ""
+    response.headers = CaseInsensitiveDict(guarded.headers)
+    # the body, read already (`requests` keeps it in this attribute)
+    response._content = guarded.content
+    response.url = url
+    response.encoding = requests.utils.get_encoding_from_headers(response.headers)
+    return response
+
+
 def create_client(host: str, base_path: str = "") -> TesClient:
     """Create a client of a configured TES backend.
 
@@ -907,6 +947,7 @@ _REASONS: tuple[tuple[type[Exception], str], ...] = (
     (ValueError, "invalid_backend"),
     (BackendAddressNotAllowed, "address_not_allowed"),
     (requests.ConnectTimeout, "connect_timeout"),
+    (BackendRequestNotSent, "connect_error"),
 )
 
 

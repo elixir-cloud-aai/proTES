@@ -91,10 +91,11 @@ proTES (`server.public_url`, if set; the Helm chart sets it from `hostName`)
 are never used, so that proTES never forwards tasks to itself: proTES
 refuses to start if a configured one is.
 
-Requests to TES instances time out after `custom.tes.timeout` seconds
-(default: 15), and after 5 seconds while connecting; requests to discovered
-TES instances as a whole (resolving, connecting, sending and reading) after
-`custom.tes.timeout` seconds, and after 10 seconds while connecting. proTES creates, gets
+Requests to configured TES instances time out after `custom.tes.timeout`
+seconds without data (default: 15), and after 5 seconds while connecting.
+Requests to discovered TES instances must end within `custom.tes.timeout`
+seconds as a whole (resolving, connecting, sending and reading), and
+connecting within 10 seconds (FOCA's guarded HTTP client). proTES creates, gets
 and cancels tasks with a single request each, to the API path of the URL
 (`<url>/ga4gh/tes/v1`), and never sends a request to create or cancel a
 task again, so that no TES instance gets a task twice; these requests don't
