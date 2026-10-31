@@ -92,7 +92,9 @@ are never used, so that proTES never forwards tasks to itself: proTES
 refuses to start if a configured one is.
 
 Requests to TES instances time out after `custom.tes.timeout` seconds
-(default: 15), and after 5 seconds while connecting. proTES creates, gets
+(default: 15), and after 5 seconds while connecting; requests to discovered
+TES instances as a whole (resolving, connecting, sending and reading) after
+`custom.tes.timeout` seconds, and after 10 seconds while connecting. proTES creates, gets
 and cancels tasks with a single request each, to the API path of the URL
 (`<url>/ga4gh/tes/v1`), and never sends a request to create or cancel a
 task again, so that no TES instance gets a task twice; these requests don't
@@ -189,9 +191,12 @@ following hold:
 - its host has public addresses only: hosts with private, loopback,
   link-local or other special-purpose addresses (e.g., `10.0.0.1`,
   `localhost`, `169.254.169.254`) are rejected, unless
-  `allow_private_addresses` is set. Hosts are checked on discovery and
-  before each request to the TES instance, and requests to discovered TES
-  instances don't follow redirects.
+  `allow_private_addresses` is set. Hosts are checked on discovery, and
+  the address of each connection to the TES instance is checked again
+  (FOCA's guarded HTTP client), so that hosts whose addresses change after
+  the check (DNS rebinding) can't lead requests, and proTES's credentials,
+  to such addresses. Requests to discovered TES instances don't follow
+  redirects, and their responses are limited to 64 MiB.
 
 The registry is read without access token (its reads are public), over a
 URL with a scheme of the entry's `url_schemes`, at public addresses (unless
@@ -217,11 +222,6 @@ credentials of the registry entry's `auth` (see [Credentials of TES
 instances](access-control.md#credentials-of-tes-instances)); tasks of a TES
 instance that is no longer discovered can't be tracked or canceled (their
 state becomes `UNKNOWN` until it is discovered again).
-
-The host check doesn't protect against DNS rebinding (a host whose
-addresses change between the check and the request); restrict the egress
-of proTES to the networks of the TES instances (e.g., with a Kubernetes
-NetworkPolicy) where internal services must not be reachable.
 
 ## Plugins
 

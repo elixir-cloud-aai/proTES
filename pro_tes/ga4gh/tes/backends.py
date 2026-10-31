@@ -22,12 +22,15 @@ their registry entry):
 - `none`: no credentials.
 
 Credentials are looked up for each request, so that long-running Celery
-tasks get fresh tokens. Before each request to a discovered backend, its host
-is checked to have public addresses only (with
-:py:func:`foca.utils.http.check_public_host`; unless private addresses are
-allowed, `allow_private_addresses` of the registry entry), and redirects are
-not followed. Requests time out after `custom.tes.timeout` seconds (and
-after `CONNECT_TIMEOUT` seconds while connecting).
+tasks get fresh tokens. Requests to discovered backends go through FOCA's
+guarded HTTP client (:py:class:`foca.utils.http.GuardedClient`), which
+checks the address of each connection itself, so that hosts whose addresses
+change between checks (DNS rebinding) can't lead requests to private
+addresses (unless allowed, `allow_private_addresses` of the registry entry);
+their redirects are not followed, and their responses are limited to
+`MAX_RESPONSE_SIZE` bytes. Requests time out after `custom.tes.timeout`
+seconds (and after `CONNECT_TIMEOUT` seconds while connecting; for
+discovered backends, after FOCA's `MAX_CONNECT_TIMEOUT` at most).
 
 Tasks are created and canceled with a single `POST` request each (which
 doesn't follow redirects), to the API path of the backend's URL
@@ -51,7 +54,13 @@ from urllib.parse import quote, quote_plus
 from foca import get_config, get_custom_config
 from foca.plugins import Backend, BackendResponse, Headers, OutboundRequest
 from foca.plugins.backends import BackendList, RegistryEntry, ServiceEntry
-from foca.utils.http import HttpError, check_public_host
+from foca.utils.http import (
+    AddressNotAllowed,
+    GuardedClient,
+    HostNotResolved,
+    RequestMaybeSent,
+    RequestNotSent,
+)
 import requests
 from requests.structures import CaseInsensitiveDict
 import tes
@@ -69,6 +78,7 @@ from pro_tes.exceptions import (
     BackendAuthError,
     BackendNotConfigured,
     BackendOutcomeUnknown,
+    BackendRequestNotSent,
 )
 
 logger = logging.getLogger(__name__)
@@ -88,7 +98,12 @@ API_PATH = "ga4gh/tes/v1"
 # connecting are sent to the next backend
 CONNECT_TIMEOUT = 5
 # Errors of `requests` raised before anything is sent
+# Maximum size of responses of discovered backends, in bytes (e.g., tasks
+# with their logs)
+MAX_RESPONSE_SIZE = 64 * 1024 * 1024
+
 NOT_SENT_ERRORS = (
+    BackendRequestNotSent,
     requests.ConnectTimeout,
     requests.exceptions.InvalidHeader,
     requests.exceptions.InvalidSchema,
@@ -516,6 +531,16 @@ class TesClient(tes.HTTPClient):
         super().__init__(url=url, timeout=timeout)
         self.backend = backend
         self.entry = entry
+        # discovered backends: each connection is checked
+        self.guarded: GuardedClient | None = None
+        if isinstance(entry, RegistryEntry):
+            self.guarded = GuardedClient(
+                timeout=timeout,
+                allow_private_addresses=entry.allow_private_addresses,
+                # FOCA discovers `https` services only
+                allow_http=False,
+                max_response_size=MAX_RESPONSE_SIZE,
+            )
 
     def forward(
         self,
@@ -601,7 +626,7 @@ class TesClient(tes.HTTPClient):
         kwargs = self._request_params(params={"view": view})
         timeout = kwargs.pop("timeout")
         url = f"{self.url}/{API_PATH}/tasks/{quote_id(task_id)}"
-        response = requests.get(url, timeout=timeout, **kwargs)
+        response = self._request("GET", url, timeout=timeout, **kwargs)
         response.raise_for_status()
         task: tes.Task = unmarshal(response.json(), tes.Task)
         return task
@@ -684,7 +709,7 @@ class TesClient(tes.HTTPClient):
         # into `GET` requests, whose answers could be taken for confirmations
         kwargs["allow_redirects"] = False
         try:
-            response = requests.request(method, url, timeout=(connect, read), **kwargs)
+            response = self._request(method, url, timeout=(connect, read), **kwargs)
         except requests.RequestException as exc:
             if not_sent(exc):
                 raise
@@ -711,6 +736,57 @@ class TesClient(tes.HTTPClient):
             response=response,
         )
 
+    def _request(
+        self, method: str, url: str, timeout: tuple[float, float], **kwargs: Any
+    ) -> requests.Response:
+        """Send a request, through the guarded client for discovered backends.
+
+        Args:
+            method: HTTP method.
+            url: URL of the request.
+            timeout: Timeouts of connecting and of reading, in seconds; for
+                discovered backends, the latter is that of the whole request.
+            **kwargs: Other arguments of `requests.request()` (`params`,
+                `headers`, `data`, `auth`; `allow_redirects` is ignored for
+                discovered backends, whose redirects are never followed).
+
+        Returns:
+            The response.
+
+        Raises:
+            requests.RequestException: The request failed; for discovered
+                backends, :py:class:`pro_tes.exceptions.BackendRequestNotSent`
+                (or :py:class:`pro_tes.exceptions.BackendAddressNotAllowed`)
+                if it certainly wasn't sent, and `requests.ReadTimeout` or
+                `requests.ConnectionError` if it may have been.
+        """
+        if self.guarded is None:
+            return requests.request(method, url, timeout=timeout, **kwargs)
+        try:
+            guarded = self.guarded.request(
+                method,
+                url,
+                params=kwargs.get("params"),
+                headers=kwargs.get("headers"),
+                data=kwargs.get("data"),
+                auth=kwargs.get("auth"),
+            )
+        except (AddressNotAllowed, HostNotResolved) as exc:
+            raise BackendAddressNotAllowed(str(exc)) from exc
+        except RequestNotSent as exc:
+            raise BackendRequestNotSent(str(exc)) from exc
+        except RequestMaybeSent as exc:
+            if exc.reason == "read_timeout":
+                raise requests.ReadTimeout(str(exc)) from exc
+            raise requests.ConnectionError(str(exc)) from exc
+        response = requests.Response()
+        response.status_code = guarded.status
+        response.headers = CaseInsensitiveDict(guarded.headers)
+        response._content = guarded.content
+        response.url = url
+        response.encoding = "utf-8"
+        return response
+
     def _request_params(
         self,
         data: str | None = None,
@@ -732,21 +808,14 @@ class TesClient(tes.HTTPClient):
 
         Raises:
             pro_tes.exceptions.BackendAuthError: No credentials are available.
-            pro_tes.exceptions.BackendAddressNotAllowed: The backend was
-                discovered, and its host has an address that is not public
-                (unless allowed), or can't be resolved.
         """
         kwargs: dict[str, Any] = super()._request_params(data=data, params=params)
         kwargs["timeout"] = (min(CONNECT_TIMEOUT, self.timeout), self.timeout)
         config = get_custom_config(CustomConfig).tes
         if isinstance(self.entry, RegistryEntry):
-            # redirects could lead to any address
+            # redirects could lead to any address (the guarded client of
+            # discovered backends doesn't follow them either)
             kwargs["allow_redirects"] = False
-            if not self.entry.allow_private_addresses:
-                try:
-                    check_public_host(self.backend.url)
-                except HttpError as exc:
-                    raise BackendAddressNotAllowed(str(exc)) from exc
         if auth is None:
             auth = self.backend.auth
         if auth == "client_credentials":
