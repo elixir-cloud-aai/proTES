@@ -35,8 +35,8 @@ REPOSITORY = "elixir-cloud-aai/protes"
 # Links that are rewritten, without the version
 DOCS = f"https://{DOCS_HOST}/en/"
 FILES = f"https://github.com/{REPOSITORY}/blob/"
-# Links to files on branch `dev`, with the repository's name in any case
-# (GitHub ignores it, e.g., `proTES` and `protes`)
+# Links to files on branch `dev`, with the repository's URL in any case
+# (GitHub ignores it, e.g., of the names `proTES` and `protes`), not the branch
 FILES_DEV = re.compile(rf"((?i:{re.escape(FILES)}))dev/", re.ASCII)
 
 # Placeholders of the release version and of the chart version (also used
@@ -103,7 +103,7 @@ def version_links(markdown: str, tag: str) -> str:
 
     Returns:
         The Markdown with links to the latest docs (`DOCS` + `latest/`) and to
-        files on branch `dev` (`FILES` + `dev/`, with the repository's name
+        files on branch `dev` (`FILES` + `dev/`, with the repository's URL
         in any case) pointed to `tag`, and the placeholders of the release
         and chart versions replaced (see `substitute`), also in code blocks;
         other links unchanged.

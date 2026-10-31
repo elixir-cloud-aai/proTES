@@ -47,18 +47,31 @@ def test_adapt_link(target: str, expected: str) -> None:
 
 
 @pytest.mark.parametrize(
-    ("target", "repo_url"),
+    ("link_repo_url", "config_repo_url"),
     [
         (MIXED_CASE_REPO_URL, REPO_URL),
         (REPO_URL, MIXED_CASE_REPO_URL),
     ],
 )
-def test_adapt_link_case(target: str, repo_url: str) -> None:
-    """Links match the repository's URL with its name in any case."""
+def test_adapt_link_case(link_repo_url: str, config_repo_url: str) -> None:
+    """Links match the repository's URL in any case, and get the configured."""
+    link = f"{link_repo_url}/blob/dev/deployment/values.yaml"
     assert (
-        hooks.adapt_link(f"{target}/blob/dev/deployment/values.yaml", repo_url, "v1")
-        == f"{repo_url}/blob/v1/deployment/values.yaml"
+        hooks.adapt_link(link, config_repo_url, "v1")
+        == f"{config_repo_url}/blob/v1/deployment/values.yaml"
     )
+
+
+@pytest.mark.parametrize(
+    "target",
+    [
+        f"{REPO_URL}/blob/DEV/deployment/values.yaml",
+        f"{REPO_URL}-other/blob/dev/deployment/values.yaml",
+    ],
+)
+def test_adapt_link_other(target: str) -> None:
+    """Links to other branches or repositories are left as they are."""
+    assert hooks.adapt_link(target, REPO_URL, "v1") == target
 
 
 @pytest.mark.parametrize("repo_url", [REPO_URL, f"{REPO_URL}/"])

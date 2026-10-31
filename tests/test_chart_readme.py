@@ -36,12 +36,12 @@ _spec.loader.exec_module(chart_readme)
             f"[config]({REPO}/blob/dev/pro_tes/config.yaml)",
             f"[config]({REPO}/blob/v1.2.3rc1/pro_tes/config.yaml)",
         ),
-        # The repository's name in any case, which is kept
+        # The repository's URL in any case, which is kept
         (
             f"[config]({MIXED_CASE_REPO}/blob/dev/pro_tes/config.yaml)",
             f"[config]({MIXED_CASE_REPO}/blob/v1.2.3rc1/pro_tes/config.yaml)",
         ),
-        # Only the repository's name is matched in any case
+        # The branch is matched exactly
         (f"{REPO}/blob/DEV/a", f"{REPO}/blob/DEV/a"),
         # Several links per line, also in code blocks (the packaged README is
         # not rendered by the docs)

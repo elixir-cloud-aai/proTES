@@ -105,18 +105,18 @@ def adapt_link(target: str, repo_url: str, ref: str = "dev") -> str:
     Returns:
         For pages of the docs (`DOCS_URL<page>/#<anchor>`), the page relative
         to the docs (`<page>.md#<anchor>`); for files of the repository on
-        GitHub at branch `dev` (with the repository's name in any case), their
+        GitHub at branch `dev` (with the repository's URL in any case), their
         URL at `ref`; other targets unchanged.
     """
     if target.startswith(DOCS_URL):
         page, hash_, anchor = target.removeprefix(DOCS_URL).partition("#")
         return f"{page.rstrip('/') or 'index'}.md{hash_}{anchor}"
     repo_url = repo_url.rstrip("/")
-    blob = f"{repo_url}/blob/dev/"
-    # GitHub ignores the case of the repository's name (e.g., `proTES` and
-    # `protes`), so links match with it in any case
-    if target[: len(blob)].lower() == blob.lower():
-        return f"{repo_url}/blob/{ref}/{target[len(blob) :]}"
+    # GitHub ignores the case of the repository's URL (e.g., of the names
+    # `proTES` and `protes`), not of the branch
+    match = re.match(rf"(?i:{re.escape(repo_url)})/blob/dev/", target)
+    if match:
+        return f"{repo_url}/blob/{ref}/{target[match.end() :]}"
     return target
 
 

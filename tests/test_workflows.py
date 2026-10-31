@@ -14,7 +14,8 @@ GATE = "passed"
 # from `release.yaml` to `release.yml`
 LAST_RELEASE_YAML = Version("0.3.0")
 # The last release signed before the repository was renamed from `proTES` to
-# `protes` (the identities of signatures keep the case)
+# `protes` (the identities of signatures keep the case); a separate fact from
+# `LAST_RELEASE_YAML`: raise it if a release is published before the rename
 LAST_RELEASE_PROTES = Version("0.3.0")
 
 
@@ -61,7 +62,8 @@ def test_verification_signer_workflow() -> None:
 
     They are for the version in `CITATION.cff` (`{{ version }}`): releases up
     to 0.3.0 were signed by `release.yaml` of the repository `proTES`, later
-    ones by `release.yml` of the repository `protes`.
+    ones by `release.yml` of the repository `protes`. Fails on purpose once
+    `CITATION.cff` has a later version, until the commands are updated.
     """
     match = re.search(
         r"^version:\s*[\"']?([^\"'\s]+)",
@@ -73,10 +75,9 @@ def test_verification_signer_workflow() -> None:
     workflow = "release.yaml" if version <= LAST_RELEASE_YAML else "release.yml"
     repository = "proTES" if version <= LAST_RELEASE_PROTES else "protes"
     text = (ROOT / "docs" / "operations.md").read_text()
+    # The repository's name as written, in any case
     signers = re.findall(
-        r"elixir-cloud-aai/(protes)/\.github/workflows/(release\.ya?ml)",
-        text,
-        flags=re.IGNORECASE,
+        r"elixir-cloud-aai/([^/\s]+)/\.github/workflows/(release\.ya?ml)", text
     )
     assert signers
     assert set(signers) == {(repository, workflow)}
