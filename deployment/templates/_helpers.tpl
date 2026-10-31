@@ -9,8 +9,9 @@ required, unless each issuer has one, cf. `protes.requireAudience`), its
 database (`db.dbs`) and that of access control
 (`security.access_control.db_name`). The generated config sets the public
 URL of the app (`server.public_url`, cf. `protes.publicUrl`), if known,
-and the TES backends (`custom.tes.backends`) to those of `tes.backends`, if
-any. Every template includes the settings, so the app's checks
+the TES backends (`custom.tes.backends`) to those of `tes.backends`, if
+any, and the plugins (`plugins`) to those of the values `plugins` that are
+set (cf. `protes.plugins`). Every template includes the settings, so the app's checks
 (`protes.validate`) run first, before those of the library and whichever
 template Helm renders first.
 */}}
@@ -27,6 +28,9 @@ config:
   server:
     public_url: {{ toJson . }}
   {{- end }}
+  {{- with include "protes.plugins" . | fromJson }}
+  plugins: {{ toJson . }}
+  {{- end }}
   {{- $backends := include "protes.tesBackends" . | fromJsonArray }}
   {{- if $backends }}
   custom:
@@ -37,6 +41,96 @@ config:
   # into this), not a null section, which the app would refuse
   custom: {}
   {{- end }}
+{{- end -}}
+
+{{/*
+The plugin settings of the values `plugins` that are set (not empty), with
+the keys of the app config (`plugins`, e.g., `client_pipelines` for
+`clientPipelines`; cf. `protes.snakeKeys`), as a JSON object.
+*/}}
+{{- define "protes.plugins" -}}
+{{- $plugins := dict -}}
+{{- range $key, $value := .Values.plugins | default dict -}}
+{{- if $value -}}
+{{- $converted := include "protes.snakeKeys" (dict "value" $value) | fromJson -}}
+{{- $_ := set $plugins (get (include "protes.pluginKeys" $ | fromJson) $key | default $key) (get $converted "value") -}}
+{{- end -}}
+{{- end -}}
+{{- toJson $plugins -}}
+{{- end -}}
+
+{{/*
+The keys of the plugin settings in the values (camelCase) and in the app
+config (snake_case), as a JSON object.
+*/}}
+{{- define "protes.pluginKeys" -}}
+{{- toJson (dict
+  "clientPipelines" "client_pipelines"
+  "clientBackends" "client_backends"
+  "clientSelectable" "client_selectable"
+  "onFailure" "on_failure"
+  "ifMissingPhase" "if_missing_phase"
+  "maxSteps" "max_steps"
+  "maxAlternatives" "max_alternatives"
+  "maxSize" "max_size"
+  "maxItems" "max_items"
+  "maxRouteEntries" "max_route_entries"
+  "recordFailed" "record_failed"
+  "secretHeaders" "secret_headers"
+) -}}
+{{- end -}}
+
+{{/*
+A value of the plugin settings (`value`) with the keys of the app config
+(cf. `protes.pluginKeys`), recursively; the settings of plugins (`config`
+and `params`) are kept as they are. Rendered as a JSON object, with the
+value as `value`.
+*/}}
+{{- define "protes.snakeKeys" -}}
+{{- $keys := include "protes.pluginKeys" . | fromJson -}}
+{{- $value := .value -}}
+{{- if kindIs "map" $value -}}
+{{- $converted := dict -}}
+{{- range $key, $item := $value -}}
+{{- if has $key (list "config" "params") -}}
+{{- $_ := set $converted $key $item -}}
+{{- else -}}
+{{- $_ := set $converted (get $keys $key | default $key) (get (include "protes.snakeKeys" (dict "value" $item) | fromJson) "value") -}}
+{{- end -}}
+{{- end -}}
+{{- $value = $converted -}}
+{{- else if kindIs "slice" $value -}}
+{{- $converted := list -}}
+{{- range $item := $value -}}
+{{- $converted = append $converted (get (include "protes.snakeKeys" (dict "value" $item) | fromJson) "value") -}}
+{{- end -}}
+{{- $value = $converted -}}
+{{- end -}}
+{{- toJson (dict "value" $value) -}}
+{{- end -}}
+
+{{/*
+Fails on plugin settings set both in the values `plugins` and in
+`config.plugins` (which would replace them), and on the middlewares that
+the plugins replaced (`config.custom.middlewares`, `config.middlewares`),
+which the app refuses; renders nothing.
+*/}}
+{{- define "protes.checkPlugins" -}}
+{{- $config := .Values.config | default dict -}}
+{{- $custom := get $config "custom" -}}
+{{- if or (hasKey $config "middlewares") (and (kindIs "map" $custom) (hasKey $custom "middlewares")) -}}
+{{- fail "middlewares were replaced by FOCA plugins: remove config.custom.middlewares and set the pipeline in plugins.pipeline instead (see the Plugins section of Upgrading in the docs)" -}}
+{{- end -}}
+{{- $configPlugins := get $config "plugins" -}}
+{{- if kindIs "map" $configPlugins -}}
+{{- $keys := include "protes.pluginKeys" . | fromJson -}}
+{{- range $key, $value := .Values.plugins | default dict -}}
+{{- $name := get $keys $key | default $key -}}
+{{- if and $value (hasKey $configPlugins $name) -}}
+{{- fail (printf "set the plugin setting %s either in plugins.%s or in config.plugins.%s, not in both" $name $key $name) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
 {{- end -}}
 
 {{/*
@@ -95,6 +189,7 @@ consequences (e.g., a missing `hostName` for `applicationDomain`).
 {{- define "protes.validate" -}}
 {{- include "protes.checkLegacyValues" . -}}
 {{- include "protes.checkBackends" . -}}
+{{- include "protes.checkPlugins" . -}}
 {{- include "protes.checkSecurity" . -}}
 {{- include "protes.checkExtraEnv" . -}}
 {{- include "protes.checkFlower" . -}}

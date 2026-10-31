@@ -134,3 +134,14 @@ keeps the client's tags; TES instances get no tags under `gateway.`.
 All settings of the section `plugins` (e.g., `defaults`, `presets`,
 `client_pipelines`, `client_backends`, `tags` and `gateway_id`) are
 described in FOCA's documentation.
+
+## Helm chart and Docker Compose
+
+The Helm chart sets the plugins with the values `plugins.available`,
+`plugins.pipeline`, `plugins.presets`, `plugins.clientPipelines`,
+`plugins.clientBackends`, `plugins.tags` and `plugins.provenance`, with the
+keys of the config in camelCase (e.g., `onFailure` for `on_failure`), and
+other settings in `config.plugins` (see the chart's README, Configuration).
+The config overlays of Docker Compose (`config.dev.yaml`) and of its smoke
+test (`tests/smoke/config.yaml`) set the pipeline explicitly, to FOCA's
+ordered failover.

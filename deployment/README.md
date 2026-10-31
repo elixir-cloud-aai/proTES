@@ -80,6 +80,33 @@ its own then, and set `publicUrl` to it), and refuses to start with
 registries but without it, so rendering fails with registries but neither
 `hostName` nor `publicUrl` (unless `config.server.public_url` is set).
 
+The plugins that process new tasks (see
+[Plugins](https://protes.readthedocs.io/en/latest/plugins/)) are set in
+`plugins`: `available`, `pipeline`, `presets`, `clientPipelines`,
+`clientBackends`, `tags` and `provenance`, with the keys of the app's
+`plugins` in camelCase (e.g., `clientSelectable`, `onFailure`,
+`ifMissingPhase`, `maxSteps`, `maxAlternatives`, `maxSize`, `maxItems`,
+`maxRouteEntries`, `recordFailed` and `secretHeaders`; the `config` of
+plugins and the `params` of pipeline steps are kept as they are), which the
+chart renders into the config; empty values are left out, so that the
+app's defaults apply (FOCA's ordered failover as the pipeline). Plugins
+must be installed in the image (e.g., a custom image based on that of
+proTES). Rendering fails if a setting is set in `config.plugins`, too, and
+on `config.custom.middlewares`, which the plugins replaced. Other settings
+of the app's `plugins` (e.g., `defaults`, `gateway_id`) are set in
+`config.plugins`. For example:
+
+```yaml
+plugins:
+  available:
+    tes.routing.distance: {}
+  pipeline:
+    - id: route
+      alternatives:
+        - plugin: tes.routing.distance
+        - plugin: foca.routing.ordered
+```
+
 Keep the values of each deployment in its own values file outside this
 repository (e.g., `values-prod.yaml` in the deployment's infrastructure
 repository), for example:

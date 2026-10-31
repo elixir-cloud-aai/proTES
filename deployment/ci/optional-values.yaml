@@ -1,7 +1,7 @@
 # Values for rendering the chart in CI with its optional parts: Flower, TES
-# backends (`tes.backends`) and credentials for TES instances from a Secret
-# (`protes.extraEnv`); used together with `test-values.yaml` (see
-# `.github/workflows/ci.yml`)
+# backends (`tes.backends`), credentials for TES instances from a Secret
+# (`protes.extraEnv`) and plugins (`plugins`); used together with
+# `test-values.yaml` (see `.github/workflows/ci.yml`)
 protes:
   extraEnv:
   - name: TES_PASSWORD
@@ -23,3 +23,11 @@ tes:
   - type: ga4gh-service-registry
     url: https://registry.example.org/ga4gh/registry/v1
     auth: none
+plugins:
+  pipeline:
+  - id: route
+    alternatives:
+    - plugin: foca.routing.ordered
+    onFailure: fail
+  clientBackends:
+    maxItems: 8

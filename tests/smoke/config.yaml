@@ -1,6 +1,6 @@
 # Config overlay for the Compose smoke test (`tests/smoke/compose.yaml`):
-# tasks go to the fake TES backend only (no public TES instances), with the
-# default plugin pipeline (ordered failover); the fake backend is also the
+# tasks go to the fake TES backend only (no public TES instances), with an
+# explicit plugin pipeline (ordered failover); the fake backend is also the
 # identity provider (`fake_tes.py`)
 security:
   auth:
@@ -34,3 +34,9 @@ custom:
     post_task:
       polling:
         wait: 1
+plugins:
+  # Explicit pipeline, FOCA's ordered failover (the default)
+  pipeline:
+    - id: route
+      alternatives:
+        - plugin: foca.routing.ordered

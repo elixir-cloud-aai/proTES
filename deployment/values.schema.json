@@ -617,6 +617,226 @@
         }
       }
     },
+    "plugins": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Plugins that process new tasks, rendered into the plugins section of the app config with its keys (see deployment/README.md, Plugins); empty values are left out",
+      "definitions": {
+        "step": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "alternatives"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Identifier of the step"
+            },
+            "alternatives": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "plugin"
+                ],
+                "properties": {
+                  "plugin": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Identifier of the plugin"
+                  },
+                  "params": {
+                    "type": "object",
+                    "description": "Parameters of the plugin, kept as they are"
+                  }
+                }
+              },
+              "description": "Plugins with parameters, tried in order"
+            },
+            "timeout": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "description": "Time limit of each plugin of the step, in seconds"
+            },
+            "onFailure": {
+              "enum": [
+                "fail",
+                "skip"
+              ],
+              "description": "Whether the request fails (fail, the default) or the step is skipped if all alternatives fail (on_failure)"
+            },
+            "ifMissingPhase": {
+              "enum": [
+                "request",
+                "route",
+                "forward",
+                "response"
+              ],
+              "description": "Phase that the step needs (if_missing_phase)"
+            }
+          }
+        }
+      },
+      "properties": {
+        "available": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "distribution": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Distribution (package) that must provide the plugin"
+              },
+              "version": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Version specifier of the distribution"
+              },
+              "config": {
+                "type": "object",
+                "description": "Admin settings of the plugin, kept as they are"
+              },
+              "clientSelectable": {
+                "type": "boolean",
+                "description": "Whether clients may choose the plugin in pipelines of their own (client_selectable)"
+              },
+              "roles": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "description": "Roles that may choose the plugin; any if empty"
+              },
+              "enabled": {
+                "type": "boolean",
+                "description": "Whether the plugin is enabled"
+              }
+            }
+          },
+          "description": "Installed plugins that may be used, by identifier (FOCA's built-in ones always are)"
+        },
+        "pipeline": {
+          "type": "array",
+          "items": {
+            "$ref": "#/properties/plugins/definitions/step"
+          },
+          "description": "Steps that process each new task; FOCA's ordered failover if empty"
+        },
+        "presets": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "$ref": "#/properties/plugins/definitions/step"
+            }
+          },
+          "description": "Pipelines that clients may choose by name"
+        },
+        "clientPipelines": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "allowed": {
+              "type": "array",
+              "items": {
+                "enum": [
+                  "presets",
+                  "inline"
+                ]
+              }
+            },
+            "maxSteps": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "maxAlternatives": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "maxSize": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "roles": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "prepend": {
+              "type": "array",
+              "items": {
+                "$ref": "#/properties/plugins/definitions/step"
+              }
+            },
+            "append": {
+              "type": "array",
+              "items": {
+                "$ref": "#/properties/plugins/definitions/step"
+              }
+            }
+          },
+          "description": "Whether and how clients may choose pipelines (client_pipelines; off by default)"
+        },
+        "clientBackends": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "maxItems": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "description": "Whether and how clients may choose TES instances (client_backends)"
+        },
+        "tags": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "prefix": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9_.-]{0,31}\\.$"
+            },
+            "maxRouteEntries": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "description": "Reserved tags"
+        },
+        "provenance": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "recordFailed": {
+              "type": "boolean"
+            },
+            "secretHeaders": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          "description": "Records of pipeline runs"
+        }
+      }
+    },
     "mongodb": {
       "type": "object",
       "properties": {

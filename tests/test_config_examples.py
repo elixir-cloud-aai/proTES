@@ -12,6 +12,7 @@ import textwrap
 from typing import Any
 
 from foca.config.config_parser import deep_merge
+from foca.plugins.config import PluginsConfig
 import pydantic
 import pytest
 import yaml
@@ -203,3 +204,47 @@ def test_access_control_removed() -> None:
         pydantic.ValidationError, match=r"security\.access_control\.require_admin"
     ):
         CustomConfig.model_validate(deep_merge(base_custom(), overlay))
+
+
+def _plugin_examples() -> list[Any]:
+    """Collect the examples of the section `plugins` of the app config.
+
+    Returns:
+        Parameters of the examples (the section), with the source as ID: of
+        the docs (blocks with `plugins` at the top, not those of the
+        chart's values) and of the config overlays of Docker Compose.
+    """
+    examples: list[Any] = []
+    for path in MARKDOWN:
+        blocks = YAML_BLOCK.findall(path.read_text(encoding="utf-8"))
+        for index, block in enumerate(blocks):
+            example = yaml.safe_load(block)
+            if not isinstance(example, dict) or "plugins" not in example:
+                continue
+            if path.name == "README.md" and path.parent.name == "deployment":
+                continue
+            param_id = f"{path.relative_to(ROOT)}[{index}]"
+            examples.append(pytest.param(example["plugins"], id=param_id))
+    for name in ("config.dev.yaml", "tests/smoke/config.yaml"):
+        overlay = yaml.safe_load((ROOT / name).read_text(encoding="utf-8"))
+        examples.append(pytest.param(overlay["plugins"], id=name))
+    return examples
+
+
+PLUGIN_EXAMPLES = _plugin_examples()
+
+
+def test_plugin_examples_collected() -> None:
+    """The docs and the Compose overlays have examples of plugins."""
+    sources = {str(param.id).split("[")[0] for param in PLUGIN_EXAMPLES}
+    assert sources >= {
+        "docs/plugins.md",
+        "config.dev.yaml",
+        "tests/smoke/config.yaml",
+    }
+
+
+@pytest.mark.parametrize("plugins", PLUGIN_EXAMPLES)
+def test_plugin_examples_valid(plugins: dict[str, Any]) -> None:
+    """The examples of plugins validate with FOCA's model."""
+    PluginsConfig.model_validate(plugins)
