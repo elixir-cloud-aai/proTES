@@ -282,8 +282,11 @@ After approval in the `release` environment, it builds the image and pushes
 it by digest (untagged, with SBOM and provenance attestations) and checks
 that the app reports the release version; it then scans exactly that digest
 for vulnerabilities, in a job without credentials. After a second approval
-in the `release` environment (once the scan passed), it attests the build
-provenance of the scanned digest and signs it (see [Verifying images and
+in the `release` environment (once the scan passed), it checks that the
+chart it downloads is the one it packaged (a single file with the name and
+SHA-256 recorded when packaging; if not, the job fails before it attests,
+signs or tags anything), attests the build provenance of the scanned digest
+and signs it (see [Verifying images and
 charts](operations.md#verifying-images-and-charts)), tags exactly that image
 `X.Y.Z` (and `latest`, if it is the highest stable release on `main`),
 attests and signs the chart, and creates a GitHub release with the chart
@@ -442,7 +445,8 @@ workflows' OIDC tokens (permission `id-token: write`). Re-running all jobs
 of the release workflow builds, scans, signs and tags a new image digest
 (the image build is not reproducible); an earlier digest that was published
 stays signed. Re-running only the failed jobs reuses the digest already
-pushed.
+pushed. Re-running all jobs also packages the chart again and replaces the
+chart artifact; the release checks the new chart against its new SHA-256.
 
 The release workflow installs a fixed Helm version (`version:` of
 `azure/setup-helm` in `release.yml`). Dependabot updates the action, but not
