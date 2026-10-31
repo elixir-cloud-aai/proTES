@@ -82,15 +82,21 @@ def test_verification_signer_workflow() -> None:
     workflow = "release.yaml" if version <= LAST_RELEASE_YAML else "release.yml"
     repository = "proTES" if version <= LAST_RELEASE_PROTES else "protes"
     text = (ROOT / "docs" / "operations.md").read_text()
-    # The repository's name as written, in any case
-    signers = re.findall(
-        r"elixir-cloud-aai/([^/\s]+)/\.github/workflows/(release\.ya?ml)", text
-    )
-    assert signers
-    assert set(signers) == {(repository, workflow)}
-    repositories = re.findall(r"--repo elixir-cloud-aai/(\S+)", text)
-    assert repositories
-    assert set(repositories) == {repository}
+    signer = f"elixir-cloud-aai/{repository}/.github/workflows/{workflow}"
+    # Every value of each option, so that none is skipped (the commands for
+    # images of `dev` use regular expressions instead)
+    values = {
+        option: re.findall(rf"--{option} (\S+)", text)
+        for option in ("repo", "signer-workflow", "certificate-identity")
+    }
+    assert values["repo"]
+    assert set(values["repo"]) == {f"elixir-cloud-aai/{repository}"}
+    assert values["signer-workflow"]
+    assert set(values["signer-workflow"]) == {signer}
+    assert values["certificate-identity"]
+    assert set(values["certificate-identity"]) == {
+        f"https://github.com/{signer}@refs/tags/v{{{{"
+    }
 
 
 def test_publish_condition() -> None:
