@@ -63,10 +63,10 @@ run (`pip install --dry-run --report`) instead of tools such as
 `docker run` follow the file names, e.g., `--env PIP_INDEX_URL=<index>` for
 another package index.
 
-The constraints keep the packages of the image as they are: resolving fails
-(with pip's errors, and without writing `plugins.txt`) if a plugin needs
-other versions of them (e.g., another FOCA version), or if a distribution
-can't be found; choose plugin versions that work with those of the image.
+The constraints keep the packages of the image as they are: `resolve.sh`
+fails (with pip's errors) and removes `plugins.txt` if a plugin needs other
+versions of them (e.g., another FOCA version), or if a distribution can't be
+found; choose plugin versions that work with those of the image.
 Review `plugins.txt` and keep it, e.g., in the repository of your
 deployment: it is the complete list of what the image adds. If it is empty,
 the image has all the plugins already: skip the remaining steps.

@@ -4,7 +4,7 @@
 # proTES release image), with the image's installed packages as
 # constraints, and writes the distributions that the image lacks, with their
 # exact versions and the hashes of their wheels, to `<plugins.txt>`. Fails,
-# without writing it, if pip can't resolve them (e.g., a plugin needs other
+# removing it, if pip can't resolve them (e.g., a plugin needs other
 # versions of the image's packages). Further arguments are options of
 # `docker run` (e.g., `--env PIP_INDEX_URL=<index>`). Needs Docker and jq.
 # Usage: resolve.sh <image> <plugins.in> <plugins.txt> [<docker run option>...]
@@ -16,6 +16,8 @@ if [ "$#" -lt 3 ]; then
 fi
 image="$1" requirements="$2" output="$3"
 shift 3
+# No stale pins of an earlier run if this one fails
+rm -f "${output}"
 
 report="$(docker run --rm --interactive "$@" "${image}" sh -c \
   'cat > /tmp/plugins.in \
