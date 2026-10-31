@@ -1339,7 +1339,7 @@ def test_plugins_names_kept() -> None:
 
 def test_plugins_long_identifier() -> None:
     """Plugin identifiers may have up to 128 characters, as in FOCA."""
-    plugins = {"available": {"x" * 128: {}}}
+    plugins: dict[str, Any] = {"available": {"x" * 128: {}}}
     docs = _render("--set-json", f"plugins={json.dumps(plugins)}")
     assert _overlay(docs)["plugins"] == plugins
     PluginsConfig.model_validate(plugins)
