@@ -19,6 +19,7 @@ import yaml
 import pro_tes
 from pro_tes.app import init_app
 from pro_tes.exceptions import BackendOutcomeUnknown
+from pro_tes.ga4gh.tes import task_runs
 from pro_tes.tasks.track_task_progress import _store_final
 from pro_tes.utils.db import DbDocumentConnector
 from tests.conftest import (
@@ -227,14 +228,26 @@ def test_forwarded_to_deprecated() -> None:
 
 
 def test_gateway_tags_tracked(
-    client: FlaskClient, task_id: str, mongo_client: MongoClient[dict[str, Any]]
+    client: FlaskClient,
+    task_id: str,
+    mongo_client: MongoClient[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The tracking of a task keeps its gateway tags when it stores the task."""
+    """The tracking of a task keeps its gateway tags when it stores the task.
+
+    Also tags written after the tracking read the task (e.g., the routing
+    tags of a task that a resumed poll found finished while it was created).
+    """
     document = stored(mongo_client, task_id)
-    tags = document["task"]["tags"]
     connector = DbDocumentConnector(
         collection=mongo_client[DB]["tasks"], worker_id=document["worker_id"]
     )
+    read = connector.get_document()
+    tags = {**document["task"]["tags"], "gateway.attempts": "9"}
+    mongo_client[DB]["tasks"].update_one(
+        {"task.id": task_id}, {"$set": {"task.tags": tags}}
+    )
+    monkeypatch.setattr(connector, "get_document", lambda: read)
     response = tes.Task(
         id="remote-1",
         state="COMPLETE",
@@ -275,3 +288,23 @@ def test_admins_provenance_removed(
     path = provenance_path(task_id)
     assert client.get(path).status_code == 200
     assert client.get(path, headers=make_headers(ADMIN)).status_code == 403
+
+
+def test_gateway_tags_not_built(
+    client: FlaskClient,
+    backend: type[FakeBackend],
+    mongo_client: MongoClient[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Tasks are created if their creation tags can't be built."""
+
+    def creation_tags(*args: Any, **kwargs: Any) -> dict[str, str]:
+        """Fail to build the tags."""
+        raise RuntimeError("not built")
+
+    monkeypatch.setattr(task_runs, "creation_tags", creation_tags)
+    response = client.post(f"{BASE_PATH}/tasks", json=TASK)
+    assert response.status_code == 200
+    tags = stored(mongo_client, response.get_json()["id"])["task"]["tags"]
+    assert "gateway.pipeline_source" not in tags
+    assert tags["gateway.backend"] == BACKENDS[0]

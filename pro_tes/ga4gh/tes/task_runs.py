@@ -109,6 +109,26 @@ def flatten_forwards(task: dict[str, Any]) -> dict[str, Any]:
     return task
 
 
+def _creation_tags(run: PipelineRun, provenance_path: str) -> dict[str, str]:
+    """Get FOCA's gateway tags of a new task, without failing its creation.
+
+    Args:
+        run: Pipeline run of the request.
+        provenance_path: Path of the task's provenance.
+
+    Returns:
+        The tags (cf. :py:func:`foca.plugins.tags.creation_tags`); none if
+        they can't be built (e.g., if the provenance of the run can't be,
+        which :py:meth:`foca.plugins.ProvenanceStore.save` records as
+        `error: internal`).
+    """
+    try:
+        return creation_tags(run, provenance_path=provenance_path)
+    except Exception:
+        logger.exception("Gateway tags of the task not built")
+        return {}
+
+
 class _Accepted(NamedTuple):
     """Attempt of the backend that accepted a task.
 
@@ -340,7 +360,7 @@ class TaskRuns:
             start_time=start_time,
             owner=owner,
             collection=collection,
-            tags=lambda task_id: creation_tags(
+            tags=lambda task_id: _creation_tags(
                 run, provenance_path=f"{collection.rstrip('/')}/{task_id}/provenance"
             ),
         )
