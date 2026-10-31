@@ -678,11 +678,11 @@ config:
 ```
 
 The app authenticates as the app user against its database (`taskStore`),
-so create that user there, with the `readWrite` role on `taskStore` (the
-app creates the indexes of its collections on startup, also those of the
-plugin store, `plugin_store`, so the user needs `createIndex`, which
-`readWrite` includes); allow the app's and the worker's pods to connect to
-the database.
+so create that user there, with the `readWrite` role on `taskStore`, which
+includes the right to create the indexes that the app creates on startup
+(also those of the [plugin
+store](https://protes.readthedocs.io/en/latest/operations/#plugin-store));
+allow the app's and the worker's pods to connect to the database.
 
 ## Upgrades
 

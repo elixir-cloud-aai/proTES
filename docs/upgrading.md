@@ -509,14 +509,11 @@ security:
 FOCA 0.19 gives plugins a key-value store (`ctx.store`, e.g., for caches
 and per-user counters; see [Plugin store](operations.md#plugin-store)).
 proTES keeps its entries in the collection `plugin_store` of the database of
-the tasks (`taskStore`, or the one in `MONGO_DBNAME`), and creates its
-indexes there on startup (a TTL index on `expires_at`, one on `ns`): the
-database user of proTES needs the right to create indexes (`createIndex`,
-part of the role `readWrite`, which the Helm chart grants its app user; for
-an external MongoDB, check the roles of the user). If the indexes can't be
-created, proTES starts anyway and logs it (as an error for missing rights,
-failed authentication or conflicting indexes), and writes of plugins to the
-store fail until the indexes exist. The new settings
+the tasks and creates its indexes on startup, so the database user of
+proTES needs the right to create indexes (`createIndex`, part of the role
+`readWrite`, which the Helm chart grants its app user; for an external
+MongoDB, check the roles of the user). Without it, proTES starts anyway and
+logs an error, and writes of plugins to the store fail. The new settings
 `plugins.defaults.store` and `plugins.available.<id>.store` (`enabled`,
 `max_entry_size`, `max_ttl`; see [Plugins](configuration.md#plugins)) have
 defaults, so configs need no change.

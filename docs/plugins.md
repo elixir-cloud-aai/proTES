@@ -161,8 +161,9 @@ prefix), and get a plugin with `GET /ga4gh/tes/v1/plugins/{plugin_id}`.
 Each plugin is listed with the data it sends to third parties
 (`data_transfers`), the data it keeps in its store (`data_stored`) and the
 store's mode (`storage`: `shared`, `local` or `off`; see [Plugin
-store](operations.md#plugin-store)); the public service info tells whether clients may choose, in its field
-`gateway`, without naming plugins. For example, with `curl` and an access
+store](operations.md#plugin-store)). The public service info tells whether
+clients may choose, in its field `gateway`, without naming plugins. For
+example, with `curl` and an access
 token in `TOKEN` (in Bash), for a preset `fast` of the admin and a TES
 instance of the deployment:
 

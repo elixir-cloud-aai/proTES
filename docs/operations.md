@@ -227,11 +227,14 @@ Plugins may keep small data across requests in FOCA's key-value store
 (`ctx.store`, e.g., caches and per-user counters; see FOCA's
 [documentation](https://foca.readthedocs.io/en/latest/configuration/plugins/#plugin-store)).
 proTES itself stores nothing there. The entries are in the collection
-`plugin_store` of the database of the tasks (`taskStore`, or the one in
-`MONGO_DBNAME`), shared by all instances, with a namespace (`ns`) per plugin
-distribution and an expiry (`expires_at`): entries live at most
-`max_ttl` seconds (by default 30 days; see [Plugins](configuration.md#plugins)),
-and MongoDB removes expired entries about once a minute.
+`plugin_store` of the app's first database in `db.dbs`, the database of the
+tasks (`taskStore`, or the one in `MONGO_DBNAME`), shared by all instances,
+with a namespace (`ns`) per plugin distribution and an expiry
+(`expires_at`): entries live at most `max_ttl` seconds (by default 30 days;
+see [Plugins](configuration.md#plugins)), and MongoDB removes expired
+entries about once a minute. Plugins whose store is turned off
+(`enabled: false`) keep their entries in the memory of each process
+instead, without size limit: give them a short `max_ttl` (e.g., an hour).
 
 proTES creates the indexes of the collection on startup (a TTL index on
 `expires_at`, one on `ns`), so its database user needs the right to create
