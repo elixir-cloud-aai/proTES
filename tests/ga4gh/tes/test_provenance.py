@@ -258,11 +258,13 @@ def test_provenance_response_failed(
     with_plugins: PluginClient,
     backend: type[FakeBackend],
     mongo_client: MongoClient[dict[str, Any]],
+    tracked: list[dict[str, Any]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Errors of the `response` phase keep the task, with its provenance.
 
-    The run is not recorded as failed: its task runs at the backend.
+    The task is tracked; the run is not recorded as failed: its task runs at
+    the backend.
     """
 
     def respond(self: PipelineRun, *args: Any, **kwargs: Any) -> None:
@@ -275,6 +277,7 @@ def test_provenance_response_failed(
     (document,) = mongo_client[DB]["tasks"].find()
     (attempt,) = document["provenance"]["attempts"]
     assert attempt["outcome"] == "accepted"
+    assert len(tracked) == 1
     assert mongo_client[DB][FAILED_RUNS_COLLECTION].count_documents({}) == 0
 
 
@@ -345,3 +348,25 @@ def test_provenance_outcome_unknown_not_stored(
     assert document["provenance"]["final_reason"] == "outcome_unknown"
     (attempt,) = document["provenance"]["attempts"]
     assert attempt["outcome"] == "unknown"
+
+
+def test_provenance_tracking_failed(
+    client: FlaskClient,
+    backend: type[FakeBackend],
+    mongo_client: MongoClient[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The accepted attempt is stored also if the tracking can't be started."""
+
+    def apply_async(*args: Any, **kwargs: Any) -> None:
+        """Fail as if the broker were down."""
+        raise RuntimeError("broker down")
+
+    monkeypatch.setattr(
+        task_runs_module.task__track_task_progress, "apply_async", apply_async
+    )
+    client.application.config["PROPAGATE_EXCEPTIONS"] = False
+    assert client.post(f"{BASE_PATH}/tasks", json=TASK).status_code == 500
+    (document,) = mongo_client[DB]["tasks"].find()
+    (attempt,) = document["provenance"]["attempts"]
+    assert attempt["outcome"] == "accepted"

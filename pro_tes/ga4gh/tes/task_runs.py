@@ -496,42 +496,51 @@ class TaskRuns:
             tes_url=tes_url,
             remote_task_id=remote_task_id,
         )
-        try:
-            remote_task: Task = cli.get_task(remote_task_id)
-            task_model_converter = TaskModelConverter(task=remote_task)
-            task_converted: TesTask = task_model_converter.convert_task()
-            state = TesState(task_converted.state)
-            # unless a request to cancel the task changed it meanwhile
-            if db_connector.update_task_state(
-                state=state.value, if_state=TesState.UNKNOWN.value
-            ):
-                db_document.task.state = state
-        except Exception as exc:
-            # the task is tracked anyway, also if its backend serves it
-            # invalid (e.g., with an unknown state)
-            logger.error(
-                "Task '%s' info could not be retrieved from TES endpoint"
-                " hosted at: %s. Original error message: '%s: %s'",
-                db_document.task.id,
-                tes_url,
-                type(exc).__name__,
-                exc,
-            )
-        task__track_task_progress.apply_async(
-            None,
-            {
-                "worker_id": db_document.worker_id,
-                "remote_host": db_document.tes_endpoint.host,
-                "remote_base_path": db_document.tes_endpoint.base_path,
-                "remote_task_id": remote_task_id,
-            },
-        )
         response.client_payload = {"id": db_document.task.id}
+        failed: Exception | None = None
         try:
+            # reported once the backend is stored, so that the provenance
+            # has the attempt whatever fails later
             response = attempt.succeeded(response, remote_id=remote_task_id)
+        except Exception as exc:
+            # raised once the task is tracked
+            failed = exc
+        try:
+            try:
+                remote_task: Task = cli.get_task(remote_task_id)
+                task_model_converter = TaskModelConverter(task=remote_task)
+                task_converted: TesTask = task_model_converter.convert_task()
+                state = TesState(task_converted.state)
+                # unless a request to cancel the task changed it meanwhile
+                if db_connector.update_task_state(
+                    state=state.value, if_state=TesState.UNKNOWN.value
+                ):
+                    db_document.task.state = state
+            except Exception as exc:
+                # the task is tracked anyway, also if its backend serves it
+                # invalid (e.g., with an unknown state)
+                logger.error(
+                    "Task '%s' info could not be retrieved from TES endpoint"
+                    " hosted at: %s. Original error message: '%s: %s'",
+                    db_document.task.id,
+                    tes_url,
+                    type(exc).__name__,
+                    exc,
+                )
+            task__track_task_progress.apply_async(
+                None,
+                {
+                    "worker_id": db_document.worker_id,
+                    "remote_host": db_document.tes_endpoint.host,
+                    "remote_base_path": db_document.tes_endpoint.base_path,
+                    "remote_task_id": remote_task_id,
+                },
+            )
         finally:
-            # with the attempts and the `response` phase, also if it failed
+            # with the attempts and the `response` phase
             self._update_provenance(run=run, worker_id=db_document.worker_id)
+        if failed is not None:
+            raise failed
         return response.client_payload, dict(response.client_headers)
 
     def _update_provenance(self, run: PipelineRun, worker_id: str) -> None:
