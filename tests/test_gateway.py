@@ -2,11 +2,14 @@
 
 from collections import UserDict
 from dataclasses import replace
+from pathlib import Path
 from typing import Any
 
 from connexion import FlaskApp
 from foca import get_custom_config
+from foca.models.config import Config
 from foca.plugins import GatewayError, Headers, OutboundRequest
+from foca.plugins.api import SPEC_PATH
 from foca.plugins.backends import ServiceEntry
 from pydantic import ValidationError
 import pytest
@@ -141,3 +144,22 @@ def test_error_mapping() -> None:
     for exc, entry in exceptions.items():
         if issubclass(exc, GatewayError):
             assert entry["status"] == exc.code, exc.__name__
+
+
+def test_add_plugin_listing() -> None:
+    """FOCA's plugin listing is added to the TES API once, not to other APIs."""
+    config = Config.model_validate(
+        {
+            "api": {
+                "specs": {
+                    "other": {"path": "other.yaml"},
+                    "tes": {"path": "tes.yaml"},
+                }
+            }
+        }
+    )
+    gateway.add_plugin_listing(config)
+    gateway.add_plugin_listing(config)
+    other, tes_spec = config.api.specs
+    assert other.path == [Path("other.yaml").resolve()]
+    assert tes_spec.path == [Path("tes.yaml").resolve(), Path(SPEC_PATH)]

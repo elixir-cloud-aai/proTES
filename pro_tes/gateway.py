@@ -18,15 +18,23 @@ plain data, without the web framework:
   plugin);
 - :py:func:`check_outbound` checks that the task of an outbound request can
   be relayed, after the `forward` phase of each attempt.
+
+The app serves FOCA's plugin listing (`GET /plugins`, cf.
+:py:mod:`foca.plugins.api`) with the TES API (cf.
+:py:func:`add_plugin_listing`), so that clients see what they may choose
+per task (tags `gateway.pipeline` and `gateway.backends`).
 """
 
 from collections.abc import Mapping
 from copy import deepcopy
 from importlib.metadata import version
+from pathlib import Path
 from typing import Any, Literal
 
 from foca import get_custom_config
+from foca.models.config import Config
 from foca.plugins import OutboundRequest
+from foca.plugins.api import SPEC_PATH
 from foca.plugins.backends import BackendListConfig
 from foca.plugins.runtime import GatewayApp
 from foca.plugins.tags import strip_for_forwarding
@@ -39,6 +47,12 @@ from pro_tes.utils.misc import has_credentials, strip_auth
 
 TASKS_PATH = "/ga4gh/tes/v1/tasks"
 """Path of the requests to create tasks, below the URL of a backend."""
+
+TES_SPEC = "tes"
+"""Name of the API specification of the TES API (`api.specs`)."""
+
+PLUGINS_PATH = "/ga4gh/tes/v1/plugins"
+"""Path of FOCA's plugin listing, below the base path of the TES API."""
 
 RESERVED_HEADERS = frozenset(
     {
@@ -296,6 +310,29 @@ def backend_entries(config: Any) -> BackendListConfig:
     """
     backends: BackendListConfig = config.custom.tes.backends
     return backends
+
+
+def add_plugin_listing(config: Config) -> None:
+    """Serve FOCA's plugin listing with the TES API.
+
+    Adds the paths of FOCA's specification of the listing (`GET /plugins`
+    and `GET /plugins/{plugin_id}`, :py:data:`foca.plugins.api.SPEC_PATH`)
+    to the TES API (spec `tes` of `api.specs`), so that they are served
+    below its base path (:py:data:`PLUGINS_PATH`). The access control rules
+    `users-list-plugins` and `users-get-plugins` allow them.
+
+    Args:
+        config: FOCA configuration of proTES, before the app is created;
+            changed in place. Nothing is added if the spec `tes` is removed
+            or lists the listing already.
+    """
+    listing = Path(SPEC_PATH)
+    for spec in config.api.specs:
+        if spec.name != TES_SPEC:
+            continue
+        paths = spec.path if isinstance(spec.path, list) else [spec.path]
+        if listing not in paths:
+            spec.path = [*paths, listing]
 
 
 GATEWAY = GatewayApp(
