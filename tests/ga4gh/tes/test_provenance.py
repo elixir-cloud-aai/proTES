@@ -16,7 +16,9 @@ from unittest.mock import MagicMock
 from connexion import FlaskApp
 from flask.testing import FlaskClient
 from foca import get_custom_config
+from foca.plugins import GatewayError, ProvenanceStore
 from foca.plugins.backends import BackendListConfig
+from foca.plugins.engine import PipelineRun
 from foca.plugins.provenance import FAILURE_INDEXES
 from pymongo import MongoClient
 import pytest
@@ -26,6 +28,7 @@ import yaml
 import pro_tes
 from pro_tes.config_models import CustomConfig
 from pro_tes.exceptions import BackendOutcomeUnknown
+from pro_tes.ga4gh.tes import task_runs as task_runs_module
 from pro_tes.ga4gh.tes.models import DbDocument
 from pro_tes.ga4gh.tes.task_runs import TaskRuns
 from pro_tes.utils.db import (
@@ -70,7 +73,9 @@ def test_failed_runs_index(
     indexes = mongo_client[DB][FAILED_RUNS_COLLECTION].index_information()
     (ttl,) = (index for index in indexes.values() if "expireAfterSeconds" in index)
     assert ttl["key"] == [("failed_at", 1)]
-    assert ttl["expireAfterSeconds"] == 30 * 24 * 3600
+    assert (
+        ttl["expireAfterSeconds"] == FAILURE_INDEXES[0]["options"]["expireAfterSeconds"]
+    )
 
 
 def test_provenance(task_id: str, mongo_client: MongoClient[dict[str, Any]]) -> None:
@@ -226,8 +231,8 @@ def test_provenance_not_updated(
         task_runs = TaskRuns()
     task_runs.db_client = MagicMock()
     task_runs.db_client.update_one.side_effect = RuntimeError("database down")
-    run = MagicMock(request_id="request-1")
-    run.provenance.side_effect = RuntimeError("not built")
+    task_runs.provenance = MagicMock()
+    run = MagicMock()
     with caplog.at_level(logging.ERROR):
         task_runs._update_provenance(run=run, worker_id="worker-1")
     assert "Provenance of task with worker ID 'worker-1' not updated" in caplog.text
@@ -247,3 +252,53 @@ def test_provenance_not_loaded(
     )
     assert connector.get_document().provenance is None
     assert DbDocument(**document).provenance == document["provenance"]
+
+
+def test_provenance_response_failed(
+    with_plugins: PluginClient,
+    backend: type[FakeBackend],
+    mongo_client: MongoClient[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Errors of the `response` phase keep the task, with its provenance.
+
+    The run is not recorded as failed: its task runs at the backend.
+    """
+
+    def respond(self: PipelineRun, *args: Any, **kwargs: Any) -> None:
+        """Fail the `response` phase."""
+        raise GatewayError("response failed", run=self)
+
+    client = with_plugins({}, provenance={"record_failed": True})
+    monkeypatch.setattr(PipelineRun, "respond", respond)
+    assert client.post(f"{BASE_PATH}/tasks", json=TASK).status_code == 500
+    (document,) = mongo_client[DB]["tasks"].find()
+    (attempt,) = document["provenance"]["attempts"]
+    assert attempt["outcome"] == "accepted"
+    assert mongo_client[DB][FAILED_RUNS_COLLECTION].count_documents({}) == 0
+
+
+def test_provenance_not_stored(
+    client: FlaskClient,
+    backend: type[FakeBackend],
+    mongo_client: MongoClient[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Tasks are created if plugin builds can't be stored; records keep them."""
+
+    class Unwritable(ProvenanceStore):
+        """Store whose collection of plugin builds can't be written."""
+
+        def __init__(self, **kwargs: Any) -> None:
+            """Create the store, with an unwritable collection of builds."""
+            super().__init__(**kwargs)
+            self.plugin_builds = MagicMock()
+            self.plugin_builds.update_one.side_effect = RuntimeError("down")
+
+    monkeypatch.setattr(task_runs_module, "ProvenanceStore", Unwritable)
+    response = client.post(f"{BASE_PATH}/tasks", json=TASK)
+    assert response.status_code == 200
+    provenance = stored(mongo_client, response.get_json()["id"])["provenance"]
+    assert provenance["stored"] is False
+    assert set(provenance["builds"]) == set(provenance["plugins"])
+    assert mongo_client[DB][PLUGIN_BUILDS_COLLECTION].count_documents({}) == 0

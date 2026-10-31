@@ -181,11 +181,16 @@ records go to the collection `failed_runs`, with the time (`failed_at`) and
 the error (`type`, `status`, `slug`), keyed by request identifier (the
 client's `X-Request-ID`, if valid; a request with the same identifier
 replaces the record). Requests refused before the pipeline started (e.g.,
-invalid tasks, loops, or invalid tags under `gateway.`) have no record. A TTL index deletes records 30 days after they failed (FOCA's
-default; `db` section of `config.yaml`). To keep them for another time,
-change the index in place, and set its `expireAfterSeconds` in the config
-to the same value (else proTES refuses to start, as the configured index
-conflicts with the existing one), e.g., for 7 days:
+invalid tasks, loops, or invalid tags under `gateway.`) have no record, nor
+have tasks whose response a plugin failed: they are kept, and run at their
+TES instance.
+
+A TTL index deletes the records of failed runs 30 days after they failed
+(FOCA's default; `db` section of `config.yaml`). To keep them for another
+time, change the index in place, and set its `expireAfterSeconds` in the
+config to the same value (else proTES refuses to start, as the configured
+index conflicts with the existing one), e.g., for 7 days, in the database
+of the tasks (`use taskStore`, or the one in `MONGO_DBNAME`):
 
 ```js
 db.runCommand({
@@ -194,7 +199,8 @@ db.runCommand({
 })
 ```
 
-To look up the provenance of a task, or recent failed runs:
+To look up the provenance of a task, or recent failed runs (in the same
+database):
 
 ```js
 // provenance of a task, with its pipeline and plugin builds

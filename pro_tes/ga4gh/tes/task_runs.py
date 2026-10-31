@@ -250,7 +250,7 @@ class TaskRuns:
             request_id=request_id,
         )
         try:
-            return self._run_pipeline(
+            accepted, db_document, db_connector = self._run_pipeline(
                 run=run,
                 db_document=db_document,
                 start_time=start_time,
@@ -263,6 +263,15 @@ class TaskRuns:
             # `plugins.provenance.record_failed` (never raises)
             self.provenance.save_failure(run, exc)
             raise
+        # errors of the `response` phase don't discard the task: it runs at
+        # the backend, so it is kept, tracked and cancelable, with its
+        # provenance; it is no failed run
+        return self._forwarded(
+            run=run,
+            accepted=accepted,
+            db_document=db_document,
+            db_connector=db_connector,
+        )
 
     def _run_pipeline(
         self,
@@ -271,7 +280,7 @@ class TaskRuns:
         start_time: str,
         owner: str,
         collection: str,
-    ) -> tuple[Any, dict[str, str]]:
+    ) -> tuple[_Accepted, DbDocument, DbDocumentConnector]:
         """Run the pipeline of a new task, store the task, and relay it.
 
         Args:
@@ -283,7 +292,8 @@ class TaskRuns:
             collection: Request path of the tasks.
 
         Returns:
-            Response to the client and its headers (cf. :py:meth:`create_task`).
+            The attempt of the backend that accepted the task (cf.
+            :py:meth:`_forward`), and the stored task and its connector.
 
         Raises:
             foca.plugins.GatewayError: The pipeline run failed, or no backend
@@ -348,14 +358,7 @@ class TaskRuns:
                 db_document=db_document, owner=owner, collection=collection
             )
             raise
-        # errors of the `response` phase don't discard the task: it runs at
-        # the backend, so it is kept, tracked and cancelable
-        return self._forwarded(
-            run=run,
-            accepted=accepted,
-            db_document=db_document,
-            db_connector=db_connector,
-        )
+        return accepted, db_document, db_connector
 
     def _forward(
         self,
