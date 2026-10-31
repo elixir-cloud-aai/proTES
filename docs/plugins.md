@@ -131,6 +131,71 @@ pipeline or a preset of the admin (`plugins.presets`) with the tag
 tasks that set them are rejected with `400 Bad Request`. The stored task
 keeps the client's tags; TES instances get no tags under `gateway.`.
 
+Each choice applies to its task only: other tasks, also concurrent ones,
+run their own choices or the default pipeline. FOCA's plugin engine
+validates the choices before any plugin runs; tasks with invalid choices
+are rejected with `400 Bad Request` and not stored, e.g., an unknown
+preset, a plugin that isn't available to the caller (`plugin not
+available: <id>`), invalid JSON, or a choice that the admin disabled
+(`plugins.client_pipelines.enabled`, `plugins.client_backends.enabled`).
+
+- `gateway.pipeline`: the name of a preset, or a pipeline as a JSON array
+  of steps, as in `plugins.pipeline` (e.g.,
+  `[{"id": "route", "alternatives": [{"plugin": "foca.routing.ordered"}]}]`),
+  from the plugins that the admin made available to clients
+  (`client_selectable` and `roles` in `plugins.available`). The chosen
+  pipeline replaces the default one, between the steps of
+  `plugins.client_pipelines.prepend` and `append` (by default, FOCA's
+  ordered failover if no step of the client routes the task).
+- `gateway.backends`: `order` puts the listed TES instances first, `allow`
+  keeps only them, and `forbid` drops them, each in the order of proTES
+  otherwise. Only TES instances that proTES would use anyway count
+  (configured, or discovered and verified in a registry): others are
+  discarded and recorded in the task's provenance, so clients can't make
+  proTES use other TES instances.
+
+Users (role `user`) list what they may choose with `GET /ga4gh/tes/v1/plugins`
+(the plugins and presets, the default pipeline, the limits of
+`plugins.client_pipelines` and `plugins.client_backends`, and the tag
+prefix), and get a plugin with `GET /ga4gh/tes/v1/plugins/{plugin_id}`;
+the public service info tells whether clients may choose, in its field
+`gateway`, without naming plugins. For example, with `curl` and an access
+token in `TOKEN` (in Bash):
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" https://protes.example.org/ga4gh/tes/v1/plugins
+curl -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"executors": [{"image": "alpine", "command": ["echo", "hello"]}],
+       "tags": {"gateway.pipeline": "fast",
+                "gateway.backends": "{\"type\": \"allow\", \"backends\": [\"https://tes.example.org\"]}"}}' \
+  https://protes.example.org/ga4gh/tes/v1/tasks
+```
+
+With [py-tes](https://github.com/ohsu-comp-bio/py-tes):
+
+```python
+import json
+
+import tes
+
+client = tes.HTTPClient("https://protes.example.org", token="<access token>")
+task = tes.Task(
+    executors=[tes.Executor(image="alpine", command=["echo", "hello"])],
+    tags={
+        "gateway.pipeline": "fast",
+        "gateway.backends": json.dumps(
+            {"type": "allow", "backends": ["https://tes.example.org"]}
+        ),
+    },
+)
+task_id = client.create_task(task)
+```
+
+To run a fetched task again, drop the tags that proTES wrote (all under
+`gateway.` except `gateway.pipeline` and `gateway.backends`, see [Gateway
+tags](api.md#gateway-tags)) and the fields that TES servers set (e.g.,
+`id`, `state`, `logs`, `creation_time`); otherwise, the task is rejected.
+
 All settings of the section `plugins` (e.g., `defaults`, `presets`,
 `client_pipelines`, `client_backends`, `tags` and `gateway_id`) are
 described in FOCA's documentation.

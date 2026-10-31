@@ -57,8 +57,9 @@ The roles and their permissions are the policies of
 `security.access_control.policies` in the base config (see
 [FOCA's access control](https://foca.readthedocs.io/en/latest/access-control/)),
 named rules (`users-create-list-tasks`, `owners-get-cancel-tasks`,
-`owners-get-provenance`, `admins-get-provenance`,
-`admins-list-add-permissions` and `admins-manage-permissions`): a config
+`owners-get-provenance`, `admins-get-provenance`, `users-list-plugins`,
+`users-get-plugins`, `admins-list-add-permissions` and
+`admins-manage-permissions`): a config
 overlay adds, changes or removes (`null`) single rules by name, e.g., rules
 that let users only list their tasks, and owners only read them:
 
@@ -91,6 +92,12 @@ claim set in `security.access_control.claim_identity`) becomes its owner:
   only which plugins and TES instances processed it (see
   [Provenance](api.md#provenance)); remove `admins-get-provenance` (`null`
   in an overlay) to keep it from admins.
+
+- `GET /plugins` and `GET /plugins/{plugin_id}` (what users may choose per
+  task, see [Choices of clients](plugins.md#choices-of-clients)) are allowed
+  for the role `user` (rules `users-list-plugins` and `users-get-plugins`);
+  everyone else gets `403 Forbidden`, and requests without an access token
+  `401 Unauthorized`.
 
 Tasks are not shared with other users, and admins can't read or cancel the
 tasks of others through the API: tasks and their logs may hold sensitive

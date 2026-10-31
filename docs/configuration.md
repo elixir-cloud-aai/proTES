@@ -370,5 +370,9 @@ own `id`, `name`, `description`, `organization`, `contactUrl` and
 `environment`, and `storage` (the storage locations their TES instances can
 access), in `service_info.service`. The service info also lists the URLs
 of the TES instances that tasks may be forwarded to, configured and
-discovered (`backends`, from `service_info.runtime_fields`); set
+discovered (`backends`, from `service_info.runtime_fields`), and what
+clients may choose per task (`gateway`: `plugins_url`, the path of
+`GET /plugins`, whether clients may choose pipelines and TES instances,
+and the capabilities of the plugins, without their identifiers or
+versions; see [Choices of clients](plugins.md#choices-of-clients)); set
 `runtime_fields` to `null` in an overlay to hide them.
