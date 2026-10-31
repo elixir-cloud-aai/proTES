@@ -28,9 +28,12 @@ checks the address of each connection itself, so that hosts whose addresses
 change between checks (DNS rebinding) can't lead requests to private
 addresses (unless allowed, `allow_private_addresses` of the registry entry);
 their redirects are not followed, and their responses are limited to
-`MAX_RESPONSE_SIZE` bytes. Requests time out after `custom.tes.timeout`
-seconds (and after `CONNECT_TIMEOUT` seconds while connecting); requests
-to discovered backends as a whole (cf. :py:meth:`TesClient._request`).
+`MAX_RESPONSE_SIZE` bytes (not those of redirects yet, which FOCA 0.18
+reads whole). Requests to configured backends time out after
+`custom.tes.timeout` seconds without data, and after `CONNECT_TIMEOUT`
+seconds while connecting; requests to discovered backends must end within
+`custom.tes.timeout` seconds as a whole, and connecting within FOCA's
+`MAX_CONNECT_TIMEOUT` (10) seconds (cf. :py:meth:`TesClient._request`).
 
 Tasks are created and canceled with a single `POST` request each (which
 doesn't follow redirects), to the API path of the backend's URL
@@ -60,6 +63,8 @@ from foca.utils.http import (
     GuardedClient,
     HostNotResolved,
     HttpResponse,
+    InvalidRequest,
+    InvalidRequestURL,
     RequestMaybeSent,
     RequestNotSent,
 )
@@ -67,7 +72,7 @@ import requests
 from requests.structures import CaseInsensitiveDict
 import tes
 from tes.utils import unmarshal
-from urllib3.exceptions import ConnectTimeoutError
+from urllib3.exceptions import ConnectTimeoutError, NewConnectionError
 
 from pro_tes.config_models import (
     ClientCredentials,
@@ -102,6 +107,12 @@ CONNECT_TIMEOUT = 5
 # Maximum size of responses of discovered backends, in bytes (e.g., tasks
 # with their logs)
 MAX_RESPONSE_SIZE = 64 * 1024 * 1024
+
+
+class BackendConnectTimeout(BackendRequestNotSent, requests.ConnectTimeout):
+    """Connecting to a discovered backend timed out (not sent)."""
+
+
 # Errors of `requests` raised before anything is sent
 NOT_SENT_ERRORS = (
     BackendRequestNotSent,
@@ -790,11 +801,21 @@ class TesClient(tes.HTTPClient):
             # TLS errors after the handshake may come after the request was
             # sent; only refused certificates certainly prevent sending (as
             # for configured backends, cf. `not_sent`)
+            # FOCA reports invalid headers and URLs of responses (e.g., of
+            # redirects) like those of requests, after the request was sent
+            if isinstance(exc, InvalidRequest | InvalidRequestURL):
+                raise requests.ConnectionError(str(exc)) from exc
             if exc.reason == "tls_error" and not any(
                 isinstance(cause, ssl.SSLCertVerificationError)
                 for cause in _causes(exc)
             ):
                 raise requests.ConnectionError(str(exc)) from exc
+            if any(
+                isinstance(cause, ConnectTimeoutError)
+                and not isinstance(cause, NewConnectionError)
+                for cause in _causes(exc)
+            ):
+                raise BackendConnectTimeout(str(exc)) from exc
             raise BackendRequestNotSent(str(exc)) from exc
         except RequestMaybeSent as exc:
             if exc.reason == "read_timeout":

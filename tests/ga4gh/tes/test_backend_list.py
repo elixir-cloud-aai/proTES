@@ -22,6 +22,7 @@ from foca.utils.http import AddressNotAllowed, HostNotResolved
 import pytest
 import requests
 import tes
+from urllib3.exceptions import ConnectTimeoutError, NewConnectionError
 
 from pro_tes.config_models import ClientCredentials, CustomConfig
 from pro_tes.exceptions import (
@@ -399,6 +400,8 @@ def test_client_private_allowed(rebinding: tuple[str, Listener]) -> None:
     [
         (HostNotResolved("x not resolved"), BackendAddressNotAllowed),
         (http.RequestNotSent("x not reached"), BackendRequestNotSent),
+        (http.InvalidRequest("x", reason="invalid_header"), requests.ConnectionError),
+        (http.InvalidRequestURL("x"), requests.ConnectionError),
         (http.RequestMaybeSent("x", reason="read_timeout"), requests.ReadTimeout),
         (http.RequestMaybeSent("x lost"), requests.ConnectionError),
     ],
@@ -422,7 +425,7 @@ def test_client_guarded_errors(
     with pytest.raises(expected) as info:
         client.get_task("r1")
     assert isinstance(info.value, requests.RequestException)
-    assert backends.not_sent(info.value) is isinstance(error, http.RequestNotSent)
+    assert backends.not_sent(info.value) is issubclass(expected, BackendRequestNotSent)
     assert backends.forward_reason(info.value) in {
         "address_not_allowed",
         "connect_error",
@@ -461,6 +464,35 @@ def test_client_guarded_tls_error(
     else:
         with pytest.raises(BackendOutcomeUnknown):
             client.forward(request, tes.Task(executors=[]))
+
+
+@pytest.mark.parametrize(
+    "cause, reason",
+    [
+        (ConnectTimeoutError("timed out"), "connect_timeout"),
+        (NewConnectionError(None, "refused"), "connect_error"),  # type: ignore[arg-type]
+    ],
+)
+def test_client_guarded_connect_errors(
+    discovering: FakeRegistry,
+    monkeypatch: pytest.MonkeyPatch,
+    cause: Exception,
+    reason: str,
+) -> None:
+    """Connect timeouts of discovered backends are reported as such."""
+    discovering.add("a", "https://tes1.example.org")
+    client = backends.create_client(host="https://tes1.example.org")
+
+    def fail(*args: Any, **kwargs: Any) -> Any:
+        """Fail as the guarded client does when connecting fails."""
+        raise http.RequestNotSent("not reached") from cause
+
+    assert client.guarded is not None
+    monkeypatch.setattr(client.guarded, "request", fail)
+    with pytest.raises(BackendRequestNotSent) as info:
+        client.get_task("r1")
+    assert backends.not_sent(info.value)
+    assert backends.forward_reason(info.value) == reason
 
 
 def test_client_guarded_arguments(discovering: FakeRegistry) -> None:

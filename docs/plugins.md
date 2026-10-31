@@ -58,9 +58,9 @@ Plugins run with time limits (`plugins.defaults`): a plugin that doesn't
 return in time counts as failed, and if no TES instance accepted the task
 after `forward_timeout` seconds (default 60), the request fails with
 `503 Service Unavailable` (the timeout of connecting to a configured TES
-instance is shortened to the time left, that of discovered ones not yet, as
-FOCA's guarded HTTP client has no such option; requests already sent are
-not cut short, so that their outcome is known). Requests that already passed proTES (a `Via`
+instance is shortened to the time left; that of discovered ones not yet, as
+the deadline of FOCA's guarded HTTP client would cut reads short, too;
+requests already sent are not cut short, so that their outcome is known). Requests that already passed proTES (a `Via`
 header with the host of `server.public_url`, or `plugins.gateway_id`) are
 refused with `508 Loop Detected`; requests to TES instances carry a `Via`
 header with it.

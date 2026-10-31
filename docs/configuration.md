@@ -197,7 +197,8 @@ following hold:
   (FOCA's guarded HTTP client), so that hosts whose addresses change after
   the check (DNS rebinding) can't lead requests, and proTES's credentials,
   to such addresses. Requests to discovered TES instances don't follow
-  redirects, and their responses are limited to 64 MiB.
+  redirects, and their responses are limited to 64 MiB (except the bodies
+  of redirects, which FOCA 0.18 reads whole).
 
 The registry is read without access token (its reads are public), over a
 URL with a scheme of the entry's `url_schemes`, at public addresses (unless
