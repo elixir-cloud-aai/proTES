@@ -11,7 +11,9 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 DOCS = "https://protes.readthedocs.io/en"
-REPO = "https://github.com/elixir-cloud-aai/proTES"
+REPO = "https://github.com/elixir-cloud-aai/protes"
+# The repository's name before the rename to `protes` (GitHub ignores the case)
+MIXED_CASE_REPO = "https://github.com/elixir-cloud-aai/proTES"
 
 SCRIPT = ROOT / "scripts/chart_readme.py"
 
@@ -34,6 +36,13 @@ _spec.loader.exec_module(chart_readme)
             f"[config]({REPO}/blob/dev/pro_tes/config.yaml)",
             f"[config]({REPO}/blob/v1.2.3rc1/pro_tes/config.yaml)",
         ),
+        # The repository's name in any case, which is kept
+        (
+            f"[config]({MIXED_CASE_REPO}/blob/dev/pro_tes/config.yaml)",
+            f"[config]({MIXED_CASE_REPO}/blob/v1.2.3rc1/pro_tes/config.yaml)",
+        ),
+        # Only the repository's name is matched in any case
+        (f"{REPO}/blob/DEV/a", f"{REPO}/blob/DEV/a"),
         # Several links per line, also in code blocks (the packaged README is
         # not rendered by the docs)
         (
@@ -92,8 +101,11 @@ def test_version_links(markdown: str, expected: str) -> None:
         f"{REPO}/blob/refs/heads/dev/README.md",
         f"{REPO}/releases/latest",
         f"{REPO}/releases/latest/download/protes.tgz",
+        f"{MIXED_CASE_REPO}/blob/dev/README.md",
+        f"{MIXED_CASE_REPO}/releases/latest",
         "https://raw.githubusercontent.com/elixir-cloud-aai/proTES/dev/x",
-        "https://raw.githubusercontent.com/elixir-cloud-aai/proTES/refs/heads/dev/x",
+        "https://raw.githubusercontent.com/elixir-cloud-aai/protes/dev/x",
+        "https://raw.githubusercontent.com/elixir-cloud-aai/protes/refs/heads/dev/x",
     ],
 )
 def test_unversioned_links(markdown: str) -> None:

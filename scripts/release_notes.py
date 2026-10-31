@@ -85,7 +85,7 @@ BULLETS_ONLY = "Sections hold bullets only, e.g., - <change> (#12, #34)"
 # them that move, as in `scripts/chart_readme.py` (copied, so that each
 # script runs on its own; the tests check that they match)
 DOCS_HOST = "protes.readthedocs.io"
-REPOSITORY = "elixir-cloud-aai/proTES"
+REPOSITORY = "elixir-cloud-aai/protes"
 _MOVING = r"(?![\w.-])"
 UNVERSIONED = re.compile(
     rf"{re.escape(DOCS_HOST)}/(?:en/)?(?:latest|stable){_MOVING}"

@@ -386,10 +386,12 @@ def test_script(tmp_path: Path) -> None:
     [
         "https://protes.readthedocs.io/en/latest/upgrading/",
         "https://protes.readthedocs.io/en/stable/",
+        "https://github.com/elixir-cloud-aai/protes/blob/dev/README.md",
+        "https://github.com/elixir-cloud-aai/protes/tree/main/docs",
+        "https://github.com/elixir-cloud-aai/protes/releases/latest",
+        "https://raw.githubusercontent.com/elixir-cloud-aai/protes/dev/x",
+        # The repository's name before the rename to `protes`
         "https://github.com/elixir-cloud-aai/proTES/blob/dev/README.md",
-        "https://github.com/elixir-cloud-aai/proTES/tree/main/docs",
-        "https://github.com/elixir-cloud-aai/proTES/releases/latest",
-        "https://raw.githubusercontent.com/elixir-cloud-aai/proTES/dev/x",
     ],
 )
 def test_check_moving_links(link: str) -> None:
@@ -402,8 +404,8 @@ def test_check_moving_links(link: str) -> None:
     "link",
     [
         "https://protes.readthedocs.io/en/v0.3.0/upgrading/",
-        "https://github.com/elixir-cloud-aai/proTES/blob/v0.3.0/README.md",
-        "https://github.com/elixir-cloud-aai/proTES/tree/dev-notes/docs",
+        "https://github.com/elixir-cloud-aai/protes/blob/v0.3.0/README.md",
+        "https://github.com/elixir-cloud-aai/protes/tree/dev-notes/docs",
         "https://example.org/en/latest/",
     ],
 )

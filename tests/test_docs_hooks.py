@@ -8,7 +8,9 @@ from urllib.parse import unquote, urlsplit
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-REPO_URL = "https://github.com/elixir-cloud-aai/proTES"
+REPO_URL = "https://github.com/elixir-cloud-aai/protes"
+# The repository's name before the rename to `protes` (GitHub ignores the case)
+MIXED_CASE_REPO_URL = "https://github.com/elixir-cloud-aai/proTES"
 DOCS_URL = "https://protes.readthedocs.io/en/latest/"
 
 # `docs/` is not a package, so the hooks are loaded from their file
@@ -42,6 +44,21 @@ _spec.loader.exec_module(hooks)
 def test_adapt_link(target: str, expected: str) -> None:
     """Links are adapted to pages of the docs, or to files on GitHub."""
     assert hooks.adapt_link(target, f"{REPO_URL}/") == expected
+
+
+@pytest.mark.parametrize(
+    ("target", "repo_url"),
+    [
+        (MIXED_CASE_REPO_URL, REPO_URL),
+        (REPO_URL, MIXED_CASE_REPO_URL),
+    ],
+)
+def test_adapt_link_case(target: str, repo_url: str) -> None:
+    """Links match the repository's URL with its name in any case."""
+    assert (
+        hooks.adapt_link(f"{target}/blob/dev/deployment/values.yaml", repo_url, "v1")
+        == f"{repo_url}/blob/v1/deployment/values.yaml"
+    )
 
 
 @pytest.mark.parametrize("repo_url", [REPO_URL, f"{REPO_URL}/"])
