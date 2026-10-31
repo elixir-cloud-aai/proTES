@@ -92,8 +92,8 @@ plugins:
 ## Installing and enabling plugins
 
 Plugins are Python packages that register their plugin classes as entry
-points of the group `foca.plugins`; install them next to proTES, e.g., in a
-custom image based on the proTES image. Only plugins listed in
+points of the group `foca.plugins`; install them in an image derived from
+that of proTES (see [Plugin images](plugin-images.md)). Only plugins listed in
 `plugins.available`, by their identifier (the entry point name), are loaded;
 FOCA's built-in plugins (`foca.*`) are always available. Entries may pin the
 distribution and version, set the plugin's admin settings (`config`), and
@@ -102,7 +102,7 @@ list or of the pipeline can't be loaded, e.g., because it isn't installed
 or doesn't support the TES API.
 
 For example, with the routing plugins of
-[foca-plugins](https://github.com/elixir-cloud-aai/foca-plugins) (once they
+[foca-plugins](https://foca-plugins.readthedocs.io/en/latest/) (once they
 are published), tasks go to the TES instances closest to their input data,
 with random order as the fallback, as with the former middlewares of
 proTES:
@@ -207,7 +207,9 @@ The Helm chart sets the plugins with the values `plugins.available`,
 `plugins.pipeline`, `plugins.presets`, `plugins.clientPipelines`,
 `plugins.clientBackends`, `plugins.tags` and `plugins.provenance`, with the
 keys of the config in camelCase (e.g., `onFailure` for `on_failure`), and
-other settings in `config.plugins` (see the chart's README, Configuration).
+other settings in `config.plugins` (see the chart's README, Configuration),
+and the image with the plugins in `protes.image` (see [Plugin
+images](plugin-images.md#deploying)).
 The config overlays of Docker Compose (`config.dev.yaml`) and of its smoke
 test (`tests/smoke/config.yaml`) set the pipeline explicitly, to FOCA's
 ordered failover.

@@ -1,0 +1,24 @@
+# Test plugin distribution of the smoke test (`tests/smoke/plugins.sh`): the
+# plugin `smoke.tag` tags each new task, so that the smoke test sees that the
+# image derived with the recipe of `docs/plugin-images.md` loaded and ran it.
+# Never published
+
+[build-system]
+requires = ["setuptools>=83"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "protes-smoke-plugin"
+version = "0.1.0"
+description = "Test plugin of the proTES smoke test: tags each new task"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+classifiers = ["Private :: Do Not Upload"]
+dependencies = ["foca>=0.18.0,<0.19"]
+
+# The plugin ID (entry point name) and its class
+[project.entry-points."foca.plugins"]
+"smoke.tag" = "smoke_plugin:Tag"
+
+[tool.setuptools]
+py-modules = ["smoke_plugin"]

@@ -101,6 +101,7 @@ nav:
   - Configuration: configuration.md
   - API: api.md
   - Plugins: plugins.md
+  - Plugin images: plugin-images.md
   - Access control: access-control.md
   - Deployment: deployment.md
   - Operations: operations.md
