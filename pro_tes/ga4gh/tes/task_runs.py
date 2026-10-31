@@ -1,5 +1,6 @@
 """Class implementing TES API-server-side controller methods."""
 
+from collections.abc import Callable
 from contextlib import suppress
 from copy import deepcopy
 from dataclasses import replace
@@ -322,13 +323,11 @@ class TaskRuns:
         # update task document; set by the server (TES), not by clients
         payload = deepcopy(payload)
         payload["creation_time"] = start_time
-        # the gateway's tags (FOCA's), besides the client's; tags under the
-        # prefix other than the client's choices are dropped
-        prefix = run.host.conf.tags.prefix
-        payload["tags"] = {
-            **without_server_tags(payload.get("tags"), prefix),
-            **creation_tags(run),
-        }
+        # tags under the prefix other than the client's choices are dropped;
+        # the gateway's (FOCA's) are added once the identifier is known
+        payload["tags"] = without_server_tags(
+            payload.get("tags"), run.host.conf.tags.prefix
+        )
         db_document.task = TesTask(**payload)
         # the prospective part of the provenance (pipeline, plugins, route),
         # stored with the task; the attempts are added once a backend
@@ -341,7 +340,9 @@ class TaskRuns:
             start_time=start_time,
             owner=owner,
             collection=collection,
-            provenance_tag=f"{prefix}provenance",
+            tags=lambda task_id: creation_tags(
+                run, provenance_path=f"{collection.rstrip('/')}/{task_id}/provenance"
+            ),
         )
         run.task_id = db_document.task.id
         db_connector = DbDocumentConnector(
@@ -606,6 +607,8 @@ class TaskRuns:
         if document is None:
             logger.error("Task '%s' not found.", id)
             raise TaskNotFound
+        # records may lack parts (e.g., if building them failed, cf.
+        # `ProvenanceStore.save`: `error: internal`), so they are checked
         record: dict[str, Any] | None = document.get("provenance")
         if not isinstance(record, dict):
             raise ProvenanceNotFound(f"No provenance recorded for task '{id}'")
@@ -836,7 +839,7 @@ class TaskRuns:
         document: DbDocument,
         owner: str,
         collection: str,
-        provenance_tag: str | None = None,
+        tags: Callable[[str], dict[str, str]] | None = None,
     ) -> tuple[str, str]:
         """Create database entry for task, and make the owner its owner.
 
@@ -857,8 +860,9 @@ class TaskRuns:
                 :py:func:`pro_tes.ga4gh.tes.ownership.get_owner`).
             collection: Request path of the tasks (e.g.,
                 `/ga4gh/tes/v1/tasks`).
-            provenance_tag: Key of the task's tag with the path of its
-                provenance (`GET /tasks/{id}/provenance`), if any.
+            tags: Function getting the tags of the gateway for a task
+                identifier (e.g., with the path of the task's provenance),
+                added to the task's tags, if any.
 
         Returns:
             Tuple of task id and worker id.
@@ -883,11 +887,8 @@ class TaskRuns:
                 continue
             document.task.id = task_id
             document.worker_id = uuid()
-            if provenance_tag is not None:
-                document.task.tags = {
-                    **(document.task.tags or {}),
-                    provenance_tag: f"{collection.rstrip('/')}/{task_id}/provenance",
-                }
+            if tags is not None:
+                document.task.tags = {**(document.task.tags or {}), **tags(task_id)}
             try:
                 self.db_client.insert_one(
                     document.model_dump(mode="json", exclude_none=True)
@@ -980,7 +981,7 @@ class TaskRuns:
         start_time: str,
         owner: str,
         collection: str,
-        provenance_tag: str | None = None,
+        tags: Callable[[str], dict[str, str]] | None = None,
     ) -> DbDocument:
         """Update the task object, store it, and make the owner its owner.
 
@@ -991,8 +992,8 @@ class TaskRuns:
                 :py:func:`pro_tes.ga4gh.tes.ownership.get_owner`).
             collection: Request path of the tasks (e.g.,
                 `/ga4gh/tes/v1/tasks`).
-            provenance_tag: Key of the task's tag with the path of its
-                provenance, if any (cf. :py:meth:`_write_doc_to_db`).
+            tags: Function getting the tags of the gateway for a task
+                identifier, if any (cf. :py:meth:`_write_doc_to_db`).
 
         Returns:
             DbDocument: The updated database document.
@@ -1006,7 +1007,7 @@ class TaskRuns:
             document=db_document,
             owner=owner,
             collection=collection,
-            provenance_tag=provenance_tag,
+            tags=tags,
         )
         db_document.task.id = task_id
         db_document.worker_id = worker_id

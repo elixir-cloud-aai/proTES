@@ -140,7 +140,8 @@ resolved pipeline (`pipeline.resolved`), e.g., shortened:
 
 The owner of the task and admins may get it; everyone else gets
 `403 Forbidden`, also for unknown tasks (see [Access
-control](access-control.md#task-ownership)). Tasks without provenance (e.g.,
+control](access-control.md#task-ownership)); admins get `404 Not Found` for
+unknown tasks. Tasks without provenance (e.g.,
 created by earlier versions) give `404 Not Found`. The record holds no
 inputs, logs, IP addresses, tokens, header values or claims: plugins'
 changes are recorded as paths and hashes only.

@@ -63,15 +63,15 @@ paths:
         403:
           description: >-
             The caller is neither the owner of the task nor an admin (also
-            for unknown tasks).
+            for unknown tasks, which admins get as 404).
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
         404:
           description: >-
-            The task wasn't found, or has no provenance (e.g., created by an
-            earlier version of proTES).
+            The task has no provenance (e.g., created by an earlier version
+            of proTES), was deleted, or (for admins) doesn't exist.
           content:
             application/json:
               schema:

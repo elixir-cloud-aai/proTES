@@ -76,8 +76,8 @@ Remove the keys that had no effect from config overlays: all of
 API specifications (`api.specs`) and access control rules
 (`security.access_control.policies`) of the base config are named entries
 (the spec `tes`; rules `users-create-list-tasks`,
-`owners-get-cancel-tasks`, `admins-list-add-permissions` and
-`admins-manage-permissions`), which overlays change by name (see
+`owners-get-cancel-tasks`, `owners-get-provenance`, `admins-get-provenance`,
+`admins-list-add-permissions` and `admins-manage-permissions`), which overlays change by name (see
 [Roles](access-control.md#roles)); overlays that give lists still replace
 them. The configured rules replace the stored ones atomically on startup,
 and stored configured rules are removed if an overlay sets no rules. During

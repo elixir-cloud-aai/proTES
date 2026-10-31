@@ -17,8 +17,20 @@ import tes
 import yaml
 
 import pro_tes
+from pro_tes.app import init_app
 from pro_tes.exceptions import BackendOutcomeUnknown
-from tests.conftest import ADMIN, ADMIN_USER, DB, OTHER_USER, OUTSIDER, make_headers
+from pro_tes.tasks.track_task_progress import _store_final
+from pro_tes.utils.db import DbDocumentConnector
+from tests.conftest import (
+    ADMIN,
+    ADMIN_USER,
+    DB,
+    OTHER_USER,
+    OUTSIDER,
+    make_headers,
+    reset_gateway,
+    set_overlays,
+)
 from tests.ga4gh.tes.conftest import (
     BACKENDS,
     BASE_PATH,
@@ -212,3 +224,54 @@ def test_forwarded_to_deprecated() -> None:
     assert forwarded_to["deprecated"] is True
     operation = spec["paths"]["/tasks/{id}/provenance"]["get"]
     assert operation["operationId"] == "GetTaskProvenance"
+
+
+def test_gateway_tags_tracked(
+    client: FlaskClient, task_id: str, mongo_client: MongoClient[dict[str, Any]]
+) -> None:
+    """The tracking of a task keeps its gateway tags when it stores the task."""
+    document = stored(mongo_client, task_id)
+    tags = document["task"]["tags"]
+    connector = DbDocumentConnector(
+        collection=mongo_client[DB]["tasks"], worker_id=document["worker_id"]
+    )
+    response = tes.Task(
+        id="remote-1",
+        state="COMPLETE",
+        executors=[],
+        logs=[tes.TaskLog(logs=[], outputs=[])],
+    )
+    _store_final(
+        db_client=connector, worker_id=document["worker_id"], response=response
+    )
+    document = stored(mongo_client, task_id)
+    assert document["task"]["state"] == "COMPLETE"
+    assert document["task"]["tags"] == tags
+
+
+def test_admins_provenance_removed(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    app_env: None,
+    backend: type[FakeBackend],
+) -> None:
+    """Without the rule `admins-get-provenance`, admins get `403`."""
+    overlay = tmp_path / "policies.yaml"
+    overlay.write_text(
+        yaml.safe_dump(
+            {
+                "security": {
+                    "access_control": {"policies": {"admins-get-provenance": None}}
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    set_overlays(monkeypatch, overlay)
+    reset_gateway()
+    client = init_app().app.test_client()
+    client.environ_base["HTTP_AUTHORIZATION"] = make_headers()["Authorization"]
+    task_id = client.post(f"{BASE_PATH}/tasks", json=TASK).get_json()["id"]
+    path = provenance_path(task_id)
+    assert client.get(path).status_code == 200
+    assert client.get(path, headers=make_headers(ADMIN)).status_code == 403

@@ -101,7 +101,10 @@ class TaskNotFound(NotFound):
 
 
 class ProvenanceNotFound(NotFound):
-    """Raised when a task has no provenance (e.g., created by an earlier version)."""
+    """Raised when a task has no provenance.
+
+    E.g., because it was created by an earlier version of proTES.
+    """
 
 
 class TaskNotCancelable(Conflict):
